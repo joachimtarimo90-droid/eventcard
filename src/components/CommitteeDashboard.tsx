@@ -478,6 +478,43 @@ export default function CommitteeDashboard({
     // Log the transaction
     addActivityLog(`Salma Khamis (Treasurer)`, `Amesajili mchango wa TZS ${amountVal.toLocaleString()} kwa ${treasuryTargetGuest.name}`);
 
+    // Automatic SMS dispatch
+    if (treasuryTargetGuest.phone) {
+      const isCompleted = (treasuryTargetGuest.paidAmount || 0) + amountVal >= (treasuryTargetGuest.pledgeAmount || 0);
+      const refCode = treasuryRef || 'TXN-' + Math.floor(100000 + Math.random() * 899999);
+      const eventTitle = currentEvent?.name || 'Sherehe';
+      const payerName = treasuryTargetGuest.name;
+      const amtStr = amountVal.toLocaleString();
+      const totalPaid = ((treasuryTargetGuest.paidAmount || 0) + amountVal).toLocaleString();
+      const pledge = (treasuryTargetGuest.pledgeAmount || 0);
+      const balStr = Math.max(0, pledge - ((treasuryTargetGuest.paidAmount || 0) + amountVal)).toLocaleString();
+
+      let msg = '';
+      if (isCompleted) {
+        msg = isEn
+          ? `Hello ${payerName}, thank you very much for completing your contribution of TZS ${amtStr} (Total Paid: TZS ${totalPaid}) for ${eventTitle}! Ref: ${refCode}. Your support is deeply appreciated!`
+          : `Habari ${payerName}, tumepokea malipo yako ya TZS ${amtStr} (Jumla Kuu uliyolipa: TZS ${totalPaid}) kwa ajili ya ${eventTitle}. Msimbo: ${refCode}. Tunakushukuru sana kwa kukamilisha ahadi yako! Ahsante sana!`;
+      } else {
+        msg = isEn
+          ? `Hello ${payerName}, we have received your payment of TZS ${amtStr} for ${eventTitle}. Total Paid: TZS ${totalPaid}, Remaining Balance: TZS ${balStr}. Ref: ${refCode}. Thank you!`
+          : `Habari ${payerName}, tumepokea malipo yako ya TZS ${amtStr} kwa ajili ya ${eventTitle}. Jumla uliyolipa: TZS ${totalPaid}, Salio lililosalia: TZS ${balStr}. Msimbo: ${refCode}. Ahsante sana kwa mchango wako!`;
+      }
+
+      fetch('/api/send-sms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guestId: treasuryTargetGuest.id,
+          eventId: currentEvent?.id || 'event-1',
+          phone: treasuryTargetGuest.phone,
+          text: msg,
+          channel: 'sms',
+          lang: isEn ? 'en' : 'sw',
+          templateName: isCompleted ? 'shukrani' : 'ukumbusho'
+        })
+      }).catch(err => console.error('Auto SMS dispatch error:', err));
+    }
+
     // Toast/notifications
     const isCompleted = (treasuryTargetGuest.paidAmount || 0) + amountVal >= (treasuryTargetGuest.pledgeAmount || 0);
     const notifMsg = isCompleted

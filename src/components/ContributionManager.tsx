@@ -217,6 +217,8 @@ export default function ContributionManager({
   const [modalPaymentRef, setModalPaymentRef] = useState('');
   const [modalPaymentDate, setModalPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [modalPaymentNotes, setModalPaymentNotes] = useState('');
+  const [autoSendThankYouSMS, setAutoSendThankYouSMS] = useState(true);
+  const [autoSendChannel, setAutoSendChannel] = useState<'SMS' | 'WhatsApp'>('SMS');
 
   const formatNumberWithCommas = (value: string) => {
     const clean = value.replace(/\D/g, '');
@@ -1027,6 +1029,8 @@ export default function ContributionManager({
     setModalPaymentAmount('');
     setModalPaymentRef('TXN-' + Math.floor(100000 + Math.random() * 900000));
     setModalPaymentNotes('');
+    setAutoSendThankYouSMS(true);
+    setAutoSendChannel('SMS');
     setIsPaymentModalOpen(true);
   };
 
@@ -1066,6 +1070,8 @@ export default function ContributionManager({
       status = 'Fully Paid';
     }
 
+    const isFull = status === 'Fully Paid';
+
     const updatedGuests = guests.map(g => {
       if (g.id === targetGuest.id) {
         return {
@@ -1073,13 +1079,63 @@ export default function ContributionManager({
           pledgeAmount: currentPledge === 0 ? newTotalPaid : currentPledge,
           pledgeStatus: status,
           paidAmount: newTotalPaid,
-          payments: updatedPayments
+          payments: updatedPayments,
+          thanksSent: isFull && autoSendThankYouSMS ? true : g.thanksSent,
+          thanksSentChannel: isFull && autoSendThankYouSMS ? (autoSendChannel.toLowerCase() as any) : g.thanksSentChannel,
+          thanksSentLang: isFull && autoSendThankYouSMS ? (isEn ? 'en' : 'sw') : g.thanksSentLang
         };
       }
       return g;
     });
 
     onUpdateGuests(updatedGuests, `Ameingiza malipo ya mgeni: ${targetGuest.name} (Kiasi: TZS ${amtPaidNew}, Njia: ${modalPaymentRef})`);
+
+    // Automatic SMS or WhatsApp Thank-You dispatch
+    if (autoSendThankYouSMS && targetGuest.phone) {
+      const eventTitle = event.name || 'Sherehe';
+      const payerName = targetGuest.name;
+      const amtStr = amtPaidNew.toLocaleString();
+      const totalPaidStr = newTotalPaid.toLocaleString();
+      const balStr = Math.max(0, (currentPledge || newTotalPaid) - newTotalPaid).toLocaleString();
+
+      let thankYouText = '';
+      if (isFull) {
+        thankYouText = isEn
+          ? `Hello ${payerName}, thank you very much for completing your contribution of TZS ${amtStr} (Total Paid: TZS ${totalPaidStr}) for ${eventTitle}! Payment Ref: ${modalPaymentRef}. Your support is deeply appreciated!`
+          : `Habari ${payerName}, tumepokea malipo yako ya TZS ${amtStr} (Jumla Kuu uliyolipa: TZS ${totalPaidStr}) kwa ajili ya ${eventTitle}. Msimbo wa Muamala: ${modalPaymentRef}. Tunakushukuru sana kwa kukamilisha ahadi yako! Ahsante sana!`;
+      } else {
+        thankYouText = isEn
+          ? `Hello ${payerName}, we have received your payment of TZS ${amtStr} for ${eventTitle}. Total Paid: TZS ${totalPaidStr}, Remaining Balance: TZS ${balStr}. Payment Ref: ${modalPaymentRef}. Thank you!`
+          : `Habari ${payerName}, tumepokea malipo yako ya TZS ${amtStr} kwa ajili ya ${eventTitle}. Jumla uliyolipa hadi sasa: TZS ${totalPaidStr}, Salio lililosalia: TZS ${balStr}. Msimbo: ${modalPaymentRef}. Ahsante sana kwa mchango wako!`;
+      }
+
+      fetch('/api/send-sms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guestId: targetGuest.id,
+          eventId: event.id,
+          phone: targetGuest.phone,
+          text: thankYouText,
+          channel: autoSendChannel.toLowerCase(),
+          lang: isEn ? 'en' : 'sw',
+          templateName: isFull ? 'shukrani' : 'ukumbusho'
+        })
+      }).catch(err => console.error('Auto SMS dispatch error:', err));
+
+      const logEntry = {
+        id: 'log-auto-' + Date.now(),
+        guestName: targetGuest.name,
+        phone: targetGuest.phone,
+        type: isFull ? 'Thank You' : 'Payment Receipt',
+        message: thankYouText,
+        channel: autoSendChannel,
+        sentAt: new Date().toLocaleDateString(isEn ? 'en-US' : 'sw-TZ') + ' ' + new Date().toTimeString().split(' ')[0].substring(0, 5),
+        status: 'delivered'
+      };
+      setMessageLogs(prev => [logEntry, ...prev]);
+    }
+
     setIsPaymentModalOpen(false);
     setTargetGuest(null);
   };
@@ -5254,6 +5310,41 @@ export default function ContributionManager({
                     className="w-full bg-slate-950 border border-white/10 py-2 px-3 rounded-lg text-white text-xs outline-none"
                   />
                 </div>
+              </div>
+
+              {/* Auto SMS Thank-You Toggle */}
+              <div className="bg-emerald-950/40 border border-emerald-500/20 rounded-xl p-3 space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-emerald-300">
+                  <input
+                    type="checkbox"
+                    checked={autoSendThankYouSMS}
+                    onChange={e => setAutoSendThankYouSMS(e.target.checked)}
+                    className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+                  />
+                  <span>{isEn ? "Auto-send Thank You / Receipt Message" : "Tuma SMS ya Shukrani/Risiti Otomatiki"}</span>
+                </label>
+                
+                {autoSendThankYouSMS && (
+                  <div className="flex items-center justify-between text-[11px] text-slate-300 pl-6 pt-1 border-t border-emerald-500/10">
+                    <span className="text-slate-400 font-mono text-[10px] uppercase">{isEn ? "Channel:" : "Njia:"}</span>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setAutoSendChannel('SMS')}
+                        className={`px-2.5 py-0.5 rounded text-[10px] font-bold font-mono transition ${autoSendChannel === 'SMS' ? 'bg-emerald-500 text-slate-950' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+                      >
+                        SMS
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAutoSendChannel('WhatsApp')}
+                        className={`px-2.5 py-0.5 rounded text-[10px] font-bold font-mono transition ${autoSendChannel === 'WhatsApp' ? 'bg-emerald-500 text-slate-950' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+                      >
+                        WhatsApp
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
