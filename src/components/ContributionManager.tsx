@@ -936,21 +936,23 @@ export default function ContributionManager({
     let fullyPaidCount = 0;
 
     guests.forEach(g => {
-      const pledge = g.pledgeAmount || 0;
-      const paid = g.paidAmount || 0;
-      const status = g.pledgeStatus || 'No Pledge';
+      const pledge = Number(g.pledgeAmount) || 0;
+      const paid = Number(g.paidAmount) || 0;
+      const status = g.pledgeStatus;
 
       totalPledgedAmount += pledge;
       totalPaidAmount += paid;
 
-      if (status === 'No Pledge' || pledge === 0) {
+      const hasPledged = pledge > 0 || paid > 0 || (status && status !== 'No Pledge');
+
+      if (!hasPledged) {
         noPledgeCount++;
-      } else if (status === 'Pledged') {
-        pledgedCount++;
-      } else if (status === 'Partially Paid') {
-        partiallyPaidCount++;
-      } else if (status === 'Fully Paid') {
+      } else if (status === 'Fully Paid' || (pledge > 0 && paid >= pledge) || (pledge === 0 && paid > 0)) {
         fullyPaidCount++;
+      } else if (status === 'Partially Paid' || (paid > 0 && paid < pledge)) {
+        partiallyPaidCount++;
+      } else {
+        pledgedCount++;
       }
     });
 
@@ -1133,9 +1135,29 @@ export default function ContributionManager({
   };
 
   // Sub-groups based on criteria
-  const noPledgeList = guests.filter(g => !g.pledgeAmount || g.pledgeAmount === 0 || (g.pledgeStatus || 'No Pledge') === 'No Pledge');
-  const pendingCollectionList = guests.filter(g => g.pledgeAmount > 0 && (g.pledgeStatus === 'Pledged' || g.pledgeStatus === 'Partially Paid'));
-  const fullyPaidList = guests.filter(g => g.pledgeAmount > 0 && g.pledgeStatus === 'Fully Paid');
+  const noPledgeList = guests.filter(g => {
+    const p = Number(g.pledgeAmount) || 0;
+    const pd = Number(g.paidAmount) || 0;
+    const st = g.pledgeStatus;
+    const hasPledged = p > 0 || pd > 0 || (st && st !== 'No Pledge');
+    return !hasPledged;
+  });
+
+  const pendingCollectionList = guests.filter(g => {
+    const p = Number(g.pledgeAmount) || 0;
+    const pd = Number(g.paidAmount) || 0;
+    const st = g.pledgeStatus;
+    const hasPledged = p > 0 || pd > 0 || (st && st !== 'No Pledge');
+    const isFullyPaid = st === 'Fully Paid' || (p > 0 && pd >= p) || (p === 0 && pd > 0);
+    return hasPledged && !isFullyPaid;
+  });
+
+  const fullyPaidList = guests.filter(g => {
+    const p = Number(g.pledgeAmount) || 0;
+    const pd = Number(g.paidAmount) || 0;
+    const st = g.pledgeStatus;
+    return st === 'Fully Paid' || (p > 0 && pd >= p) || (p === 0 && pd > 0);
+  });
 
   // Multi selector handlers
   const toggleSelectGuest = (id: string) => {

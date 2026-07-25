@@ -194,14 +194,16 @@ export default function EventReports({
     let unpaidPledgeValue = 0;
 
     guests.forEach(g => {
-      const pledge = g.pledgeAmount || 0;
-      const paid = g.paidAmount || 0;
+      const pledge = Number(g.pledgeAmount) || 0;
+      const paid = Number(g.paidAmount) || 0;
+      const rawStatus = g.pledgeStatus;
+      const hasPledged = pledge > 0 || paid > 0 || (rawStatus && rawStatus !== 'No Pledge');
 
-      if (pledge > 0) {
-        if (paid >= pledge) {
+      if (hasPledged) {
+        if (rawStatus === 'Fully Paid' || (pledge > 0 && paid >= pledge) || (pledge === 0 && paid > 0)) {
           fullyPaidCount++;
           fullyPaidValue += paid;
-        } else if (paid > 0) {
+        } else if (rawStatus === 'Partially Paid' || (paid > 0 && paid < pledge)) {
           partiallyPaidCount++;
           partiallyPaidValue += paid;
         } else {

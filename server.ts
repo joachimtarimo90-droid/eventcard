@@ -1946,7 +1946,43 @@ Tafadhali ingia kwenye akaunti yako ya ${settings.provider === "meseji" ? "Mesej
     }
     
     if (response.status === 500 && settings.provider === "meseji") {
-      const errorMsg = `Mtoa huduma (Meseji.co.tz) alirejesha hitilafu (500). Hili linamaanisha mfumo wao wa ndani umeshindwa kuchakata ujumbe wako kwa sasa. Kwa kuwa una salio la kutosha (42 SMS), tafadhali wasiliana na huduma kwa wateja wa Meseji au jaribu tena baadae kidogo. [Jibu lao: ${sanitizedBody}]`;
+      if (senderId !== "MESEJI") {
+        console.log(`[SMS-Meseji] Retrying with default sender_id 'MESEJI' after 500 error for '${senderId}'...`);
+        const cleanPhone = formattedPhone.replace(/\+/g, "");
+        const retryBody: any = {
+          contacts: cleanPhone,
+          message: text,
+          sender_id: "MESEJI"
+        };
+        if (scheduleTime) {
+          retryBody.schedule_time = scheduleTime;
+        }
+        try {
+          const retryRes = await fetch(requestUrl, {
+            ...fetchOptions,
+            body: JSON.stringify(retryBody)
+          });
+          const retryText = await retryRes.text();
+          if (retryRes.ok) {
+            // Check if JSON response is successful
+            let retryOk = true;
+            try {
+              const p = JSON.parse(retryText);
+              if (p.status === "fail" || p.status === "failed" || p.status === "error" || p.success === false || p.error) {
+                retryOk = false;
+              }
+            } catch {}
+            if (retryOk) {
+              console.log(`[SMS-Meseji] Retry with 'MESEJI' sender_id succeeded!`);
+              return retryText;
+            }
+          }
+        } catch (retryErr) {
+          console.error(`[SMS-Meseji] Retry attempt error:`, retryErr);
+        }
+      }
+
+      const errorMsg = `Mtoa huduma (Meseji.co.tz) alirejesha hitilafu (500). Hii mara nyingi husababishwa na: 1) Sender ID uliyoweka ("${senderId}") haijaidhinishwa/haijasajiliwa kwenye akaunti yako ya Meseji.co.tz, au 2) Salio lako la SMS kwenye akaunti ya Meseji limeisha. Tafadhali ingia kwenye Meseji.co.tz uhakiki Sender ID na salio lako, au badilisha Sender ID kuwa "MESEJI". [Jibu la Gateway: ${sanitizedBody}]`;
       throw new Error(errorMsg);
     }
     
