@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Mail, CheckCircle, MessageSquare, Phone, Users, Heart, Sparkles, Send, QrCode, X, Shield, FileText, Coins } from 'lucide-react';
+import { Mail, CheckCircle, MessageSquare, Phone, Users, Heart, Sparkles, Send, QrCode, X, Shield, FileText, Coins, CheckCircle2, MapPin, Crown, ArrowRight } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
 interface LandingPageProps {
@@ -38,6 +38,9 @@ export default function LandingPage({ onStart, onLoginClick }: LandingPageProps)
           <nav className="hidden md:flex space-x-8 text-sm font-medium text-slate-350">
             <a href="#features" className="hover:text-white transition-colors">
               {language === 'sw' ? 'Sifa za Mfumo' : 'System Features'}
+            </a>
+            <a href="#packages" className="hover:text-white transition-colors">
+              {language === 'sw' ? 'Vifurushi (Packages)' : 'Packages'}
             </a>
             <a href="#how-it-works" className="hover:text-white transition-colors">
               {language === 'sw' ? 'Jinsi Inavyofanya Kazi' : 'How It Works'}
@@ -448,6 +451,205 @@ export default function LandingPage({ onStart, onLoginClick }: LandingPageProps)
               <p className="text-slate-300 text-sm leading-relaxed">
                 {t('feature.5.desc')}
               </p>
+            </div>
+
+          </div>
+        </section>
+
+        {/* Packages Section */}
+        <section id="packages" className="py-20 px-4 sm:px-6 lg:px-8 border-t border-white/10 bg-gradient-to-b from-slate-950 via-[#0a1228] to-[#050b18] relative overflow-hidden">
+          
+          {/* Ambient Glow */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[160px] pointer-events-none"></div>
+
+          <div className="max-w-7xl mx-auto space-y-10 relative z-10">
+            
+            {/* Section Header */}
+            <div className="text-center space-y-4 max-w-3xl mx-auto">
+              <div className="inline-flex items-center space-x-2 bg-purple-500/10 border border-purple-500/30 text-purple-300 px-4 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase">
+                <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                <span>{language === 'sw' ? 'VIFURUSHI NA BEI ZETU' : 'OUR PACKAGES & PRICING'}</span>
+              </div>
+              
+              <h2 className="text-3xl sm:text-5xl font-black text-white font-sans tracking-tight">
+                Packages
+              </h2>
+
+              {/* Platform Overview Box */}
+              <div className="bg-white/5 border border-white/15 backdrop-blur-xl rounded-2xl p-5 sm:p-6 text-slate-200 text-xs sm:text-sm leading-relaxed text-left sm:text-center shadow-2xl space-y-2">
+                <h3 className="text-base sm:text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-300 to-amber-300 font-sans">
+                  Event Card Digital Platform
+                </h3>
+                <p className="text-slate-300">
+                  {language === 'sw'
+                    ? 'Event Card ni mfumo wa kisasa wa Kidijitali nchini Tanzania unaomwezesha mratibu au kamati yoyote ya sherehe (Harusi, Send-off, Kitchen Party, Kipaimara n.k ), kusimamia mialiko, michango ya fedha, na uthibitisho wa wageni ukumbini kwa njia rahisi na ya kipekee. Mfumo huu hupunguza gharama za uchapishaji na kurahisisha mawasiliano na wageni.'
+                    : 'Event Card is a modern Digital Platform in Tanzania enabling event coordinators or planning committees (Weddings, Send-offs, Kitchen Parties, Confirmations, etc.) to manage invitations, financial contributions, and guest verification at the venue seamlessly. This system reduces printing costs and simplifies guest communication.'}
+                </p>
+              </div>
+
+              {/* Location Badge */}
+              <div className="inline-flex items-center space-x-2 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold shadow-lg">
+                <MapPin className="w-4 h-4 text-emerald-400 animate-bounce" />
+                <span>
+                  {language === 'sw'
+                    ? 'Huduma Hizi zinapatikana Popote Ulipo Tanzania Nzima'
+                    : 'Services Available Everywhere Across Tanzania'}
+                </span>
+              </div>
+            </div>
+
+            {/* Packages Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch pt-4">
+              
+              {/* 1. Basic Package */}
+              <div className="bg-slate-900/90 border border-slate-700/60 rounded-3xl p-6 sm:p-8 flex flex-col justify-between hover:border-emerald-500/50 transition-all duration-300 shadow-xl group relative">
+                <div className="space-y-6">
+                  <div className="space-y-3">
+                    <div className="inline-block bg-emerald-500/20 text-emerald-300 text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30">
+                      BASIC
+                    </div>
+                    <h3 className="text-2xl font-black text-white font-sans">Basic Package</h3>
+                    <div className="bg-emerald-600 text-white font-black text-xl py-2.5 px-4 rounded-xl text-center shadow-md font-mono">
+                      TZS 1,000 <span className="text-xs font-normal text-emerald-100">/ {language === 'sw' ? 'Kadi' : 'Card'}</span>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-800 pt-5 space-y-3 text-xs sm:text-sm text-slate-200">
+                    <div className="flex items-start space-x-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                      <span>{language === 'sw' ? 'Ku Design Kadi za Mialiko Za Kidigitali Zenye QR Code.' : 'Design Digital Invitation Cards with QR Code.'}</span>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                      <span>{language === 'sw' ? 'Kutuma kupitia WhatsApp & SMS' : 'Dispatch via WhatsApp & SMS.'}</span>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                      <span>{language === 'sw' ? 'Uthibitisho wa Wageni Kujua nani Atahudhuria na ni nani Hatahudhuria' : 'Guest RSVP Confirmation (Attendance Status).'}</span>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                      <span>{language === 'sw' ? 'Uthibitisho kwa simu kuwapigia wageni simu.' : 'Phone call verification for guests.'}</span>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                      <span>{language === 'sw' ? 'Scanning Kadi siku ya Sherehe.' : 'Card Scanning on Event Day.'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-8">
+                  <button
+                    onClick={onStart}
+                    className="w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-emerald-600 text-white font-bold text-sm transition-all duration-200 border border-slate-700 hover:border-emerald-500 shadow-md flex items-center justify-center space-x-2 cursor-pointer"
+                  >
+                    <span>{language === 'sw' ? 'Chagua Basic Package' : 'Select Basic Package'}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Standard Package */}
+              <div className="bg-gradient-to-b from-blue-950/90 to-slate-900/90 border-2 border-blue-500/70 rounded-3xl p-6 sm:p-8 flex flex-col justify-between hover:border-blue-400 transition-all duration-300 shadow-2xl relative group transform md:-translate-y-2">
+                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[11px] font-black px-4 py-1 rounded-full uppercase tracking-wider shadow-lg border border-blue-400/40">
+                  {language === 'sw' ? 'Inayopendekezwa Zaidi' : 'Most Popular'}
+                </div>
+
+                <div className="space-y-6">
+                  <div className="space-y-3 pt-2">
+                    <div className="inline-block bg-blue-500/20 text-blue-300 text-xs font-bold px-3 py-1 rounded-lg border border-blue-500/30">
+                      STANDARD
+                    </div>
+                    <h3 className="text-2xl font-black text-white font-sans">Standard Package</h3>
+                    <div className="bg-blue-600 text-white font-black text-xl py-2.5 px-4 rounded-xl text-center shadow-md font-mono">
+                      TZS 1,300 <span className="text-xs font-normal text-blue-100">/ {language === 'sw' ? 'Kadi' : 'Card'}</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-950/90 border border-blue-500/40 rounded-xl p-2.5 text-center text-xs font-black text-blue-200 uppercase tracking-wide">
+                    {language === 'sw' ? 'KILA KITU KILICHOPO KWENYE BASIC PACKAGE.' : 'EVERYTHING IN BASIC PACKAGE.'}
+                  </div>
+
+                  <div className="space-y-3 text-xs sm:text-sm text-slate-200">
+                    <div className="flex items-start space-x-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+                      <span className="font-semibold text-white">{language === 'sw' ? 'Ukumbusho wa Tukio (Save the Date)' : 'Event Reminders (Save the Date)'}</span>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+                      <span className="font-semibold text-white">{language === 'sw' ? 'Messages za shukrani baada ya tukio.' : 'Post-event Thank You messages.'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-8">
+                  <button
+                    onClick={onStart}
+                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm transition-all duration-200 shadow-lg hover:shadow-blue-500/25 flex items-center justify-center space-x-2 cursor-pointer"
+                  >
+                    <span>{language === 'sw' ? 'Chagua Standard Package' : 'Select Standard Package'}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* 3. Premium Package */}
+              <div className="bg-gradient-to-b from-purple-950/90 to-slate-900/90 border border-purple-500/50 rounded-3xl p-6 sm:p-8 flex flex-col justify-between hover:border-purple-400 transition-all duration-300 shadow-xl group relative">
+                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-600 via-amber-500 to-purple-600 text-white text-[10px] font-black px-3.5 py-1 rounded-full uppercase tracking-wider shadow-lg border border-purple-300/40 flex items-center space-x-1">
+                  <Crown className="w-3 h-3 text-amber-300" />
+                  <span>{language === 'sw' ? 'Kifurushi Cha Michango Na Vikao' : 'Full Contributions & Meetings'}</span>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="space-y-3 pt-2">
+                    <div className="inline-block bg-purple-500/20 text-purple-300 text-xs font-bold px-3 py-1 rounded-lg border border-purple-500/30">
+                      PREMIUM
+                    </div>
+                    <h3 className="text-2xl font-black text-white font-sans">Premium Package</h3>
+                    <div className="bg-gradient-to-r from-purple-600 to-amber-600 text-white font-black text-xl py-2.5 px-4 rounded-xl text-center shadow-md font-mono">
+                      TZS 1,700 <span className="text-xs font-normal text-purple-100">/ {language === 'sw' ? 'Kadi' : 'Card'}</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-purple-950/90 border border-purple-500/40 rounded-xl p-2.5 text-center text-xs font-black text-purple-200 uppercase tracking-wide">
+                    {language === 'sw' ? 'KILA KITU KILICHOPO KWENYE STANDARD PACKAGE.' : 'EVERYTHING IN STANDARD PACKAGE.'}
+                  </div>
+
+                  <div className="space-y-3 text-xs sm:text-sm text-slate-200">
+                    <div className="flex items-start space-x-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
+                      <span>{language === 'sw' ? 'Ku design kadi za Michango na kutuma Kwa WhatsApp & SMS' : 'Design Contribution Cards & dispatch via WhatsApp & SMS.'}</span>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
+                      <span>{language === 'sw' ? 'Kukumbusha Michango Kwa wageni Waliotoa Ahadi / Pledge.' : 'Remind Contributions for guests who made pledges (Ahadi).'}</span>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
+                      <span>{language === 'sw' ? 'SMS za Shukrani baada ya kupokea Michango.' : 'Instant Thank You SMS upon receiving contributions.'}</span>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
+                      <span>{language === 'sw' ? 'Kupata Report (Real Time) ya Michango kwa Kamati ya maandalizi.' : 'Real-Time Contribution Reports for the planning committee.'}</span>
+                    </div>
+                    <div className="flex items-start space-x-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
+                      <span>{language === 'sw' ? 'Kutuma SMS za vikao vya Kwa wanakamati.' : 'Send Committee Meeting Reminder SMS to all members.'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-8">
+                  <button
+                    onClick={onStart}
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold text-sm transition-all duration-200 shadow-lg hover:shadow-purple-500/25 flex items-center justify-center space-x-2 cursor-pointer"
+                  >
+                    <span>{language === 'sw' ? 'Chagua Premium Package' : 'Select Premium Package'}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
             </div>
 
           </div>
