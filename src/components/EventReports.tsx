@@ -303,7 +303,7 @@ export default function EventReports({
 
   // PDF Report Engine
   const downloadReportPDF = async () => {
-    const doc = new jsPDF();
+    const doc = new jsPDF('p', 'mm', 'a4', false);
     const pageWidth = doc.internal.pageSize.getWidth();
     
     // Header block Slate Navy
@@ -545,8 +545,9 @@ export default function EventReports({
         head: [['S/N', 'Full Name', 'Mobile No.', 'Card Type', 'RSVP Answer', 'Pax', 'Check-In', 'Time Arrived', 'SMS', 'WA']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
-        styles: { fontSize: 6.5, cellPadding: 2.5 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           3: { halign: 'center' },
@@ -604,8 +605,9 @@ export default function EventReports({
         head: [['S/N', isEn ? 'Time Arrived' : 'Muda (Time Arrived)', isEn ? 'Guest Full Name' : 'Mgeni (Guest Full Name)', isEn ? 'Mobile' : 'Simu / Mobile', isEn ? 'Card Type' : 'Aina ya Kadi', 'Scan Status', 'SMS', 'WA']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
-        styles: { fontSize: 7, cellPadding: 3 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           1: { fontStyle: 'bold' },
@@ -637,8 +639,9 @@ export default function EventReports({
         head: [['S/N', 'Guest Name', 'Mobile No', 'RSVP Status', 'Double/Single', 'Check-In Status', 'SMS Sent']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7 },
-        styles: { fontSize: 7, cellPadding: 3 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           3: { halign: 'center' },
@@ -675,8 +678,9 @@ export default function EventReports({
         head: [['S/N', 'Guest Name', 'Mobile No', 'Card Type', 'RSVP Link', 'SMS Dispatches', 'WA Dispatches']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
-        styles: { fontSize: 7, cellPadding: 3 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           3: { halign: 'center' },
@@ -720,8 +724,9 @@ export default function EventReports({
         head: [['S/N', 'Guest Name', 'Mobile Phone', 'Pledge (TZS)', 'Paid (TZS)', 'Balance Due (TZS)', 'SMS', 'WA']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
-        styles: { fontSize: 7, cellPadding: 3 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           3: { halign: 'right' },
@@ -754,8 +759,9 @@ export default function EventReports({
         head: [['S/N', 'Full Name', 'Mobile Phone', 'Ticket Type', 'Pledge Amt', 'Paid Amt', 'Balance Due', 'RSVP Answer', 'Admission']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7.5 },
-        styles: { fontSize: 7, cellPadding: 3 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           4: { halign: 'right' },
@@ -920,7 +926,7 @@ export default function EventReports({
   };
 
   const downloadComprehensiveExecutiveSummaryPDF = async () => {
-    const doc = new jsPDF();
+    const doc = new jsPDF('p', 'mm', 'a4', false);
     const pageWidth = doc.internal.pageSize.getWidth();
     let currentY = 15;
 

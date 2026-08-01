@@ -19,6 +19,7 @@ import { isStatusSent } from '../utils/statusHelper';
 import { addPdfWatermarks } from '../utils/pdfWatermark';
 import { ReportWatermark } from './ReportWatermark';
 import { convertWebPToJpeg } from '../utils/imageUtils';
+import { parseUniversalGuestTable, parseFileToGuestMatrix } from '../utils/excelParser';
 
 const qrCache = new Map<string, HTMLImageElement>();
 
@@ -2620,59 +2621,49 @@ export default function ContributionManager({
     setEditingGuestId(null);
   };
 
-  const handleBulkUploadCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBulkUploadCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const text = ev.target?.result as string;
-      const lines = text.split('\n');
-      const newGuests: Guest[] = [];
+    try {
+      const rawMatrix = await parseFileToGuestMatrix(file);
+      const parsedItems = parseUniversalGuestTable(rawMatrix);
 
-      // Skip header row usually
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        // Simple CSV splitting (doesn't handle quotes well but enough for basic app)
-        const parts = line.split(',');
-        if (parts.length >= 1) {
-          const name = parts[0].replace(/"/g, '').trim();
-          const phone = parts.length > 1 ? parts[1].replace(/"/g, '').trim() : '';
-          const categoryRaw = parts.length > 2 ? parts[2].replace(/"/g, '').trim().toUpperCase() : 'SINGLE';
-          let allowedCategory: 'SINGLE' | 'DOUBLE' | 'FAMILY' | 'VIP' = 'SINGLE';
-          if (['SINGLE', 'DOUBLE', 'FAMILY', 'VIP'].includes(categoryRaw)) {
-            allowedCategory = categoryRaw as any;
-          }
-          const pledgeAmount = parts.length > 3 ? parseInt(parts[3], 10) || 0 : 0;
-          const paidAmount = parts.length > 4 ? parseInt(parts[4], 10) || 0 : 0;
-
-          if (name) {
-            newGuests.push({
-              id: 'g-' + Date.now() + '-' + i,
-              eventId: event.id,
-              name,
-              phone,
-              cardType: allowedCategory,
-              code: 'NW-' + Math.floor(Math.random() * 10000) + '-' + i,
-              smsStatus: 'Sijatuma',
-              whatsappStatus: 'Sijatuma',
-              rsvpStatus: 'Bado',
-              rsvpGuestsCount: 0,
-              checkedIn: false,
-              pledgeAmount,
-              paidAmount,
-              pledgeStatus: (() => {
-                if (paidAmount >= pledgeAmount && pledgeAmount > 0) return 'Fully Paid';
-                if (paidAmount > 0) return 'Partially Paid';
-                if (pledgeAmount > 0) return 'Pledged';
-                return 'No Pledge';
-              })()
-            });
-          }
-        }
+      if (parsedItems.length === 0) {
+        alert(isEn 
+          ? "No guest records found in file. Make sure columns have headers like Name, Pledge, Paid." 
+          : "Haikupata mgeni yeyote katika faili. Hakikisha majina na kiasi cha ahadi/kilicholipwa vipo.");
+        return;
       }
-      
+
+      const newGuests: Guest[] = parsedItems.map((item, index) => {
+        const categoryRaw = (item.cardType || item.category || 'SINGLE').toUpperCase();
+        let allowedCategory: 'SINGLE' | 'DOUBLE' | 'FAMILY' | 'VIP' = 'SINGLE';
+        if (['SINGLE', 'DOUBLE', 'FAMILY', 'VIP'].includes(categoryRaw)) {
+          allowedCategory = categoryRaw as any;
+        }
+
+        return {
+          id: 'g-' + Date.now() + '-' + index,
+          eventId: event.id,
+          name: item.name.trim(),
+          phone: item.phone ? item.phone.trim() : '',
+          cardType: allowedCategory,
+          code: 'NW-' + Math.floor(Math.random() * 10000) + '-' + index,
+          smsStatus: 'Sijatuma',
+          whatsappStatus: 'Sijatuma',
+          rsvpStatus: 'Bado',
+          rsvpGuestsCount: allowedCategory === 'DOUBLE' ? 2 : 1,
+          checkedIn: false,
+          category: item.category,
+          tags: item.tags || [],
+          customFields: item.customFields || {},
+          pledgeAmount: item.pledgeAmount || 0,
+          paidAmount: item.paidAmount || 0,
+          pledgeStatus: item.pledgeStatus || 'No Pledge'
+        };
+      });
+
       if (newGuests.length === 0) return;
 
       setIsChunkUploading(true);
@@ -2698,8 +2689,7 @@ export default function ContributionManager({
       const totalToUpload = newGuests.length;
       let currentMerged = [...guests];
       
-      try {
-        let currentProgressVal = 1;
+      let currentProgressVal = 1;
         for (let i = 0; i < totalToUpload; i += BATCH_SIZE) {
           const batch = newGuests.slice(i, i + BATCH_SIZE);
           currentMerged = [...batch, ...currentMerged];
@@ -2759,17 +2749,15 @@ export default function ContributionManager({
         // Trigger local updates
         onUpdateGuests(currentMerged, `Mipakio Mkubwa CSV: Wageni ${totalToUpload} wakaandikishwa michango yao`, true);
 
-      } catch (err: any) {
-        console.error("Batch upload failed:", err);
-        setChunkUploadError(err.message || 'Error occurred during upload');
-      } finally {
-        setIsChunkUploading(false);
-        setChunkUploadProgress(null);
-        setChunkUploadedCount(null);
-        setLastUploadedGuestName('');
-      }
-    };
-    reader.readAsText(file);
+    } catch (err: any) {
+      console.error("Batch upload failed:", err);
+      setChunkUploadError(err.message || 'Error occurred during upload');
+    } finally {
+      setIsChunkUploading(false);
+      setChunkUploadProgress(null);
+      setChunkUploadedCount(null);
+      setLastUploadedGuestName('');
+    }
     
     // Reset file input
     if (e.target) {
@@ -2802,7 +2790,7 @@ export default function ContributionManager({
 
   const downloadReportPDF = async (listName: string, listData: Guest[]) => {
     try {
-      const doc = new jsPDF();
+      const doc = new jsPDF('p', 'mm', 'a4', false);
       const title = `${event.name}: ${listName}`;
       
       const primaryColor: [number, number, number] = [15, 23, 42]; // Slate 900
@@ -2846,7 +2834,6 @@ export default function ContributionManager({
       const tableData = listData.map(g => [
         g.name,
         g.phone || '-',
-        g.cardType || 'SINGLE',
         (g.pledgeAmount || 0).toLocaleString(),
         (g.paidAmount || 0).toLocaleString(),
         ((g.pledgeAmount || 0) - (g.paidAmount || 0)).toLocaleString(),
@@ -2854,26 +2841,33 @@ export default function ContributionManager({
       ]);
 
       const headers = isEn 
-        ? [['Guest Name', 'Phone', 'Category', 'Pledge (TZS)', 'Paid (TZS)', 'Balance (TZS)', 'Status']]
-        : isEn ? [['Guest Name', 'Phone', 'Category', 'Pledged (TZS)', 'Paid (TZS)', 'Balance (TZS)', 'Status']] : [['Jina la Mgeni', 'Simu', 'Kundi', 'Ahadi (TZS)', 'Malipo (TZS)', 'Deni (TZS)', 'Hali']];
+        ? [['Guest Name', 'Phone', 'Pledge (TZS)', 'Paid (TZS)', 'Balance (TZS)', 'Status']]
+        : [['Jina la Mgeni', 'Simu', 'Ahadi (TZS)', 'Malipo (TZS)', 'Deni (TZS)', 'Hali']];
 
       autoTable(doc, {
         head: headers,
         body: tableData,
         startY: 62,
-        theme: 'striped',
+        theme: 'grid',
         headStyles: { 
-          fillColor: primaryColor, 
-          textColor: [255, 255, 255],
+          fillColor: [240, 240, 240], 
+          textColor: [0, 0, 0],
           fontSize: 8,
-          fontStyle: 'bold'
+          fontStyle: 'bold',
+          lineColor: [0, 0, 0],
+          lineWidth: 0.5
         },
         bodyStyles: { 
           fontSize: 8,
-          textColor: [30, 41, 59]
+          textColor: [0, 0, 0],
+          lineColor: [0, 0, 0]
         },
-        alternateRowStyles: {
-          fillColor: [248, 250, 252]
+        styles: {
+          cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 },
+          fontSize: 8,
+          lineColor: [0, 0, 0],
+          lineWidth: 0.5,
+          textColor: [0, 0, 0]
         },
         margin: { top: 62 },
       });
@@ -3631,7 +3625,7 @@ export default function ContributionManager({
                 <Upload className="w-3 h-3" />
                 {isEn ? 'Bulk Upload' : 'Tupia Wengi'}
               </button>
-              <input type="file" id="csv-bulk-upload" accept=".csv" className="hidden" onChange={handleBulkUploadCSV} />
+              <input type="file" id="csv-bulk-upload" accept=".csv,.xlsx,.xls,.txt" className="hidden" onChange={handleBulkUploadCSV} />
 
 
 
@@ -3658,7 +3652,6 @@ export default function ContributionManager({
                   <tr className="border-b border-white/10 bg-white/[0.03] uppercase font-mono text-[10px] text-slate-400 tracking-wider">
                     <th className="py-3.5 px-4 font-bold">{isEn ? 'Name' : 'Jina'}</th>
                     <th className="py-3.5 px-4 font-bold">{isEn ? 'Phone' : 'Simu'}</th>
-                    <th className="py-3.5 px-4 font-bold">{isEn ? 'Category' : 'Kundi'}</th>
                     <th className="py-3.5 px-4 font-bold text-right">{isEn ? 'Pledge' : 'Ahadi'}</th>
                     <th className="py-3.5 px-4 font-bold text-right">{isEn ? 'Paid' : 'Zilizolipwa'}</th>
                     <th className="py-3.5 px-4 font-bold text-right">{isEn ? 'Balance' : 'Salio lilibaki'}</th>
@@ -3669,7 +3662,7 @@ export default function ContributionManager({
                 <tbody className="divide-y divide-white/5">
                   {filteredGuests.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-8 text-center text-slate-500 font-mono">
+                      <td colSpan={7} className="py-8 text-center text-slate-500 font-mono">
                         {isEn ? 'No guests found matching filters.' : 'Hakuna mgeni aliyepatikana kwa vigezo hivi.'}
                       </td>
                     </tr>
@@ -3695,11 +3688,6 @@ export default function ContributionManager({
                             </div>
                           </td>
                           <td className="py-3.5 px-4 font-mono text-slate-400">{g.phone || (isEn ? 'None' : 'Hakuna')}</td>
-                          <td className="py-3.5 px-4">
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase font-mono bg-white/5 border border-white/5 text-slate-300">
-                              {g.cardType || 'SINGLE'}
-                            </span>
-                          </td>
                           <td className="py-3.5 px-4 text-right font-bold font-mono text-amber-400">
                             {pledge > 0 ? `TZS ${pledge.toLocaleString()}` : '—'}
                           </td>

@@ -3,7 +3,9 @@ import {
   Users, Coins, CheckCircle, AlertTriangle, TrendingUp, DollarSign, 
   Layers, Download, Printer, PlusCircle, Activity, Bell, Share2, 
   ExternalLink, Code, ShieldCheck, RefreshCw, Smartphone, Eye, Check, X, Clipboard,
-  FolderOpen, FileText, Upload, Paperclip, Sparkles, Grid, Feather
+  FolderOpen, FileText, Upload, Paperclip, Sparkles, Grid, Feather,
+  Send, MessageSquare, Calendar, Clock, MapPin, Crown, Briefcase, Phone, MessageCircle,
+  CheckSquare, Trash2, Edit3, UserCheck
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { EventDetails, Guest, CommitteeMember, CommitteeActivityLog, CommitteeNotification, ContributionPayment } from '../types';
@@ -13,7 +15,7 @@ import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaCh
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ContributionManager from './ContributionManager';
-import { addPdfWatermarks } from '../utils/pdfWatermark';
+import { addPdfWatermarks, compressElementOrUrlForPdf } from '../utils/pdfWatermark';
 import { ReportWatermark } from './ReportWatermark';
 import { AIChatbotWidget } from './AIChatbotWidget';
 import AISeatingChartManager from './AISeatingChartManager';
@@ -71,7 +73,7 @@ export default function CommitteeDashboard({
   });
 
   // Inner sub-tabs inside Committee Dashboard
-  const [currentSubTab, setCurrentSubTab] = useState<'dashboard' | 'analytics' | 'reports' | 'seating' | 'ai-copywriting' | 'members' | 'activity' | 'public-link' | 'contributions' | 'files'>('dashboard');
+  const [currentSubTab, setCurrentSubTab] = useState<'dashboard' | 'analytics' | 'reports' | 'seating' | 'ai-copywriting' | 'members' | 'reminders' | 'activity' | 'public-link' | 'contributions' | 'files'>('dashboard');
 
   // Event files list
   const [eventFiles, setEventFiles] = useState<{ id: string; name: string; size: string; type: string; category: 'pdf' | 'spreadsheet' | 'document' | 'image' | 'other'; uploadedAt: string; dataUrl?: string }[]>(() => {
@@ -102,14 +104,67 @@ export default function CommitteeDashboard({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
-  // Input states for registering new committee members
+  // Input states for registering new committee members & leaders
   const [memberName, setMemberName] = useState('');
   const [memberPhone, setMemberPhone] = useState('');
   const [memberEmail, setMemberEmail] = useState('');
-  const [memberPosition, setMemberPosition] = useState<'Chairperson' | 'Treasurer' | 'Secretary' | 'Committee Member' | 'Event Owner'>('Committee Member');
+  const [memberPosition, setMemberPosition] = useState<string>('Mjumbe wa Kamati');
+  const [memberSubCommittee, setMemberSubCommittee] = useState<string>('Kamati Kuu ya Uendeshaji');
   const [memberMethod, setMemberMethod] = useState<'SMS' | 'WhatsApp' | 'Email'>('WhatsApp');
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [invitationLinkSent, setInvitationLinkSent] = useState<string | null>(null);
+
+  // Meeting Reminders & WhatsApp/SMS Dispatch states
+  const [meetingTitle, setMeetingTitle] = useState('Kikao cha 3 cha Kamati ya Harusi');
+  const [meetingDate, setMeetingDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    return d.toISOString().split('T')[0];
+  });
+  const [meetingTime, setMeetingTime] = useState('17:00');
+  const [meetingVenue, setMeetingVenue] = useState('Ukumbi wa Mlimani City, Dar es Salaam');
+  const [meetingAgenda, setMeetingAgenda] = useState(
+    '1. Kupitia Taarifa ya Makusanyo ya Mweka Hazina\n2. Kutoa Kadi za Mialiko kwa Wajumbe\n3. Kukamilisha Malipo ya Ukumbi & Mapambo'
+  );
+  const [meetingNotes, setMeetingNotes] = useState('Tafadhali fika na mchango wako au risiti ya Benki.');
+  const [meetingAudience, setMeetingAudience] = useState<'all' | 'leaders' | 'members'>('all');
+  const [reminderToast, setReminderToast] = useState<string | null>(null);
+
+  // Bulk Dispatch All At Once Modal States
+  const [showBulkDispatchModal, setShowBulkDispatchModal] = useState(false);
+  const [sentMemberIds, setSentMemberIds] = useState<Record<string, boolean>>({});
+  const [bulkDispatchActiveIndex, setBulkDispatchActiveIndex] = useState<number>(0);
+
+  // Sent Meeting Reminders History
+  const [meetingHistory, setMeetingHistory] = useState<{
+    id: string;
+    title: string;
+    date: string;
+    time: string;
+    venue: string;
+    agenda: string;
+    sentAt: string;
+    recipientsCount: number;
+  }[]>(() => {
+    const saved = safeLocalStorage.getItem(`kadi_meeting_reminders_${event.id}`);
+    if (saved) return JSON.parse(saved);
+    return [
+      {
+        id: 'm-1',
+        title: 'Kikao cha 2 cha Kamati - Bajeti & Mipango',
+        date: '2026-07-20',
+        time: '16:30',
+        venue: 'Ukumbi wa Serena Hotel, Dar es Salaam',
+        agenda: '1. Kugawa malengo ya makusanyo\n2. Kuchagua Mweka Hazina na Katibu',
+        sentAt: '18/07/2026 10:15',
+        recipientsCount: 8
+      }
+    ];
+  });
+
+  useEffect(() => {
+    safeLocalStorage.setItem(`kadi_meeting_reminders_${event.id}`, JSON.stringify(meetingHistory));
+  }, [meetingHistory, event.id]);
 
   // Treasurer Record Payment panel states
   const [showTreasurerPayModal, setShowTreasurerPayModal] = useState(false);
@@ -286,7 +341,80 @@ export default function CommitteeDashboard({
     fetch('/api/committee/members')
       .then(res => res.json())
       .then(data => {
-        if (Array.isArray(data)) setCommitteeMembers(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setCommitteeMembers(data);
+        } else {
+          // Seed standard default committee leaders and members
+          const defaultLeaders: CommitteeMember[] = [
+            {
+              id: 'c-1',
+              name: 'Mhandisi James Lema',
+              phone: '0754123456',
+              email: 'mwenyekiti@eventcard.co.tz',
+              role: 'Admin',
+              position: 'Mwenyekiti wa Kamati',
+              subCommittee: 'Kamati Kuu ya Uendeshaji',
+              permissionLevel: 'Full Access',
+              token: 'mw123'
+            },
+            {
+              id: 'c-2',
+              name: 'Emmanuel Shija',
+              phone: '0784987654',
+              email: 'katibu@eventcard.co.tz',
+              role: 'Secretary',
+              position: 'Katibu Mkuu',
+              subCommittee: 'Kamati Kuu ya Uendeshaji',
+              permissionLevel: 'Viewer Access',
+              token: 'kt333'
+            },
+            {
+              id: 'c-3',
+              name: 'Salma Khamis',
+              phone: '0712345678',
+              email: 'mwekahazina@eventcard.co.tz',
+              role: 'Treasurer',
+              position: 'Mtunza Hazina / Mweka Hazina',
+              subCommittee: 'Kamati ya Fedha & Bajeti',
+              permissionLevel: 'Treasurer Access',
+              token: 'hz222'
+            },
+            {
+              id: 'c-4',
+              name: 'Dr. Fatma Said',
+              phone: '0765112233',
+              email: 'fatma@eventcard.co.tz',
+              role: 'Gatekeeper',
+              position: 'Mkuu wa Kamati Ndogo',
+              subCommittee: 'Kamati ya Chakula & Vinywaji',
+              permissionLevel: 'Summary Access',
+              token: 'ch444'
+            },
+            {
+              id: 'c-5',
+              name: 'Ally Khalfan',
+              phone: '0688990011',
+              email: 'ally@eventcard.co.tz',
+              role: 'Gatekeeper',
+              position: 'Mkuu wa Kamati Ndogo',
+              subCommittee: 'Kamati ya Mapambo & Ubunifu',
+              permissionLevel: 'Summary Access',
+              token: 'mp555'
+            },
+            {
+              id: 'c-6',
+              name: 'Khalfan Ally',
+              phone: '0755443322',
+              email: 'khalfan@eventcard.co.tz',
+              role: 'Gatekeeper',
+              position: 'Mjumbe wa Kamati',
+              subCommittee: 'Kamati ya Usafiri & Logistiki',
+              permissionLevel: 'Summary Access',
+              token: 'us666'
+            }
+          ];
+          setCommitteeMembers(defaultLeaders);
+        }
       })
       .catch(err => console.error("Failed to fetch committee members:", err));
       
@@ -312,6 +440,173 @@ export default function CommitteeDashboard({
     }, 1000);
     return () => clearInterval(interval);
   }, [onRefresh]);
+
+  // Helper to build formatted Swahili/English text for meeting reminders
+  const buildMeetingReminderText = (recipientName?: string, recipientRole?: string) => {
+    const greeting = recipientName 
+      ? `Ndugu *${recipientName}* (${recipientRole || 'Mwanakamati'}),`
+      : 'Ndugu Wanakamati na Viongozi Wote,';
+
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://eventcard.co.tz';
+
+    return `🔔 *UKUMBUSHO WA KIKAO CHA KAMATI YA SHEREHE* 🔔
+
+${greeting}
+
+Unakumbushwa kuhudhuria *${meetingTitle}* kama ilivyopangwa kwa ajili ya kufanikisha maandalizi ya sherehe ya *${event.name}*.
+
+📅 *Tarehe:* ${meetingDate}
+⏰ *Muda:* ${meetingTime}
+📍 *Mahali:* ${meetingVenue}
+
+📋 *AGENDA KUU ZA KIKAO:*
+${meetingAgenda}
+
+${meetingNotes ? `📝 *Maelezo ya Ziada:* ${meetingNotes}\n` : ''}
+💡 _Tafadhali fika kwa wakati ili kukamilisha taratibu za sherehe kwa ufanisi!_
+
+🔗 *Portal ya Kamati:*
+${origin}/?portal=committee&eventId=${event.id}
+
+---
+_Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
+  };
+
+  const handleDispatchMeetingReminderToGroup = () => {
+    const msg = buildMeetingReminderText();
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(msg);
+    }
+    setReminderToast('Ujumbe wa kikao umenakiliwa na kuandaa WhatsApp!');
+    setTimeout(() => setReminderToast(null), 4000);
+
+    // Record meeting in history
+    const newHistory = {
+      id: 'm-' + Date.now(),
+      title: meetingTitle,
+      date: meetingDate,
+      time: meetingTime,
+      venue: meetingVenue,
+      agenda: meetingAgenda,
+      sentAt: new Date().toLocaleString('sw-TZ'),
+      recipientsCount: committeeMembers.length
+    };
+    setMeetingHistory([newHistory, ...meetingHistory]);
+    addActivityLog('Katibu / Mwenyekiti', `Alituma ukumbusho wa kikao: "${meetingTitle}" kwa wanakamati wote`);
+
+    // Launch WhatsApp web/app
+    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, '_blank');
+  };
+
+  // Helper to filter targeted members based on audience setting
+  const getTargetAudienceMembers = () => {
+    if (meetingAudience === 'leaders') {
+      return committeeMembers.filter(m => 
+        m.position.includes('Mwenyekiti') || 
+        m.position.includes('Chairperson') || 
+        m.position.includes('Katibu') || 
+        m.position.includes('Secretary') || 
+        m.position.includes('Hazina') || 
+        m.position.includes('Treasurer') ||
+        m.position.includes('Mkuu')
+      );
+    }
+    return committeeMembers;
+  };
+
+  // Bulk Dispatch SMS to ALL AT ONCE (Multi-SMS protocol)
+  const handleDispatchSMSAllAtOnce = () => {
+    const targets = getTargetAudienceMembers();
+    if (targets.length === 0) {
+      alert("Hakuna wanakamati waliopatikana kulingana na walengwa waliochaguliwa.");
+      return;
+    }
+
+    const cleanPhones = targets.map(m => {
+      let p = (m.phone || '').replace(/[^0-9]/g, '');
+      if (p.startsWith('0')) p = '255' + p.substring(1);
+      return p;
+    }).filter(Boolean);
+
+    const phonesCommaJoined = cleanPhones.join(',');
+    const msg = buildMeetingReminderText();
+
+    // Copy numbers & message to clipboard
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(`NAMBA ZA WANAKAMATI (${targets.length}):\n${phonesCommaJoined}\n\n${msg}`);
+    }
+
+    setReminderToast(`SMS Composer imefunguliwa na namba zote ${targets.length}!`);
+    setTimeout(() => setReminderToast(null), 4000);
+
+    // Record meeting in history
+    const newHistory = {
+      id: 'm-' + Date.now(),
+      title: `${meetingTitle} (SMS kwa Wote)`,
+      date: meetingDate,
+      time: meetingTime,
+      venue: meetingVenue,
+      agenda: meetingAgenda,
+      sentAt: new Date().toLocaleString('sw-TZ'),
+      recipientsCount: targets.length
+    };
+    setMeetingHistory([newHistory, ...meetingHistory]);
+    addActivityLog('Katibu / Mwenyekiti', `Alituma SMS ya ukumbusho wa kikao kwa Wanakamati ${targets.length} MARA MOJA`);
+
+    // Trigger multi-recipient SMS URL protocol
+    const smsUrl = `sms:${phonesCommaJoined}?body=${encodeURIComponent(msg)}`;
+    window.open(smsUrl, '_blank');
+  };
+
+  // Bulk Dispatch WhatsApp / Web Share to ALL AT ONCE
+  const handleDispatchWhatsAppBroadcastAll = () => {
+    const targets = getTargetAudienceMembers();
+    const msg = buildMeetingReminderText();
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(msg);
+    }
+
+    if (navigator.share) {
+      navigator.share({
+        title: meetingTitle,
+        text: msg,
+      }).catch(() => {});
+    } else {
+      const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+      window.open(waUrl, '_blank');
+    }
+
+    setShowBulkDispatchModal(true);
+    setReminderToast(`Mchakato wa kutuma kwa wote ${targets.length} umeanza!`);
+    setTimeout(() => setReminderToast(null), 4000);
+  };
+
+  const handleSendIndividualWhatsAppReminder = (m: CommitteeMember) => {
+    const msg = buildMeetingReminderText(m.name, m.position);
+    let cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
+    if (cleanPhone.startsWith('0')) cleanPhone = '255' + cleanPhone.substring(1);
+    
+    // Mark as sent in bulk state
+    setSentMemberIds(prev => ({ ...prev, [m.id]: true }));
+
+    const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, '_blank');
+    addActivityLog('Katibu / Mwenyekiti', `Alituma ukumbusho wa kikao cha WhatsApp kwa ${m.name} (${m.position})`);
+  };
+
+  const handleSendIndividualSMSReminder = (m: CommitteeMember) => {
+    const msg = buildMeetingReminderText(m.name, m.position);
+    let cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
+    if (cleanPhone.startsWith('0')) cleanPhone = '255' + cleanPhone.substring(1);
+
+    setSentMemberIds(prev => ({ ...prev, [m.id]: true }));
+
+    const smsUrl = `sms:${cleanPhone}?body=${encodeURIComponent(msg)}`;
+    window.open(smsUrl, '_blank');
+    addActivityLog('Katibu / Mwenyekiti', `Alituma SMS ya ukumbusho wa kikao kwa ${m.name}`);
+  };
 
   // Compute metrics from guest pledges and payments
   const metrics = useMemo(() => {
@@ -378,10 +673,22 @@ export default function CommitteeDashboard({
     if (roleMatch) {
       permission = roleMatch.permissionLevel;
     } else {
-      if (memberPosition === 'Chairperson' || memberPosition === 'Event Owner') permission = 'Full Access';
-      else if (memberPosition === 'Treasurer') permission = 'Treasurer Access';
-      else if (memberPosition === 'Secretary') permission = 'Viewer Access';
+      if (memberPosition.includes('Mwenyekiti') || memberPosition === 'Chairperson' || memberPosition === 'Event Owner') permission = 'Full Access';
+      else if (memberPosition.includes('Hazina') || memberPosition === 'Treasurer') permission = 'Treasurer Access';
+      else if (memberPosition.includes('Katibu') || memberPosition === 'Secretary') permission = 'Viewer Access';
     }
+
+    const newMemberObj: CommitteeMember = {
+      id: 'c-' + Date.now(),
+      name: memberName,
+      phone: memberPhone,
+      email: memberEmail || 'kamati@eventcard.co.tz',
+      role: memberPosition.includes('Hazina') ? 'Treasurer' : memberPosition.includes('Katibu') ? 'Secretary' : 'Admin',
+      position: memberPosition,
+      subCommittee: memberSubCommittee,
+      permissionLevel: permission,
+      token: Math.random().toString(36).substring(2, 8)
+    };
 
     try {
       const resp = await fetch('/api/committee/members', {
@@ -394,6 +701,7 @@ export default function CommitteeDashboard({
           phone: memberPhone,
           email: memberEmail || 'kamati@eventcard.co.tz',
           position: memberPosition,
+          subCommittee: memberSubCommittee,
           permissionLevel: permission
         })
       });
@@ -407,15 +715,31 @@ export default function CommitteeDashboard({
         fetch('/api/committee/members')
           .then(res => res.json())
           .then(list => {
-            if (Array.isArray(list)) setCommitteeMembers(list);
+            if (Array.isArray(list) && list.length > 0) setCommitteeMembers(list);
+            else setCommitteeMembers(prev => [...prev, newMemberObj]);
+          })
+          .catch(() => {
+            setCommitteeMembers(prev => [...prev, newMemberObj]);
           });
+      } else {
+        setCommitteeMembers(prev => [...prev, newMemberObj]);
+        const urlToUse = typeof window !== 'undefined' ? window.location.origin : 'https://eventcard.co.tz';
+        setInvitationLinkSent(`${urlToUse}/?token=${newMemberObj.token}&event=${event.id}`);
       }
     } catch (e) {
       console.error(e);
+      setCommitteeMembers(prev => [...prev, newMemberObj]);
+      const urlToUse = typeof window !== 'undefined' ? window.location.origin : 'https://eventcard.co.tz';
+      setInvitationLinkSent(`${urlToUse}/?token=${newMemberObj.token}&event=${event.id}`);
     }
 
+    // Reset inputs
+    setMemberName('');
+    setMemberPhone('');
+    setMemberEmail('');
+
     // Activity log entry
-    addActivityLog('Event Owner (Admin)', `Alimualika mjumbe mpya: ${memberName} (${memberPosition}) kupitia ${memberMethod}`);
+    addActivityLog('Event Owner (Admin)', `Alimualika mjumbe mpya: ${memberName} (${memberPosition} - ${memberSubCommittee}) kupitia ${memberMethod}`);
 
     // Push notification
     const newNotif: CommitteeNotification = {
@@ -623,27 +947,35 @@ export default function CommitteeDashboard({
   const downloadReportPDF = async () => {
     addActivityLog(`${activeRole} View`, `Amepakua Ripoti ya PDF rasmi: ${selectedReport}`);
     
-    const doc = new jsPDF(selectedReport === 'Summary' ? 'l' : 'p', 'mm', 'a4');
+    const doc = new jsPDF(selectedReport === 'Summary' ? 'l' : 'p', 'mm', 'a4', false);
     const pageWidth = doc.internal.pageSize.getWidth();
 
     const now = new Date();
-    const weekdayEn = now.toLocaleDateString('en-US', { weekday: 'long' });
-    const dateEn = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-    const timeEn = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+    const localeStr = isEn ? 'en-US' : 'sw-TZ';
+    const weekdayName = now.toLocaleDateString(localeStr, { weekday: 'long' });
+    const dateFormatted = now.toLocaleDateString(localeStr, { year: 'numeric', month: 'long', day: 'numeric' });
+    const timeFormatted = now.toLocaleTimeString(localeStr, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
     
     // Custom exact-match layout for "Summary Ledger"
     if (selectedReport === 'Summary') {
-      const printedDateStr = `${weekdayEn}, ${dateEn} at ${timeEn}`;
+      const printedDateStr = isEn 
+        ? `${weekdayName}, ${dateFormatted} at ${timeFormatted}`
+        : `${weekdayName}, ${dateFormatted} saa ${timeFormatted}`;
       
       const logoEl = document.querySelector('img[alt="EventCard Logo"]') as HTMLImageElement;
       let logoHeight = 0;
       let ratio = 1;
-      if (logoEl && logoEl.complete && logoEl.naturalWidth > 0) {
+      if (logoEl && logoEl.complete && (logoEl.naturalWidth > 0 || logoEl.width > 0)) {
         // Preserve aspect ratio
-        ratio = logoEl.naturalWidth / logoEl.naturalHeight;
+        ratio = (logoEl.naturalWidth || logoEl.width || 1) / (logoEl.naturalHeight || logoEl.height || 1);
         logoHeight = 16;
         const targetWidth = logoHeight * ratio;
-        doc.addImage(logoEl, 'PNG', 12, 10.5, targetWidth, logoHeight);
+        try {
+          const compressed = await compressElementOrUrlForPdf(logoEl, 2400, true);
+          doc.addImage(compressed.dataUrl, compressed.format, 12, 10.5, targetWidth, logoHeight, 'SUMMARY_HEADER_LOGO', 'NONE');
+        } catch (e) {
+          doc.addImage(logoEl, 'PNG', 12, 10.5, targetWidth, logoHeight);
+        }
       } else {
         // Event Card Logo mockup fallback
         doc.setFontSize(16);
@@ -671,18 +1003,22 @@ export default function CommitteeDashboard({
       // Printed Date Header right
       doc.setFontSize(7);
       doc.setTextColor(100, 116, 139); // Slate 500
-      doc.text("EXPORTED/PRINTED DATE:", pageWidth - 12, 14.5, { align: 'right' });
+      doc.text(isEn ? "EXPORTED/PRINTED DATE:" : "TAREHE YA KUCHAPISHWA:", pageWidth - 12, 14.5, { align: 'right' });
       doc.setTextColor(30, 41, 59);    // Slate 800
       doc.text(printedDateStr, pageWidth - 12, 18, { align: 'right' });
 
       // Title Heading
       doc.setFontSize(18);
       doc.setTextColor(15, 23, 42);    // Slate 900
-      doc.text("OFFICIAL CONTRIBUTIONS REPORT", 12, 32);
+      doc.text(isEn ? "OFFICIAL CONTRIBUTIONS REPORT" : "RIPOTI RASMI YA MICHANGO", 12, 32);
       
       doc.setFontSize(8.5);
       doc.setTextColor(15, 23, 42);
-      const eventNameTxt = `WEDDING OF ${event.name || "CHRISTIAN & HERIETH"}`.toUpperCase();
+      const rawName = (event.name || "ARNOLD KIMARO").trim();
+      const cleanName = rawName.replace(/^(HARUSI\s+YA\s+|WEDDING\s+OF\s+|SHEREHE\s+YA\s+|MWALIKO\s+WA\s+HARUSI\s+YA\s+|MWALIKO\s+WA\s+)+/i, '').trim();
+      const isWedding = (event as any).type?.toLowerCase().includes('wedding') || (event as any).type?.toLowerCase().includes('harusi') || rawName.toLowerCase().includes('harusi');
+      const eventPrefix = isEn ? "WEDDING OF " : (isWedding ? "HARUSI YA " : "SHEREHE YA ");
+      const eventNameTxt = `${eventPrefix}${cleanName}`.toUpperCase();
       doc.text(eventNameTxt, 12, 38);
       const wName = doc.getTextWidth(eventNameTxt);
       
@@ -691,8 +1027,9 @@ export default function CommitteeDashboard({
       const wDot = doc.getTextWidth("  •  ");
       
       doc.setTextColor(100, 116, 139);
-      doc.text("EVENT DATE: ", 12 + wName + wDot, 38);
-      const wLabel = doc.getTextWidth("EVENT DATE: ");
+      const eventDateLbl = isEn ? "EVENT DATE: " : "TAREHE YA SHEREHE: ";
+      doc.text(eventDateLbl, 12 + wName + wDot, 38);
+      const wLabel = doc.getTextWidth(eventDateLbl);
       
       doc.setTextColor(15, 23, 42);
       doc.text(`${event.date || '2026-09-26'}`, 12 + wName + wDot + wLabel, 38);
@@ -709,10 +1046,10 @@ export default function CommitteeDashboard({
       const cardHeight = 24;
 
       const cards = [
-        { label: "TARGET BUDGET", value: `${fundraisingTarget.toLocaleString()} TZS`, bgColor: [59, 130, 246] },    // Blue 500
-        { label: "TOTAL PLEDGED", value: `${metrics.totalPledgedAmount.toLocaleString()} TZS`, bgColor: [245, 158, 11] }, // Amber 500
-        { label: "CASH COLLECTED", value: `${metrics.totalPaidAmount.toLocaleString()} TZS`, bgColor: [16, 185, 129] },  // Emerald 500
-        { label: "OUTSTANDING BAL", value: `${outstandingBal.toLocaleString()} TZS`, bgColor: [225, 29, 72] }      // Rose 600
+        { label: isEn ? "TARGET BUDGET" : "MALENGO (TARGET)", value: `${fundraisingTarget.toLocaleString()} TZS`, bgColor: [59, 130, 246] },    // Blue 500
+        { label: isEn ? "TOTAL PLEDGED" : "JUMLA YA AHADI", value: `${metrics.totalPledgedAmount.toLocaleString()} TZS`, bgColor: [245, 158, 11] }, // Amber 500
+        { label: isEn ? "CASH COLLECTED" : "FEDHA TASLIMU", value: `${metrics.totalPaidAmount.toLocaleString()} TZS`, bgColor: [16, 185, 129] },  // Emerald 500
+        { label: isEn ? "OUTSTANDING BAL" : "DENI / SALIO", value: `${outstandingBal.toLocaleString()} TZS`, bgColor: [225, 29, 72] }      // Rose 600
       ];
 
       cards.forEach((card, i) => {
@@ -736,7 +1073,7 @@ export default function CommitteeDashboard({
       
       doc.setFontSize(9);
       doc.setTextColor(15, 23, 42);
-      doc.text("GROUP LEVEL SUMMARIES", 15, groupY + 5.5);
+      doc.text(isEn ? "GROUP LEVEL SUMMARIES" : "MUHTASARI WA MAKUNDI / VIKAO", 15, groupY + 5.5);
 
       const groupData = groupSummaries.list.map(data => [
         data.name.toUpperCase(),
@@ -746,7 +1083,7 @@ export default function CommitteeDashboard({
         data.balances.toLocaleString()
       ]);
       groupData.push([
-        'TOTALS',
+        isEn ? 'TOTALS' : 'JUMLA',
         groupSummaries.totals.count,
         groupSummaries.totals.pledged.toLocaleString(),
         groupSummaries.totals.collected.toLocaleString(),
@@ -755,12 +1092,14 @@ export default function CommitteeDashboard({
 
       autoTable(doc, {
         startY: groupY + 10,
-        head: [['CAMPAIGN GROUP', 'COUNT', 'TOTAL PLEDGED', 'COLLECTED CASH', 'BALANCES']],
+        head: [isEn 
+          ? ['CAMPAIGN GROUP', 'COUNT', 'TOTAL PLEDGED', 'COLLECTED CASH', 'BALANCES'] 
+          : ['KUNDI LA MCHANGIAJI', 'IDADI', 'JUMLA YA AHADI', 'KILICHOLIPWA', 'SALIO / DENI']],
         body: groupData,
         theme: 'grid',
-        headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 8.5, fontStyle: 'bold', lineColor: [226, 232, 240], lineWidth: 0.1 },
-        bodyStyles: { textColor: [51, 65, 85], fontSize: 8.5, lineColor: [226, 232, 240] },
-        styles: { cellPadding: 4, halign: 'center' },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8.5, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8.5, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, halign: 'center', lineColor: [0, 0, 0], lineWidth: 0.5 },
         columnStyles: {
           0: { halign: 'left', fontStyle: 'bold' } // Campaign group
         },
@@ -801,50 +1140,61 @@ export default function CommitteeDashboard({
       
       doc.setFontSize(8.5);
       doc.setTextColor(15, 23, 42);
-      doc.text("MASTER GUEST REVENUE DATABASE", 15, tableY + 5.5);
+      doc.text(isEn ? "MASTER GUEST REVENUE DATABASE" : "DAFTARI KUU LA MICHANGO YA WAGENI", 15, tableY + 5.5);
       
       doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139);
-      doc.text(`${guests.length} GUESTS TOTAL`, pageWidth - 15, tableY + 5.5, { align: 'right' });
+      doc.text(isEn ? `${guests.length} GUESTS TOTAL` : `JUMLA YA WAGENI ${guests.length}`, pageWidth - 15, tableY + 5.5, { align: 'right' });
 
       let snCounter = 1;
-      const guestData = masterGuestList.map(g => [
-        snCounter++,
-        g.name.toUpperCase(),
-        g.phone,
-        (g.category || '').toUpperCase(),
-        g.pledge.toLocaleString(),
-        g.paid.toLocaleString(),
-        g.balance.toLocaleString(),
-        (g.clearance || 'PENDING').toUpperCase()
-      ]);
+      const guestData = masterGuestList.map(g => {
+        let clearanceTxt = 'INADAIWA';
+        if (g.clearance === 'Completed') {
+          clearanceTxt = isEn ? 'COMPLETED' : 'IMETIMIA';
+        } else if (g.clearance === 'Partial') {
+          clearanceTxt = isEn ? 'PARTIAL' : 'NUSU';
+        } else {
+          clearanceTxt = isEn ? 'PENDING' : 'INADAIWA';
+        }
+        return [
+          snCounter++,
+          g.name.toUpperCase(),
+          g.phone,
+          g.pledge.toLocaleString(),
+          g.paid.toLocaleString(),
+          g.balance.toLocaleString(),
+          clearanceTxt
+        ];
+      });
 
       autoTable(doc, {
         startY: tableY + 10,
-        head: [['S/N', 'GUEST FULL NAME', 'MOBILE', 'CATEGORY', 'PLEDGE', 'PAID AMT', 'BALANCE', 'CLEARANCE']],
+        head: [isEn 
+          ? ['S/N', 'GUEST FULL NAME', 'MOBILE', 'PLEDGE', 'PAID AMT', 'BALANCE', 'CLEARANCE'] 
+          : ['S/N', 'JINA LA MGENI', 'SIMU', 'AHADI', 'MALIPO', 'DENI', 'HALI']],
         body: guestData,
         theme: 'grid',
-        headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 8, fontStyle: 'bold', lineColor: [226, 232, 240], lineWidth: 0.1 },
-        bodyStyles: { textColor: [51, 65, 85], fontSize: 8, lineColor: [226, 232, 240] },
-        styles: { cellPadding: 4, halign: 'center' },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, halign: 'center', lineColor: [0, 0, 0], lineWidth: 0.5 },
         columnStyles: {
           1: { halign: 'left', fontStyle: 'bold' } // Guest name
         },
         didParseCell: (data) => {
           if (data.section === 'body') {
-            if (data.column.index === 4) { // Pledge
+            if (data.column.index === 3) { // Pledge
               data.cell.styles.fontStyle = 'bold';
             }
-            if (data.column.index === 5) { // Paid Amt
+            if (data.column.index === 4) { // Paid Amt
               data.cell.styles.textColor = [21, 128, 61]; // Green
               data.cell.styles.fontStyle = 'bold';
             }
-            if (data.column.index === 6) { // Balance
+            if (data.column.index === 5) { // Balance
               data.cell.styles.textColor = [220, 38, 38]; // Red
               data.cell.styles.fontStyle = 'bold';
             }
-            if (data.column.index === 7) { // Clearance
-              if (data.cell.raw === 'COMPLETED') {
+            if (data.column.index === 6) { // Clearance
+              if (data.cell.raw === 'COMPLETED' || data.cell.raw === 'IMETIMIA') {
                 data.cell.styles.textColor = [21, 128, 61];
                 data.cell.styles.fontStyle = 'bold';
               } else {
@@ -857,7 +1207,7 @@ export default function CommitteeDashboard({
       });
 
       await addPdfWatermarks(doc);
-      doc.save(`Official_${selectedReport}_Report_${(event.name || "SHEREHE").replace(/\s+/g, '_')}.pdf`);
+      doc.save(`${isEn ? 'Official' : 'Ripoti_Rasmi'}_${selectedReport}_${(event.name || "SHEREHE").replace(/\s+/g, '_')}.pdf`);
       return;
     }
 
@@ -871,17 +1221,16 @@ export default function CommitteeDashboard({
     doc.setFontSize(7.5);
     doc.setTextColor(243, 244, 246);
     doc.setFont("helvetica", "bold");
-    doc.text(`EVENTCARD REPORT ENGINE`, 15, 17);
+    doc.text(isEn ? `EVENTCARD REPORT ENGINE` : `MFUMO WA RIPOTI WA EVENTCARD`, 15, 17);
 
-    const weekdaySw = now.toLocaleDateString('sw-TZ', { weekday: 'long' });
-    const dateFormattedSw = now.toLocaleDateString('sw-TZ', { year: 'numeric', month: 'long', day: 'numeric' });
-    const timeFormattedSw = now.toLocaleTimeString('sw-TZ', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-    const printedDateTime = `${dateFormattedSw} saa ${timeFormattedSw}`;
+    const printedDateTime = isEn 
+      ? `${dateFormatted} at ${timeFormatted}`
+      : `${dateFormatted} saa ${timeFormatted}`;
     
     doc.setFontSize(7);
     doc.setTextColor(148, 163, 184); // Slate-400
     doc.setFont("helvetica", "normal");
-    doc.text(`Imetolewa: ${printedDateTime}`, pageWidthOld - 15, 17, { align: 'right' });
+    doc.text(`${isEn ? 'Exported:' : 'Imetolewa:'} ${printedDateTime}`, pageWidthOld - 15, 17, { align: 'right' });
 
     // Report title inside header box
     let reportTitle = "";
@@ -915,18 +1264,19 @@ export default function CommitteeDashboard({
     doc.setFontSize(10.5);
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
-    doc.text(reportTitle.toUpperCase(), 15, 25);
+    doc.text((isEn ? reportTitle : reportTitleSw).toUpperCase(), 15, 25);
     doc.setFontSize(8);
     doc.setFont("helvetica", "italic");
     doc.setTextColor(251, 191, 36); // Amber
-    doc.text(reportTitleSw, pageWidth - 15, 25, { align: 'right' });
+    doc.text(isEn ? reportTitleSw : reportTitle, pageWidth - 15, 25, { align: 'right' });
 
     // 4. Subtitle Event details
     doc.setFontSize(8.5);
     doc.setTextColor(15, 23, 42);
     doc.setFont("helvetica", "normal");
-    doc.text("Sherehe / Event: ", 10, 36);
-    const wEventLabel = doc.getTextWidth("Sherehe / Event: ");
+    const eventLbl = isEn ? "Event: " : "Sherehe: ";
+    doc.text(eventLbl, 10, 36);
+    const wEventLabel = doc.getTextWidth(eventLbl);
 
     doc.setFont("helvetica", "bold");
     const eventNameUpper = `${event.name.toUpperCase()}`;
@@ -934,7 +1284,7 @@ export default function CommitteeDashboard({
     const wEventName = doc.getTextWidth(eventNameUpper);
 
     doc.setFont("helvetica", "normal");
-    const dateLabel = " • Tarehe: ";
+    const dateLabel = isEn ? " • Date: " : " • Tarehe: ";
     doc.text(dateLabel, 10 + wEventLabel + wEventName, 36);
     const wDateLabel = doc.getTextWidth(dateLabel);
 
@@ -959,9 +1309,9 @@ export default function CommitteeDashboard({
       const cardHeight = 18;
 
       const cards = [
-        { label: "TARGET BUDGET", value: `${fundraisingTarget.toLocaleString()} TZS`, color: [15, 23, 42] },
-        { label: "TOTAL PLEDGED", value: `${metrics.totalPledgedAmount.toLocaleString()} TZS`, color: [15, 23, 42] },
-        { label: "CASH COLLECTED", value: `${metrics.totalPaidAmount.toLocaleString()} TZS`, color: [22, 163, 74] }
+        { label: isEn ? "TARGET BUDGET" : "MALENGO (TARGET)", value: `${fundraisingTarget.toLocaleString()} TZS`, color: [15, 23, 42] },
+        { label: isEn ? "TOTAL PLEDGED" : "JUMLA YA AHADI", value: `${metrics.totalPledgedAmount.toLocaleString()} TZS`, color: [15, 23, 42] },
+        { label: isEn ? "CASH COLLECTED" : "FEDHA TASLIMU", value: `${metrics.totalPaidAmount.toLocaleString()} TZS`, color: [22, 163, 74] }
       ];
 
       cards.forEach((card, i) => {
@@ -987,7 +1337,9 @@ export default function CommitteeDashboard({
       doc.setFontSize(7.5);
       doc.setTextColor(51, 65, 85);
       doc.setFont("helvetica", "bold");
-      doc.text(`JUMLA YA MAWASILIANO YALIYOTUMWA: SMS Zilizotumwa: ${totalSmsSent}  •  WhatsApp Zilizotumwa: ${totalWhatsappSent}`, 13, commY + 4.8);
+      doc.text(isEn 
+        ? `TOTAL MESSAGES DISPATCHED: SMS Sent: ${totalSmsSent}  •  WhatsApp Sent: ${totalWhatsappSent}`
+        : `JUMLA YA MAWASILIANO YALIYOTUMWA: SMS Zilizotumwa: ${totalSmsSent}  •  WhatsApp Zilizotumwa: ${totalWhatsappSent}`, 13, commY + 4.8);
 
       // Group Summaries
       const groupY = 77;
@@ -995,7 +1347,7 @@ export default function CommitteeDashboard({
       doc.rect(10, groupY, pageWidth - 20, 8, 'F');
       doc.setFontSize(9);
       doc.setTextColor(15, 23, 42);
-      doc.text("GROUP LEVEL SUMMARIES", 12, groupY + 5.5);
+      doc.text(isEn ? "GROUP LEVEL SUMMARIES" : "MUHTASARI WA MAKUNDI / VIKAO", 12, groupY + 5.5);
 
       const groupData = groupSummaries.list.map(data => [
         data.name,
@@ -1005,7 +1357,7 @@ export default function CommitteeDashboard({
         data.balances.toLocaleString()
       ]);
       groupData.push([
-        'TOTALS',
+        isEn ? 'TOTALS' : 'JUMLA',
         groupSummaries.totals.count,
         groupSummaries.totals.pledged.toLocaleString(),
         groupSummaries.totals.collected.toLocaleString(),
@@ -1014,11 +1366,14 @@ export default function CommitteeDashboard({
 
       autoTable(doc, {
         startY: groupY + 11,
-        head: [['Campaign Group', 'Count', 'Total Pledged', 'Collected Cash', 'Balances']],
+        head: [isEn 
+          ? ['Campaign Group', 'Count', 'Total Pledged', 'Collected Cash', 'Balances']
+          : ['Kundi la Mchangiaji', 'Idadi', 'Jumla ya Ahadi', 'Kilicholipwa', 'Salio / Deni']],
         body: groupData,
         theme: 'grid',
-        headStyles: { fillColor: [222, 229, 237], textColor: [15, 23, 42], fontSize: 8, fontStyle: 'bold' },
-        styles: { fontSize: 7.5, cellPadding: 3 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         didParseCell: (data) => {
           if (data.section === 'body' && data.row.index === groupData.length - 1) {
             data.cell.styles.fontStyle = 'bold';
@@ -1033,7 +1388,7 @@ export default function CommitteeDashboard({
       doc.rect(10, dbY, pageWidth - 20, 8, 'F');
       doc.setFontSize(9);
       doc.setTextColor(15, 23, 42);
-      doc.text("GUEST REVENUE & CAMPAIGN DISPATCH DATABASE", 12, dbY + 5.5);
+      doc.text(isEn ? "GUEST REVENUE & CAMPAIGN DISPATCH DATABASE" : "DAFTARI KUU LA MICHANGO YA WAGENI NA MAWASILIANO", 12, dbY + 5.5);
 
       const tableData = masterGuestList.map(g => {
         // match category guest record
@@ -1044,7 +1399,6 @@ export default function CommitteeDashboard({
           g.sn,
           g.name,
           g.phone,
-          g.category,
           g.pledge.toLocaleString(),
           g.paid.toLocaleString(),
           g.balance.toLocaleString(),
@@ -1055,19 +1409,22 @@ export default function CommitteeDashboard({
 
       autoTable(doc, {
         startY: dbY + 11,
-        head: [['S/N', 'Full Name', 'Mobile', 'Category', 'Pledge', 'Paid', 'Balance', 'SMS', 'WA']],
+        head: [isEn 
+          ? ['S/N', 'Full Name', 'Mobile', 'Pledge', 'Paid', 'Balance', 'SMS', 'WA']
+          : ['S/N', 'Jina la Mgeni', 'Simu', 'Ahadi', 'Malipo', 'Deni', 'SMS', 'WA']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [222, 229, 237], textColor: [15, 23, 42], fontSize: 8 },
-        styles: { fontSize: 7.5, cellPadding: 3 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           1: { fontStyle: 'bold' },
+          3: { halign: 'right' },
           4: { halign: 'right' },
           5: { halign: 'right' },
-          6: { halign: 'right' },
-          7: { halign: 'center' },
-          8: { halign: 'center' }
+          6: { halign: 'center' },
+          7: { halign: 'center' }
         }
       });
 
@@ -1097,7 +1454,7 @@ export default function CommitteeDashboard({
       doc.rect(10, cardY, cardWidth, cardHeight, 'FD');
       doc.setFontSize(7);
       doc.setTextColor(100, 116, 139);
-      doc.text("JUMLA YA MAKUSANYO YOTE (TOTAL COLLECTED)", 15, cardY + 5);
+      doc.text(isEn ? "TOTAL COLLECTED CASH" : "JUMLA YA MAKUSANYO YOTE", 15, cardY + 5);
       doc.setFontSize(9.5);
       doc.setTextColor(22, 163, 74);
       doc.text(`${metrics.totalPaidAmount.toLocaleString()} TZS`, 15, cardY + 12);
@@ -1106,10 +1463,12 @@ export default function CommitteeDashboard({
       doc.rect(10 + cardWidth + 4, cardY, cardWidth, cardHeight, 'FD');
       doc.setFontSize(7);
       doc.setTextColor(100, 116, 139);
-      doc.text("JUMLA YA UJUMBE ULIOPELEKWA (SMS / WHATSAPP)", 10 + cardWidth + 9, cardY + 5);
+      doc.text(isEn ? "TOTAL MESSAGES DISPATCHED (SMS / WHATSAPP)" : "JUMLA YA UJUMBE ULIOPELEKWA (SMS / WHATSAPP)", 10 + cardWidth + 9, cardY + 5);
       doc.setFontSize(9);
       doc.setTextColor(15, 23, 42);
-      doc.text(`SMS: ${totalSmsSent} zilizotumwa  •  WA: ${totalWhatsappSent} zilizotumwa`, 10 + cardWidth + 9, cardY + 11);
+      doc.text(isEn 
+        ? `SMS: ${totalSmsSent} sent  •  WA: ${totalWhatsappSent} sent`
+        : `SMS: ${totalSmsSent} zilizotumwa  •  WA: ${totalWhatsappSent} zilizotumwa`, 10 + cardWidth + 9, cardY + 11);
 
       const tableData = allPayments.map((itm, idx) => [
         idx + 1,
@@ -1125,7 +1484,7 @@ export default function CommitteeDashboard({
       const totalAmtPayments = allPayments.reduce((sum, item) => sum + Number(item.p.amount), 0);
       tableData.push([
         'T',
-        'JUMLA',
+        isEn ? 'GRAND TOTAL' : 'JUMLA KUU',
         '-',
         totalAmtPayments.toLocaleString(),
         '-',
@@ -1136,11 +1495,12 @@ export default function CommitteeDashboard({
 
       autoTable(doc, {
         startY: cardY + 20,
-        head: [isEn ? ['S/N', 'Payer (Guest Name)', 'Phone', 'Amount (TZS)', 'Date', 'Ref', 'SMS', 'WA'] : ['S/N', 'Mlipaji (Guest Name)', 'Simu', 'Kiasi (TZS)', 'Tarehe', 'Ref', 'SMS', 'WA']],
+        head: [isEn ? ['S/N', 'Payer (Guest Name)', 'Phone', 'Amount (TZS)', 'Date', 'Ref', 'SMS', 'WA'] : ['S/N', 'Mlipaji (Jina la Mgeni)', 'Simu', 'Kiasi (TZS)', 'Tarehe', 'Ref', 'SMS', 'WA']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [222, 229, 237], textColor: [15, 23, 42], fontSize: 8 },
-        styles: { fontSize: 7.5, cellPadding: 3.5 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           3: { halign: 'right', fontStyle: 'bold' },
@@ -1190,8 +1550,9 @@ export default function CommitteeDashboard({
           : ['S/N', 'Mgeni (Guest Name)', 'Simu', 'Ahadi (TZS)', 'Kilicholipwa (TZS)', 'Deni / Salio (TZS)', 'SMS', 'WA']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [222, 229, 237], textColor: [15, 23, 42], fontSize: 8 },
-        styles: { fontSize: 7.5, cellPadding: 3 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           3: { halign: 'right' },
@@ -1236,8 +1597,9 @@ export default function CommitteeDashboard({
           : ['S/N', 'Mchangiaji (Guest Name)', 'Namba ya Simu', 'Kiasi Kilicholipwa (TZS)', 'SMS', 'WA']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [222, 229, 237], textColor: [15, 23, 42], fontSize: 8 },
-        styles: { fontSize: 7.5, cellPadding: 3.5 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           3: { halign: 'right', fontStyle: 'bold', textColor: [22, 163, 74] },
@@ -1253,15 +1615,22 @@ export default function CommitteeDashboard({
       });
 
     } else if (selectedReport === 'Pending') {
-      const tableData = activePledgeList.map((g, idx) => [
-        idx + 1,
-        g.name,
-        g.phone,
-        g.pledgeStatus || 'Pledged',
-        (g.pledgeAmount || 0).toLocaleString(),
-        g.smsCount || (isStatusSent(g.smsStatus) ? 1 : 0),
-        g.whatsappCount || (isStatusSent(g.whatsappStatus) ? 1 : 0)
-      ]);
+      const tableData = activePledgeList.map((g, idx) => {
+        let statusTxt = isEn ? 'Pledged' : 'AHADI';
+        if (g.pledgeStatus === 'Fully Paid') statusTxt = isEn ? 'Fully Paid' : 'LIPA YOTE';
+        else if (g.pledgeStatus === 'Partially Paid') statusTxt = isEn ? 'Partially Paid' : 'NUSU';
+        else if (g.pledgeStatus === 'No Pledge') statusTxt = isEn ? 'No Pledge' : 'HAJAAHIDI';
+
+        return [
+          idx + 1,
+          g.name,
+          g.phone,
+          statusTxt,
+          (g.pledgeAmount || 0).toLocaleString(),
+          g.smsCount || (isStatusSent(g.smsStatus) ? 1 : 0),
+          g.whatsappCount || (isStatusSent(g.whatsappStatus) ? 1 : 0)
+        ];
+      });
 
       const sumPledge = activePledgeList.reduce((sum, g) => sum + (g.pledgeAmount || 0), 0);
       tableData.push([
@@ -1278,11 +1647,12 @@ export default function CommitteeDashboard({
         startY: 44,
         head: [isEn 
           ? ['S/N', 'Guest Name', 'Phone', 'Status', 'Pledge Amount (TZS)', 'SMS', 'WA']
-          : ['S/N', 'Mgeni (Guest Name)', 'Simu', 'Hali', 'Kiasi ya Ahadi (TZS)', 'SMS', 'WA']],
+          : ['S/N', 'Mgeni (Guest Name)', 'Simu', 'Hali', 'Kiasi cha Ahadi (TZS)', 'SMS', 'WA']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [222, 229, 237], textColor: [15, 23, 42], fontSize: 8 },
-        styles: { fontSize: 7.5, cellPadding: 3.5 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           4: { halign: 'right', fontStyle: 'bold' },
@@ -1323,8 +1693,9 @@ export default function CommitteeDashboard({
           : ['S/N', 'Jina la Mgeni', 'Simu ya Mkononi', 'Viungo vya Usajili (Link)', 'SMS', 'WA']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [222, 229, 237], textColor: [15, 23, 42], fontSize: 8 },
-        styles: { fontSize: 7.5, cellPadding: 3.5 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           4: { halign: 'center' },
@@ -1346,7 +1717,7 @@ export default function CommitteeDashboard({
         g.name,
         g.phone || '-',
         g.cardType || 'SINGLE',
-        'SUCCESS SCAN',
+        isEn ? 'SUCCESS SCAN' : 'IMEHAKIKIWA',
         g.smsCount || (isStatusSent(g.smsStatus) ? 1 : 0),
         g.whatsappCount || (isStatusSent(g.whatsappStatus) ? 1 : 0)
       ]);
@@ -1369,8 +1740,9 @@ export default function CommitteeDashboard({
           : ['S/N', 'Muda (Time)', 'Jina la Mgeni', 'Namba ya Simu', 'Aina ya Kadi', 'Hali ya Skani', 'SMS', 'WA']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [222, 229, 237], textColor: [15, 23, 42], fontSize: 8 },
-        styles: { fontSize: 7.5, cellPadding: 3.5 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           1: { fontStyle: 'bold' },
@@ -1408,9 +1780,21 @@ export default function CommitteeDashboard({
       const cardHeight = 16;
 
       const cards = [
-        { label: "WATAKAOFIKA (COMING)", value: `${countComing} Kadi / ${totalPeopleAttending} Watu`, color: [22, 163, 74] },
-        { label: "HAWATAHUDHURIA / LABDA", value: `${countDeclined} Hawaji / ${countMaybe} Labda`, color: [185, 28, 28] },
-        { label: "BADO MAJIBU (PENDING)", value: `${countPending} Wageni`, color: [15, 23, 42] }
+        { 
+          label: isEn ? "COMING" : "WATAKAOFIKA", 
+          value: isEn ? `${countComing} Cards / ${totalPeopleAttending} Guests` : `${countComing} Kadi / ${totalPeopleAttending} Watu`, 
+          color: [22, 163, 74] 
+        },
+        { 
+          label: isEn ? "DECLINED / MAYBE" : "HAWATAHUDHURIA / LABDA", 
+          value: isEn ? `${countDeclined} Declined / ${countMaybe} Maybe` : `${countDeclined} Hawaji / ${countMaybe} Labda`, 
+          color: [185, 28, 28] 
+        },
+        { 
+          label: isEn ? "PENDING RESPONSE" : "BADO MAJIBU", 
+          value: isEn ? `${countPending} Guests` : `${countPending} Wageni`, 
+          color: [15, 23, 42] 
+        }
       ];
 
       cards.forEach((card, i) => {
@@ -1429,16 +1813,23 @@ export default function CommitteeDashboard({
         doc.text(card.value, x + cardWidth / 2, cardY + 11, { align: 'center' });
       });
 
-      const tableData = sortedRSVPGuests.map((g, idx) => [
-        idx + 1,
-        g.name,
-        g.phone || '-',
-        g.cardType || 'SINGLE',
-        g.rsvpStatus || 'Bado',
-        g.rsvpGuestsCount || 1,
-        g.smsCount || (isStatusSent(g.smsStatus) ? 1 : 0),
-        g.whatsappCount || (isStatusSent(g.whatsappStatus) ? 1 : 0)
-      ]);
+      const tableData = sortedRSVPGuests.map((g, idx) => {
+        let rsvpTxt = isEn ? 'Pending' : 'Bado';
+        if (g.rsvpStatus === 'Atahudhuria') rsvpTxt = isEn ? 'Attending' : 'Atahudhuria';
+        else if (g.rsvpStatus === 'Hatahudhuria') rsvpTxt = isEn ? 'Declined' : 'Hatahudhuria';
+        else if (g.rsvpStatus === 'Labda') rsvpTxt = isEn ? 'Maybe' : 'Labda';
+
+        return [
+          idx + 1,
+          g.name,
+          g.phone || '-',
+          g.cardType || 'SINGLE',
+          rsvpTxt,
+          g.rsvpGuestsCount || 1,
+          g.smsCount || (isStatusSent(g.smsStatus) ? 1 : 0),
+          g.whatsappCount || (isStatusSent(g.whatsappStatus) ? 1 : 0)
+        ];
+      });
 
       const sumRSVPPeople = guests.reduce((sum, g) => sum + (g.rsvpStatus === 'Atahudhuria' ? (g.rsvpGuestsCount || 1) : 0), 0);
       tableData.push([
@@ -1459,8 +1850,9 @@ export default function CommitteeDashboard({
           : ['S/N', 'Jina la Mgeni', 'Simu', 'Aina ya Kadi', 'Hali ya RSVP', 'Watu RSVP', 'SMS', 'WA']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [222, 229, 237], textColor: [15, 23, 42], fontSize: 8 },
-        styles: { fontSize: 7.5, cellPadding: 3 },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
         columnStyles: {
           0: { halign: 'center' },
           3: { halign: 'center', fontStyle: 'bold' },
@@ -1476,12 +1868,12 @@ export default function CommitteeDashboard({
             data.cell.styles.textColor = [15, 23, 42];
           } else if (data.section === 'body' && data.column.index === 4) {
             const val = data.cell.text[0];
-            if (val === 'Atahudhuria') {
+            if (val === 'Atahudhuria' || val === 'Attending') {
               data.cell.styles.textColor = [22, 163, 74]; // Green
               data.cell.styles.fontStyle = 'bold';
-            } else if (val === 'Hatahudhuria') {
+            } else if (val === 'Hatahudhuria' || val === 'Declined') {
               data.cell.styles.textColor = [220, 38, 38]; // Red
-            } else if (val === 'Labda') {
+            } else if (val === 'Labda' || val === 'Maybe') {
               data.cell.styles.textColor = [217, 119, 6]; // Amber
             }
           }
@@ -1804,11 +2196,12 @@ export default function CommitteeDashboard({
         <div className="flex items-center gap-2 overflow-x-auto">
           {[
             { id: 'dashboard', label: isEn ? 'Dashboard Summary' : 'Mwanzo wa Kamati', icon: Layers },
+            { id: 'members', label: isEn ? 'Committee Leaders & Members' : 'Viongozi & Wanakamati', icon: Users },
+            { id: 'reminders', label: isEn ? 'Meeting Reminders (SMS/WA)' : 'Kukumbusha Vikao (SMS/WA)', icon: MessageSquare },
             { id: 'seating', label: isEn ? 'Smart AI Seating' : 'Meza & Viti (AI Seating)', icon: Grid },
             { id: 'ai-copywriting', label: isEn ? 'AI Card Copywriting' : 'Uandishi wa Kadi (AI)', icon: Feather },
             { id: 'analytics', label: isEn ? 'Analytics & Trends' : 'Takwimu za Chati', icon: TrendingUp },
             { id: 'reports', label: isEn ? 'Committee Reports' : 'Ripoti za Kamati', icon: Printer },
-            { id: 'members', label: isEn ? 'Manage Committee' : 'Wanakamati wote', icon: Users },
             { id: 'contributions', label: isEn ? 'Contribution Module' : 'Michango & Kadi', icon: Coins },
             { id: 'files', label: isEn ? 'Documents & Files' : 'Nyaraka & Faili', icon: FolderOpen },
             { id: 'activity', label: isEn ? 'Activity Logs' : 'Kihistoria cha Logs', icon: Activity },
@@ -2719,7 +3112,6 @@ export default function CommitteeDashboard({
                             <th className="py-2.5 px-3 border-r border-slate-200 text-center print-border-gray uppercase tracking-wider">{isEn ? 'S/N' : 'Na.'}</th>
                             <th className="py-2.5 px-3 border-r border-slate-200 print-border-gray uppercase tracking-wider">{isEn ? 'Guest Full Name' : 'Jina la Mgeni'}</th>
                             <th className="py-2.5 px-3 border-r border-slate-200 print-border-gray uppercase tracking-wider">{isEn ? 'Mobile' : 'Simu'}</th>
-                            <th className="py-2.5 px-3 border-r border-slate-200 print-border-gray uppercase tracking-wider">{isEn ? 'Category' : 'Kundi'}</th>
                             <th className="py-2.5 px-3 border-r border-slate-200 text-right print-border-gray uppercase tracking-wider">{isEn ? 'Pledge' : 'Ahadi'}</th>
                             <th className="py-2.5 px-3 border-r border-slate-200 text-right print-border-gray uppercase tracking-wider">{isEn ? 'Paid Amt' : 'Imelipwa'}</th>
                             <th className="py-2.5 px-3 border-r border-slate-200 text-right print-border-gray uppercase tracking-wider">{isEn ? 'Balance' : 'Salio'}</th>
@@ -2732,7 +3124,6 @@ export default function CommitteeDashboard({
                               <td className="py-2.5 px-3 border-r border-slate-200 text-center print-border-gray font-mono text-slate-500">{g.sn}</td>
                               <td className="py-2.5 px-3 border-r border-slate-200 font-extrabold text-slate-900 print-border-gray uppercase">{g.name}</td>
                               <td className="py-2.5 px-3 border-r border-slate-200 print-border-gray font-mono">{g.phone}</td>
-                              <td className="py-2.5 px-3 border-r border-slate-200 print-border-gray text-[10px] uppercase font-bold text-slate-600">{g.category}</td>
                               <td className="py-2.5 px-3 border-r border-slate-200 text-right text-slate-900 font-bold print-border-gray font-mono">{g.pledge.toLocaleString()}</td>
                               <td className="py-2.5 px-3 border-r border-slate-200 text-right text-[#16a34a] print-text-green font-bold print-border-gray font-mono">{g.paid.toLocaleString()}</td>
                               <td className="py-2.5 px-3 border-r border-slate-200 text-right text-[#dc2626] print-text-red font-bold print-border-gray font-mono">{g.balance.toLocaleString()}</td>
@@ -2748,23 +3139,33 @@ export default function CommitteeDashboard({
                     </div>
                   </div>
 
-                  {/* Native print button (remains ignored on printed format via CSS) */}
-                  <div className="flex justify-between items-center pt-4 border-t border-slate-100 print:hidden">
+                  {/* Native print & PDF download buttons (remains ignored on printed format via CSS) */}
+                  <div className="flex flex-wrap justify-between items-center gap-2 pt-4 border-t border-slate-100 print:hidden">
                     <button 
                       onClick={() => downloadReportCSV('Muhtasari_Ledger', guests)}
-                      className="p-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-mono text-[10.5px] font-bold flex items-center gap-1.5 transition"
+                      className="p-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-mono text-[10.5px] font-bold flex items-center gap-1.5 transition cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5" />
                       <span>{isEn ? 'Download Excel / CSV' : 'Pakua Excel / CSV'}</span>
                     </button>
                     
-                    <button 
-                      onClick={() => window.print()}
-                      className="flex items-center gap-1.5 bg-slate-900 text-white font-extrabold hover:bg-slate-800 text-[11px] py-2.5 px-4 rounded-xl font-mono uppercase transition cursor-pointer shadow-md"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>{isEn ? 'Direct Browser Print' : 'Chapa Moja kwa Moja'}</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={downloadReportPDF}
+                        className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-[11px] py-2.5 px-4 rounded-xl font-mono uppercase transition cursor-pointer shadow-md"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>{isEn ? 'Download Official PDF' : 'Pakua Ripoti ya PDF'}</span>
+                      </button>
+
+                      <button 
+                        onClick={() => window.print()}
+                        className="flex items-center gap-1.5 bg-slate-900 text-white font-extrabold hover:bg-slate-800 text-[11px] py-2.5 px-4 rounded-xl font-mono uppercase transition cursor-pointer shadow-md"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>{isEn ? 'Direct Browser Print' : 'Chapa Moja kwa Moja'}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -2906,13 +3307,22 @@ export default function CommitteeDashboard({
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <h4 className="font-extrabold text-xs uppercase text-slate-300 font-mono">3. Orodha ya Wenye Balansi Inayodaiwa</h4>
-                  <button 
-                    onClick={() => downloadReportCSV('Orodha_ya_Wenye_Madeni', [...partialPaidList, ...noPaymentPledgeList])}
-                    className="p-1 px-2.5 bg-white/5 hover:bg-white/10 rounded font-mono text-[10px] text-amber-400 flex items-center gap-1"
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>Download CSV</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => downloadReportCSV('Orodha_ya_Wenye_Madeni', [...partialPaidList, ...noPaymentPledgeList])}
+                      className="p-1 px-2.5 bg-white/5 hover:bg-white/10 rounded font-mono text-[10px] text-amber-400 flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Download CSV</span>
+                    </button>
+                    <button 
+                      onClick={downloadReportPDF}
+                      className="p-1 px-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded font-mono text-[10px] flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <FileText className="w-3 h-3" />
+                      <span>Pakua PDF</span>
+                    </button>
+                  </div>
                 </div>
 
                 <table className="w-full text-left border-collapse font-sans text-xs" id="table-outstanding-report">
@@ -2956,13 +3366,22 @@ export default function CommitteeDashboard({
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <h4 className="font-extrabold text-xs uppercase text-slate-300 font-mono">{isEn ? '4. List of Fully Paid Members' : '4. Orodha ya Waliotimiza Ahadi Kikamilifu'}</h4>
-                  <button 
-                    onClick={() => downloadReportCSV('Orodha_ya_Waliolipa_Yote', fullyPaidList)}
-                    className="p-1 px-2.5 bg-white/5 hover:bg-white/10 rounded font-mono text-[10px] text-amber-400 flex items-center gap-1"
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>Download CSV</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => downloadReportCSV('Orodha_ya_Waliolipa_Yote', fullyPaidList)}
+                      className="p-1 px-2.5 bg-white/5 hover:bg-white/10 rounded font-mono text-[10px] text-amber-400 flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Download CSV</span>
+                    </button>
+                    <button 
+                      onClick={downloadReportPDF}
+                      className="p-1 px-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded font-mono text-[10px] flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <FileText className="w-3 h-3" />
+                      <span>Pakua PDF</span>
+                    </button>
+                  </div>
                 </div>
 
                 <table className="w-full text-left border-collapse font-sans text-xs" id="table-fullypaid-report">
@@ -2999,13 +3418,22 @@ export default function CommitteeDashboard({
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <h4 className="font-extrabold text-xs uppercase text-slate-300 font-mono">{isEn ? '5. Master List of All Pledges' : '5. Orodha Kuu ya Ahadi Zote zilizowekwa'}</h4>
-                  <button 
-                    onClick={() => downloadReportCSV('Kumbukumbu_ya_Ahadi_Zote', activePledgeList)}
-                    className="p-1 px-2.5 bg-white/5 hover:bg-white/10 rounded font-mono text-[10px] text-amber-400 flex items-center gap-1"
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>Download CSV</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => downloadReportCSV('Kumbukumbu_ya_Ahadi_Zote', activePledgeList)}
+                      className="p-1 px-2.5 bg-white/5 hover:bg-white/10 rounded font-mono text-[10px] text-amber-400 flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Download CSV</span>
+                    </button>
+                    <button 
+                      onClick={downloadReportPDF}
+                      className="p-1 px-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded font-mono text-[10px] flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <FileText className="w-3 h-3" />
+                      <span>Pakua PDF</span>
+                    </button>
+                  </div>
                 </div>
 
                 <table className="w-full text-left border-collapse font-sans text-xs" id="table-pending-report">
@@ -3089,13 +3517,22 @@ export default function CommitteeDashboard({
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <h4 className="font-extrabold text-xs uppercase text-slate-300 font-mono">6. Orodha ya Wageni ambao Bado Hawajaonyesha Ahadi Yoyote</h4>
-                  <button 
-                    onClick={() => downloadReportCSV('Orodha_Wasioahidi_Bado', unpledgedList)}
-                    className="p-1 px-2.5 bg-white/5 hover:bg-white/10 rounded font-mono text-[10px] text-amber-400 flex items-center gap-1"
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>Download CSV ({unpledgedList.length})</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => downloadReportCSV('Orodha_Wasioahidi_Bado', unpledgedList)}
+                      className="p-1 px-2.5 bg-white/5 hover:bg-white/10 rounded font-mono text-[10px] text-amber-400 flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Download CSV ({unpledgedList.length})</span>
+                    </button>
+                    <button 
+                      onClick={downloadReportPDF}
+                      className="p-1 px-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded font-mono text-[10px] flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <FileText className="w-3 h-3" />
+                      <span>Pakua PDF</span>
+                    </button>
+                  </div>
                 </div>
 
                 <table className="w-full text-left border-collapse font-sans text-xs" id="table-nopledge-report">
@@ -3224,234 +3661,764 @@ export default function CommitteeDashboard({
         </div>
       )}
 
-      {/* SUB-TAB 4: MANAGE COMMITTEE (ADMIN ONLY) - 16.1 */}
+      {/* SUB-TAB 4: MANAGE COMMITTEE LEADERS & MEMBERS */}
       {currentSubTab === 'members' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in" id="panel-committee-setup">
+        <div className="space-y-6 animate-fade-in" id="panel-committee-setup">
           
-          {/* Form to add members */}
-          <div className="lg:col-span-5 backdrop-blur-md bg-white/[0.02] border border-white/10 rounded-3xl p-6 space-y-4">
-            <div className="border-b border-white/5 pb-2">
-              <span className="bg-blue-500/10 border border-blue-500/20 text-blue-450 font-mono text-[9px] px-2.5 py-1 rounded-full uppercase font-bold">
-                {isEn ? "Add New Committee Members" : "Ongeza Wanakamati Wapya"}
-              </span>
-              <h3 className="font-extrabold text-white text-xs uppercase font-mono tracking-wider mt-2">
-                {isEn ? "Invitations Dispatch Center" : "Sajili Mjumbe wa Kamati"}
-              </h3>
-              <p className="text-slate-400 text-[10.5px]">
-                {isEn ? "System dispatches instant access login links to target members:" : "Utatuma kiungo cha ufikiaji na namba ya logins papo kwa hapo kwa mjumbe mpya:"}
+          {/* Header Action Banner */}
+          <div className="backdrop-blur-md bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-white/10 rounded-3xl p-5 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Crown className="w-5 h-5 text-amber-400" />
+                <h3 className="font-extrabold text-white text-base uppercase font-mono tracking-wider">
+                  {isEn ? "Committee Leadership & Roster Management" : "Usimamizi wa Viongozi na Wanakamati wa Sherehe"}
+                </h3>
+              </div>
+              <p className="text-slate-300 text-xs">
+                {isEn 
+                  ? "Configure Mwenyekiti (Chair), Katibu (Secretary), Mtunza Hazina (Treasurer), Sub-committees & send meeting reminders." 
+                  : "Weka Viongozi wote wa Kamati (Mwenyekiti, Katibu, Mtunza Hazina, Wajumbe) na utume ujumbe wa vikao kwa WhatsApp na SMS."}
               </p>
             </div>
 
-            <form onSubmit={handleCreateMember} className="space-y-4 font-sans text-xs">
-              <div className="space-y-1">
-                <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]" htmlFor="member-fullname">{isEn ? "Full Name:" : "Jina Kamili la Mjumbe:"}</label>
-                <input 
-                  id="member-fullname"
-                  type="text" 
-                  value={memberName} 
-                  onChange={(e) => setMemberName(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white focus:outline-none focus:ring-1 focus:ring-amber-500" 
-                  required 
-                  placeholder="e.g. Salama Khamis"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]" htmlFor="member-phone">{isEn ? "Phone Number:" : "Simu ya Mkononi:"}</label>
-                  <input 
-                    id="member-phone"
-                    type="tel" 
-                    value={memberPhone} 
-                    onChange={(e) => setMemberPhone(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono" 
-                    required 
-                    placeholder="e.g. 0712345678"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]" htmlFor="member-email">{isEn ? "Email address:" : "Barua Pepe (Email):"}</label>
-                  <input 
-                    id="member-email"
-                    type="email" 
-                    value={memberEmail} 
-                    onChange={(e) => setMemberEmail(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono" 
-                    placeholder="e.g. salma@gmail.com"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]">{isEn ? "Position & Responsibility:" : "Nafasi kwenye Kamati (Position):"}</label>
-                <div className="grid grid-cols-2 gap-2 font-mono">
-                  {(committeeRoles.length > 0 ? committeeRoles.map(r => ({ val: r.name, label: r.name })) : [
-                    { val: 'Chairperson', label: 'Chairperson' },
-                    { val: 'Treasurer', label: 'Treasurer' },
-                    { val: 'Secretary', label: 'Secretary' },
-                    { val: 'Committee Member', label: 'Committee Member' }
-                  ]).map(pos => (
-                    <button
-                      type="button"
-                      key={pos.val}
-                      onClick={() => setMemberPosition(pos.val as any)}
-                      className={`p-2 border rounded-xl text-left text-[10px] font-bold uppercase transition ${
-                        memberPosition === pos.val
-                          ? 'border-amber-500 bg-amber-500/10 text-amber-300'
-                          : 'border-white/5 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {pos.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]">{isEn ? "Invitation Channel:" : "Njia ya Kutuma Mwaliko:"}</label>
-                <div className="grid grid-cols-3 gap-2 font-mono">
-                  {['SMS', 'WhatsApp', 'Email'].map(ch => (
-                    <button
-                      type="button"
-                      key={ch}
-                      onClick={() => setMemberMethod(ch as any)}
-                      className={`p-2 border rounded-xl text-center text-[10px] font-bold uppercase transition ${
-                        memberMethod === ch
-                          ? 'border-indigo-500 bg-indigo-500/10 text-indigo-300'
-                          : 'border-white/5 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {ch}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-rose-500 text-white font-extrabold text-xs uppercase tracking-widest rounded-xl transition shadow-md hover:brightness-110 cursor-pointer"
-              >
-                {isEn ? "Send Login Link invitation" : "Alika Mjumbe (Tuma Login Link)"}
-              </button>
-            </form>
-
-            {/* Generated demo link simulator visual assistance */}
-            {invitationLinkSent && (
-              <div className="p-4 bg-slate-950 rounded-xl border border-white/5 space-y-2 animate-fade-in text-[11px]">
-                <p className="text-emerald-400 font-bold font-mono">✓ Mjumbe amefanikiwa kualikwa kwenye kamati!</p>
-                <p className="text-slate-450 text-[10.5px]">
-                  Simulated dispatch successful. Invitation login link was copied:
-                </p>
-                <input 
-                  type="text" 
-                  readOnly 
-                  value={invitationLinkSent} 
-                  className="w-full bg-white/5 border border-white/5 p-1 px-2 rounded text-slate-350 text-[10px] font-mono"
-                  onClick={(e) => (e.target as HTMLInputElement).select()}
-                />
-              </div>
-            )}
+            <button
+              onClick={() => setCurrentSubTab('reminders')}
+              className="px-5 py-3 bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg transition flex items-center gap-2 cursor-pointer shrink-0"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>{isEn ? "Send Meeting Reminder" : "Kumbusha Kikao (SMS / WhatsApp)"}</span>
+            </button>
           </div>
 
-          {/* Roster of members - 16.12 */}
-          <div className="lg:col-span-7 backdrop-blur-md bg-white/[0.02] border border-white/10 rounded-3xl p-5 space-y-4">
-            <div className="border-b border-white/5 pb-2">
-              <h4 className="font-extrabold text-white text-xs uppercase font-mono tracking-wider">
-                {isEn ? "Registered Committee Members list" : "Orodha ya Wanakamati waliopo kwenye mfumo"}
-              </h4>
-              <p className="text-slate-450 text-[10.5px]">{isEn ? "Roster of honor with position configurations:" : "Kadi za watendaji wa kamati ya sasa kufuana na mamlaka yao:"}</p>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            {/* Form to add Leaders & Members */}
+            <div className="lg:col-span-5 backdrop-blur-md bg-white/[0.02] border border-white/10 rounded-3xl p-6 space-y-4">
+              <div className="border-b border-white/5 pb-2">
+                <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 font-mono text-[9px] px-2.5 py-1 rounded-full uppercase font-bold">
+                  {isEn ? "Add Leader / Member" : "Sajili Kiongozi / Mjumbe Mpya"}
+                </span>
+                <h4 className="font-extrabold text-white text-xs uppercase font-mono tracking-wider mt-2">
+                  {isEn ? "Register Committee Executive" : "Weka Taarifa za Mwanakamati"}
+                </h4>
+                <p className="text-slate-400 text-[10.5px]">
+                  {isEn 
+                    ? "Specify name, leadership title, phone number and assigned sub-committee:" 
+                    : "Jaza jina, cheo cha uongozi, namba ya simu na kamati ndogo anayohudumu:"}
+                </p>
+              </div>
+
+              <form onSubmit={handleCreateMember} className="space-y-4 font-sans text-xs">
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]" htmlFor="member-fullname">
+                    {isEn ? "Full Name:" : "Jina Kamili la Kiongozi / Mjumbe:"}
+                  </label>
+                  <input 
+                    id="member-fullname"
+                    type="text" 
+                    value={memberName} 
+                    onChange={(e) => setMemberName(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-1 focus:ring-amber-500" 
+                    required 
+                    placeholder="e.g. Mhandisi James Lema"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]" htmlFor="member-phone">
+                      {isEn ? "Phone Number:" : "Simu ya Mkononi:"}
+                    </label>
+                    <input 
+                      id="member-phone"
+                      type="tel" 
+                      value={memberPhone} 
+                      onChange={(e) => setMemberPhone(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono text-xs" 
+                      required 
+                      placeholder="e.g. 0754123456"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]" htmlFor="member-email">
+                      {isEn ? "Email address:" : "Barua Pepe (Email):"}
+                    </label>
+                    <input 
+                      id="member-email"
+                      type="email" 
+                      value={memberEmail} 
+                      onChange={(e) => setMemberEmail(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono text-xs" 
+                      placeholder="e.g. james@gmail.com"
+                    />
+                  </div>
+                </div>
+
+                {/* Leadership Position Selector */}
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]">
+                    {isEn ? "Leadership Role / Title:" : "Cheo cha Uongozi (Role):"}
+                  </label>
+                  <select
+                    value={memberPosition}
+                    onChange={(e) => setMemberPosition(e.target.value)}
+                    className="w-full bg-slate-900 border border-white/10 rounded-xl p-2.5 text-amber-300 font-extrabold text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  >
+                    <option value="Mwenyekiti wa Kamati">👑 Mwenyekiti wa Kamati (Chairperson)</option>
+                    <option value="Makamu Mwenyekiti">🥈 Makamu Mwenyekiti (Vice Chair)</option>
+                    <option value="Katibu Mkuu">📝 Katibu Mkuu (Secretary)</option>
+                    <option value="Makamu Katibu">✍️ Makamu Katibu (Vice Secretary)</option>
+                    <option value="Mtunza Hazina / Mweka Hazina">💰 Mtunza Hazina / Mweka Hazina (Treasurer)</option>
+                    <option value="Mkuu wa Kamati Ndogo">🏆 Mkuu wa Kamati Ndogo (Sub-committee Head)</option>
+                    <option value="Mjumbe wa Kamati">👥 Mjumbe wa Kamati (Committee Member)</option>
+                  </select>
+                </div>
+
+                {/* Sub-committee Category Selector */}
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]">
+                    {isEn ? "Sub-Committee / Department:" : "Kamati Ndogo / Idara:"}
+                  </label>
+                  <select
+                    value={memberSubCommittee}
+                    onChange={(e) => setMemberSubCommittee(e.target.value)}
+                    className="w-full bg-slate-900 border border-white/10 rounded-xl p-2.5 text-indigo-300 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="Kamati Kuu ya Uendeshaji">🏛️ Kamati Kuu ya Uendeshaji</option>
+                    <option value="Kamati ya Fedha & Bajeti">💰 Kamati ya Fedha & Bajeti</option>
+                    <option value="Kamati ya Chakula & Vinywaji">🍲 Kamati ya Chakula & Vinywaji</option>
+                    <option value="Kamati ya Mapambo & Ubunifu">💐 Kamati ya Mapambo & Ubunifu</option>
+                    <option value="Kamati ya Usafiri & Logistiki">🚘 Kamati ya Usafiri & Logistiki</option>
+                    <option value="Kamati ya Burudani & Protokali">🎵 Kamati ya Burudani & Protokali</option>
+                    <option value="Kamati ya Ulinzi & Usalama">🛡️ Kamati ya Ulinzi & Usalama</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]">
+                    {isEn ? "Invitation Channel:" : "Njia ya Kutuma Mwaliko Wa Portal:"}
+                  </label>
+                  <div className="grid grid-cols-3 gap-2 font-mono">
+                    {['WhatsApp', 'SMS', 'Email'].map(ch => (
+                      <button
+                        type="button"
+                        key={ch}
+                        onClick={() => setMemberMethod(ch as any)}
+                        className={`p-2 border rounded-xl text-center text-[10px] font-bold uppercase transition ${
+                          memberMethod === ch
+                            ? 'border-indigo-500 bg-indigo-500/10 text-indigo-300'
+                            : 'border-white/5 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {ch}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 text-white font-extrabold text-xs uppercase tracking-widest rounded-xl transition shadow-lg hover:brightness-110 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Crown className="w-4 h-4" />
+                  <span>{isEn ? "Register & Dispatch Login Access" : "Sajili Kiongozi / Mjumbe na Tuma Portal Link"}</span>
+                </button>
+              </form>
+
+              {/* Generated demo link simulator visual assistance */}
+              {invitationLinkSent && (
+                <div className="p-4 bg-slate-950 rounded-xl border border-white/5 space-y-2 animate-fade-in text-[11px]">
+                  <p className="text-emerald-400 font-bold font-mono">✓ Kiongozi / Mjumbe amesajiliwa kikamilifu!</p>
+                  <p className="text-slate-450 text-[10.5px]">
+                    Kiungo cha ufikiaji cha Portal ya Kamati (Login Token Link):
+                  </p>
+                  <input 
+                    type="text" 
+                    readOnly 
+                    value={invitationLinkSent} 
+                    className="w-full bg-white/5 border border-white/5 p-1 px-2 rounded text-amber-300 text-[10px] font-mono"
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                  />
+                </div>
+              )}
             </div>
 
-            <div className="space-y-3">
-              {committeeMembers.map(m => (
-                <div key={m.id} className="p-4 bg-slate-900/60 rounded-2xl border border-white/5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center font-mono text-slate-400 text-lg uppercase font-bold">
-                      {m.name[0]}
+            {/* Roster of Leaders & Members */}
+            <div className="lg:col-span-7 backdrop-blur-md bg-white/[0.02] border border-white/10 rounded-3xl p-5 space-y-4">
+              <div className="border-b border-white/5 pb-2 flex items-center justify-between">
+                <div>
+                  <h4 className="font-extrabold text-white text-xs uppercase font-mono tracking-wider">
+                    {isEn ? "Registered Committee Roster of Honor" : "Orodha ya Viongozi na Wanakamati Waliopo"}
+                  </h4>
+                  <p className="text-slate-450 text-[10.5px]">
+                    {isEn ? "Full board of executive leadership and sub-committees:" : "Viongozi wakuu (Mwenyekiti, Katibu, Mtunza Hazina) na Wanakamati wote:"}
+                  </p>
+                </div>
+                <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-3 py-1 rounded-full text-xs font-mono font-bold">
+                  {committeeMembers.length} {isEn ? "Members" : "Wanakamati"}
+                </span>
+              </div>
+
+              <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
+                {committeeMembers.map(m => {
+                  const isLeader = m.position.includes('Mwenyekiti') || m.position.includes('Chairperson') || m.position.includes('Katibu') || m.position.includes('Secretary') || m.position.includes('Hazina') || m.position.includes('Treasurer');
+                  
+                  // Badge styling logic
+                  let posBg = "bg-slate-800/80 border-slate-700 text-slate-300";
+                  if (m.position.includes('Mwenyekiti') || m.position === 'Chairperson') {
+                    posBg = "bg-amber-500/10 border-amber-500/30 text-amber-300";
+                  } else if (m.position.includes('Katibu') || m.position === 'Secretary') {
+                    posBg = "bg-blue-500/10 border-blue-500/30 text-blue-300";
+                  } else if (m.position.includes('Hazina') || m.position === 'Treasurer') {
+                    posBg = "bg-emerald-500/10 border-emerald-500/30 text-emerald-300";
+                  } else if (m.position.includes('Mkuu')) {
+                    posBg = "bg-purple-500/10 border-purple-500/30 text-purple-300";
+                  }
+
+                  let cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
+                  if (cleanPhone.startsWith('0')) cleanPhone = '255' + cleanPhone.substring(1);
+
+                  return (
+                    <div 
+                      key={m.id} 
+                      className={`p-4 rounded-2xl border transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs ${
+                        isLeader 
+                          ? 'bg-slate-900/80 border-amber-500/20 shadow-sm' 
+                          : 'bg-slate-900/40 border-white/5 hover:border-white/10'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-mono text-base font-black shrink-0 border ${
+                          isLeader ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-white/5 border-white/10 text-slate-300'
+                        }`}>
+                          {m.position.includes('Mwenyekiti') ? '👑' : m.position.includes('Katibu') ? '📝' : m.position.includes('Hazina') ? '💰' : m.name[0]}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-black text-white uppercase text-xs tracking-wide">{m.name}</p>
+                            <span className={`px-2 py-0.5 rounded-md text-[9px] uppercase font-bold font-mono border ${posBg}`}>
+                              {m.position}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[10.5px] text-slate-400 font-mono mt-1 flex-wrap">
+                            <span className="text-amber-400/90 font-bold">📞 {m.phone}</span>
+                            {m.subCommittee && (
+                              <span className="bg-white/5 px-2 py-0.5 rounded text-[9.5px] text-indigo-300 border border-white/5">
+                                🏛️ {m.subCommittee}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quick Communication Actions for each Leader / Member */}
+                      <div className="flex items-center gap-2 self-end sm:self-center shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5 w-full sm:w-auto justify-end">
+                        <a
+                          href={`https://wa.me/${cleanPhone}?text=${encodeURIComponent(`Hujambo ${m.name} (${m.position}), Vipi maandalizi ya sherehe ya ${event.name}?`)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-[10px] font-bold uppercase transition flex items-center gap-1"
+                          title="Tuma Ujumbe wa WhatsApp"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">WhatsApp</span>
+                        </a>
+
+                        <a
+                          href={`sms:${cleanPhone}`}
+                          className="p-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 rounded-xl text-[10px] font-bold uppercase transition flex items-center gap-1"
+                          title="Tuma SMS"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">SMS</span>
+                        </a>
+
+                        <button
+                          onClick={() => {
+                            setMeetingTitle(`Kikao cha Kamati: ${m.position}`);
+                            setCurrentSubTab('reminders');
+                          }}
+                          className="p-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 rounded-xl text-[10px] font-bold uppercase transition flex items-center gap-1 cursor-pointer"
+                          title="Kumbusha Kikao"
+                        >
+                          <Bell className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Kikao</span>
+                        </button>
+
+                        {activeRole === 'Event Owner' && (
+                          <button
+                            onClick={() => {
+                              fetch(`/api/committee/members/${m.id}`, { method: 'DELETE' })
+                                .then(() => fetch('/api/committee/members'))
+                                .then(res => res.json())
+                                .then(list => {
+                                  if (Array.isArray(list)) setCommitteeMembers(list);
+                                  else setCommitteeMembers(prev => prev.filter(x => x.id !== m.id));
+                                })
+                                .catch(() => {
+                                  setCommitteeMembers(prev => prev.filter(x => x.id !== m.id));
+                                });
+                            }}
+                            className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-xl border border-red-500/20 text-[10px] font-bold transition cursor-pointer"
+                            title="Ondoa kwenye kamati"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-extrabold text-white uppercase text-[12px]">{m.name}</p>
-                      <p className="text-[10px] text-slate-450 font-mono mt-0.5">{m.phone} • <span className="text-slate-350">{m.email}</span></p>
+                  );
+                })}
+              </div>
+
+              {/* Committee Portal Access PIN Info */}
+              {activeRole === 'Event Owner' && (
+                <div className="mt-6 pt-5 border-t border-white/5 space-y-3">
+                  <div className="flex items-center gap-2 text-amber-400">
+                    <ShieldCheck className="w-4 h-4 shrink-0" />
+                    <h4 className="font-extrabold uppercase font-mono tracking-wider text-xs">
+                      {isEn ? "Access PINs for Leaders" : "PIN za Kuingia Kwenye Portal kwa Cheo"}
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[10px]">
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-xl text-center">
+                      <p className="text-slate-400 text-[9px]">Mweka Hazina</p>
+                      <p className="text-emerald-400 font-bold text-xs mt-0.5">PIN: 2222</p>
+                    </div>
+                    <div className="bg-blue-500/10 border border-blue-500/20 p-2 rounded-xl text-center">
+                      <p className="text-slate-400 text-[9px]">Katibu Mkuu</p>
+                      <p className="text-blue-400 font-bold text-xs mt-0.5">PIN: 3333</p>
+                    </div>
+                    <div className="bg-indigo-500/10 border border-indigo-500/20 p-2 rounded-xl text-center">
+                      <p className="text-slate-400 text-[9px]">Wanakamati</p>
+                      <p className="text-indigo-400 font-bold text-xs mt-0.5">PIN: 4444</p>
+                    </div>
+                    <div className="bg-rose-500/10 border border-rose-500/20 p-2 rounded-xl text-center">
+                      <p className="text-slate-400 text-[9px]">Mwenyekiti/Admin</p>
+                      <p className="text-rose-400 font-bold text-xs mt-0.5">PIN: 1234</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB: MEETING REMINDERS & WHATSAPP / SMS DISPATCH */}
+      {currentSubTab === 'reminders' && (
+        <div className="space-y-6 animate-fade-in" id="panel-committee-reminders">
+          
+          {/* Header Banner */}
+          <div className="backdrop-blur-md bg-gradient-to-r from-emerald-950 via-slate-900 to-indigo-950 border border-emerald-500/30 rounded-3xl p-6 space-y-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <Bell className="w-6 h-6 animate-bounce" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="bg-emerald-500/20 text-emerald-300 font-mono text-[9.5px] px-2.5 py-0.5 rounded-full font-bold uppercase border border-emerald-500/30">
+                      WhatsApp & SMS Dispatch Center
+                    </span>
+                  </div>
+                  <h3 className="font-black text-white text-base uppercase font-mono tracking-wider mt-1">
+                    {isEn ? "Committee Meeting Reminders Dispatcher" : "Kituo cha Kutuma Vikao na Ukumbusho wa Kamati"}
+                  </h3>
+                </div>
+              </div>
+
+              {/* Bulk Dispatch Quick Actions */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={handleDispatchSMSAllAtOnce}
+                  className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>{isEn ? "SMS All At Once" : "Tuma SMS Kwa Wote"}</span>
+                </button>
+
+                <button
+                  onClick={handleDispatchWhatsAppBroadcastAll}
+                  className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  <span>{isEn ? "WhatsApp All At Once" : "Tuma WhatsApp Kwa Wote"}</span>
+                </button>
+
+                {/* Toast banner when copied */}
+                {reminderToast && (
+                  <div className="px-3 py-1.5 bg-emerald-500 text-slate-950 font-black text-xs rounded-xl shadow-xl animate-fade-in flex items-center gap-1.5">
+                    <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{reminderToast}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Presets for Meeting Reminders */}
+            <div className="flex items-center gap-2 overflow-x-auto pt-1 font-mono text-xs">
+              <span className="text-slate-400 font-bold text-[10px] uppercase shrink-0">Presets:</span>
+              <button
+                onClick={() => {
+                  setMeetingTitle('Kikao cha 1 cha Kamati: Ufunguzi & Mipango');
+                  setMeetingAgenda('1. Kufahamiana na kuchagua Mweka Hazina\n2. Kupitia Bajeti ya Sherehe\n3. Kugawa Malengo ya Makusanyo');
+                }}
+                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-amber-300 rounded-xl shrink-0 font-bold text-[11px] transition cursor-pointer"
+              >
+                📌 Kikao 1: Ufunguzi & Bajeti
+              </button>
+              <button
+                onClick={() => {
+                  setMeetingTitle('Kikao cha 2 cha Kamati: Tathmini ya Makusanyo');
+                  setMeetingAgenda('1. Kupitia Makusanyo ya Mweka Hazina\n2. Kadi za Mialiko kwa Wajumbe\n3. Malipo ya Uhakika ya Ukumbi');
+                }}
+                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-emerald-300 rounded-xl shrink-0 font-bold text-[11px] transition cursor-pointer"
+              >
+                📌 Kikao 2: Makusanyo & Kadi
+              </button>
+              <button
+                onClick={() => {
+                  setMeetingTitle('Kikao cha Dharura: Mapambo, Ukumbi & Chakula');
+                  setMeetingAgenda('1. Kukamilisha Malipo ya Service Providers\n2. Orodha ya Wageni wa VVIP\n3. Utaratibu wa Usafiri na Mziki');
+                }}
+                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-rose-300 rounded-xl shrink-0 font-bold text-[11px] transition cursor-pointer"
+              >
+                📌 Kikao cha Dharura
+              </button>
+              <button
+                onClick={() => {
+                  setMeetingTitle('Kikao cha Mwisho cha Kamati: Tathmini ya Sherehe');
+                  setMeetingAgenda('1. Kukamilisha Malipo Yote Yaliyosalia\n2. Kutoa Ahsante na Ripoti ya Mwisho ya Fedha\n3. Kukabidhi Kumbukumbu');
+                }}
+                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-indigo-300 rounded-xl shrink-0 font-bold text-[11px] transition cursor-pointer"
+              >
+                📌 Kikao cha Mwisho / Tathmini
+              </button>
+            </div>
+          </div>
+
+          {/* Form and Preview Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            {/* Left Column: Meeting Form Inputs */}
+            <div className="lg:col-span-6 backdrop-blur-md bg-white/[0.02] border border-white/10 rounded-3xl p-6 space-y-4">
+              <div className="border-b border-white/5 pb-2">
+                <h4 className="font-extrabold text-white text-xs uppercase font-mono tracking-wider flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-400" />
+                  <span>{isEn ? "Compose Meeting Reminder" : "Andaa Taarifa ya Kikao Cha Kamati"}</span>
+                </h4>
+              </div>
+
+              <div className="space-y-4 text-xs font-sans">
+                
+                {/* Meeting Title */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]">
+                    {isEn ? "Meeting Title / Subject:" : "Kichwa / Aina ya Kikao:"}
+                  </label>
+                  <input
+                    type="text"
+                    value={meetingTitle}
+                    onChange={(e) => setMeetingTitle(e.target.value)}
+                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-white font-bold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    placeholder="e.g. Kikao cha 3 cha Kamati ya Harusi"
+                  />
+                </div>
+
+                {/* Date and Time */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]">
+                      {isEn ? "Meeting Date:" : "Tarehe ya Kikao:"}
+                    </label>
+                    <input
+                      type="date"
+                      value={meetingDate}
+                      onChange={(e) => setMeetingDate(e.target.value)}
+                      className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-amber-300 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]">
+                      {isEn ? "Meeting Time:" : "Muda wa Kikao:"}
+                    </label>
+                    <input
+                      type="text"
+                      value={meetingTime}
+                      onChange={(e) => setMeetingTime(e.target.value)}
+                      className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-emerald-400 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      placeholder="e.g. Saa 11:00 Jioni / 17:00"
+                    />
+                  </div>
+                </div>
+
+                {/* Venue */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]">
+                    {isEn ? "Venue / Location / Zoom Link:" : "Mahali / Ukumbi wa Kikao:"}
+                  </label>
+                  <input
+                    type="text"
+                    value={meetingVenue}
+                    onChange={(e) => setMeetingVenue(e.target.value)}
+                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    placeholder="e.g. Ukumbi wa Mlimani City, Dar es Salaam"
+                  />
+                </div>
+
+                {/* Agendas */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]">
+                    {isEn ? "Main Agendas:" : "Agenda Kuu za Kikao (Kila mstari agenda moja):"}
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={meetingAgenda}
+                    onChange={(e) => setMeetingAgenda(e.target.value)}
+                    className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-slate-200 font-sans focus:outline-none focus:ring-1 focus:ring-emerald-500 text-xs leading-relaxed"
+                  />
+                </div>
+
+                {/* Notes */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]">
+                    {isEn ? "Special Instructions / Notes:" : "Maelezo ya Ziada / Maelekezo kwa Wajumbe:"}
+                  </label>
+                  <input
+                    type="text"
+                    value={meetingNotes}
+                    onChange={(e) => setMeetingNotes(e.target.value)}
+                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2 text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-xs"
+                    placeholder="e.g. Tafadhali fika na mchango wako au risiti ya benki."
+                  />
+                </div>
+
+                {/* Audience Selection */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-300 block uppercase font-mono text-[9.5px]">
+                    {isEn ? "Target Recipients:" : "Walengwa wa Ujumbe Huu:"}
+                  </label>
+                  <div className="grid grid-cols-3 gap-2 font-mono text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setMeetingAudience('all')}
+                      className={`p-2.5 rounded-xl border font-bold uppercase transition ${
+                        meetingAudience === 'all'
+                          ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300'
+                          : 'border-white/5 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      👥 Wanakamati Wote ({committeeMembers.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMeetingAudience('leaders')}
+                      className={`p-2.5 rounded-xl border font-bold uppercase transition ${
+                        meetingAudience === 'leaders'
+                          ? 'border-amber-500 bg-amber-500/20 text-amber-300'
+                          : 'border-white/5 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      👑 Viongozi Wakuu Tu
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMeetingAudience('members')}
+                      className={`p-2.5 rounded-xl border font-bold uppercase transition ${
+                        meetingAudience === 'members'
+                          ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
+                          : 'border-white/5 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      💬 Mjumbe Mmoja Mmoja
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Right Column: Live Message Preview & Direct WhatsApp Dispatch */}
+            <div className="lg:col-span-6 space-y-4">
+              
+              {/* WhatsApp Message Preview Card */}
+              <div className="backdrop-blur-md bg-slate-950 border border-emerald-500/20 rounded-3xl p-5 space-y-3">
+                <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <h4 className="font-extrabold text-white text-xs uppercase font-mono tracking-wider">
+                      {isEn ? "WhatsApp / SMS Live Message Preview" : "Mwonekano wa Ujumbe Utakaotumwa (Preview)"}
+                    </h4>
+                  </div>
+                  <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                    Ready to Dispatch
+                  </span>
+                </div>
+
+                <div className="bg-[#0b141a] border border-white/10 rounded-2xl p-4 text-slate-200 font-sans text-xs leading-relaxed font-mono whitespace-pre-wrap select-all max-h-[320px] overflow-y-auto">
+                  {buildMeetingReminderText()}
+                </div>
+
+                {/* Main Dispatch Actions - BULK & GROUP OPTIONS */}
+                <div className="space-y-3 pt-2">
+                  
+                  {/* HERO CTA BUTTON: TUMA KWA WOTE MARA MOJA */}
+                  <div className="p-3 bg-gradient-to-r from-emerald-950 via-slate-900 to-indigo-950 border border-emerald-500/40 rounded-2xl space-y-2">
+                    <p className="text-[10px] uppercase font-mono font-bold text-amber-400 flex items-center gap-1">
+                      <span>⚡ UPAO WA HARAKA:</span>
+                      <span>KUTUMA KWA WANAKAMATI WOTE MARA MOJA ({getTargetAudienceMembers().length})</span>
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {/* Bulk SMS to all at once */}
+                      <button
+                        onClick={handleDispatchSMSAllAtOnce}
+                        className="py-3 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-[11px] uppercase tracking-wider rounded-xl shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
+                        title="Tuma SMS kwa Wanakamati Wote Mara Moja"
+                      >
+                        <MessageSquare className="w-4 h-4 text-blue-200" />
+                        <span>🚀 Tuma SMS Kwa Wote ({getTargetAudienceMembers().length})</span>
+                      </button>
+
+                      {/* Bulk WhatsApp / Broadcast Modal */}
+                      <button
+                        onClick={handleDispatchWhatsAppBroadcastAll}
+                        className="py-3 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-[11px] uppercase tracking-wider rounded-xl shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
+                        title="Fungua Kituo cha Kutuma WhatsApp kwa Wote"
+                      >
+                        <Phone className="w-4 h-4 text-emerald-200" />
+                        <span>💬 Tuma WhatsApp Kwa Wote</span>
+                      </button>
                     </div>
                   </div>
 
-                  <div className="text-right flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-1">
-                    <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2.5 py-1 rounded-lg text-[9.5px] uppercase font-bold font-mono">
-                      {m.position}
-                    </span>
-                    <span className="text-[9px] text-slate-500 font-mono uppercase">{m.permissionLevel}</span>
-                  </div>
-                  {activeRole === 'Event Owner' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      onClick={handleDispatchMeetingReminderToGroup}
+                      className="py-3 px-3 bg-white/10 hover:bg-white/15 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 cursor-pointer border border-white/10"
+                    >
+                      <Send className="w-4 h-4 text-emerald-300" />
+                      <span>{isEn ? "Send to WhatsApp Group" : "Tuma WhatsApp Group"}</span>
+                    </button>
+
                     <button
                       onClick={() => {
-                        fetch(`/api/committee/members/${m.id}`, { method: 'DELETE' })
-                          .then(() => fetch('/api/committee/members'))
-                          .then(res => res.json())
-                          .then(list => {
-                            if (Array.isArray(list)) setCommitteeMembers(list);
-                          });
+                        const msg = buildMeetingReminderText();
+                        if (navigator.clipboard) {
+                          navigator.clipboard.writeText(msg);
+                        }
+                        setReminderToast('Ujumbe wote umenakiliwa kwenye clipboard!');
+                        setTimeout(() => setReminderToast(null), 3000);
                       }}
-                      className="mt-2 sm:mt-0 px-2 py-1 bg-red-500/10 text-red-500 rounded border border-red-500/20 hover:bg-red-500/20 text-[10px] font-bold uppercase transition"
+                      className="py-3 px-3 bg-white/5 hover:bg-white/10 active:scale-95 border border-white/10 text-slate-300 font-extrabold text-xs uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 cursor-pointer"
                     >
-                      {isEn ? 'Remove' : 'Ondoa'}
+                      <Clipboard className="w-4 h-4 text-amber-400" />
+                      <span>{isEn ? "Copy Message Text" : "Nakili Ujumbe Wote"}</span>
                     </button>
-                  )}
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Individual Leader / Member Quick WhatsApp Buttons */}
+              <div className="backdrop-blur-md bg-white/[0.02] border border-white/10 rounded-3xl p-5 space-y-3">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <h4 className="font-extrabold text-white text-xs uppercase font-mono tracking-wider flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{isEn ? "Send WhatsApp Directly to Each Leader" : "Tuma WhatsApp kwa Kila Kiongozi / Mjumbe"}</span>
+                  </h4>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {committeeMembers.length} {isEn ? "Recipients" : "Walengwa"}
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                  {committeeMembers.map(m => (
+                    <div 
+                      key={m.id}
+                      className="p-2.5 bg-slate-900/60 rounded-xl border border-white/5 flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div>
+                        <p className="font-bold text-white text-[11px] uppercase">{m.name}</p>
+                        <p className="text-[9.5px] text-amber-400 font-mono">{m.position} • {m.phone}</p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleSendIndividualWhatsAppReminder(m)}
+                          className="px-2.5 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-lg text-[10px] font-bold uppercase transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <Phone className="w-3 h-3" />
+                          <span>WhatsApp</span>
+                        </button>
+                        <button
+                          onClick={() => handleSendIndividualSMSReminder(m)}
+                          className="px-2 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 rounded-lg text-[10px] font-bold uppercase transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          <span>SMS</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* Past Meeting Notices History */}
+          <div className="backdrop-blur-md bg-white/[0.02] border border-white/10 rounded-3xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-white/5 pb-2">
+              <h4 className="font-extrabold text-white text-xs uppercase font-mono tracking-wider flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-400" />
+                <span>{isEn ? "Meeting Reminders History Log" : "Kumbukumbu na Historia ya Vikao Vilivyotangazwa"}</span>
+              </h4>
+              <span className="text-slate-400 text-[10px] font-mono">
+                {meetingHistory.length} {isEn ? "Notices Logged" : "Vikao"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {meetingHistory.map((item) => (
+                <div key={item.id} className="p-4 bg-slate-900/80 rounded-2xl border border-white/5 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      📅 {item.date} • ⏰ {item.time}
+                    </span>
+                    <span className="text-[9.5px] text-slate-500 font-mono">Imetumwa: {item.sentAt}</span>
+                  </div>
+
+                  <h5 className="font-black text-amber-300 uppercase text-xs">{item.title}</h5>
+                  <p className="text-slate-300 text-[11px]">📍 {item.venue}</p>
+
+                  <div className="p-2.5 bg-slate-950 rounded-xl text-[10px] text-slate-400 font-mono line-clamp-2 border border-white/5">
+                    {item.agenda}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-slate-400 font-mono">👥 Wanakamati {item.recipientsCount}</span>
+                    <button
+                      onClick={() => {
+                        setMeetingTitle(item.title);
+                        setMeetingDate(item.date);
+                        setMeetingTime(item.time);
+                        setMeetingVenue(item.venue);
+                        setMeetingAgenda(item.agenda);
+                        setReminderToast('Impakuliwa kwenye kihariri! Unaweza kutuma tena sasa.');
+                        setTimeout(() => setReminderToast(null), 3000);
+                      }}
+                      className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-[9.5px] font-bold uppercase transition cursor-pointer"
+                    >
+                      Rudia Kutuma
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
-
-            {activeRole === 'Event Owner' && (
-              <div className="mt-8 pt-6 border-t border-white/5 space-y-4">
-                <div className="flex items-center gap-2 text-rose-450 border-b border-rose-500/10 pb-2">
-                  <Share2 className="w-4 h-4 shrink-0" />
-                  <h4 className="font-extrabold uppercase font-mono tracking-wider text-xs">
-                    {isEn ? "Share Dashboard Access (PIN Locks)" : "Shiriki Viungo kwa Wajumbe Nakala"}
-                  </h4>
-                </div>
-                <p className="text-[10.5px] text-slate-400">
-                  {isEn 
-                    ? "Share the main dashboard link and their respective role PIN codes for encrypted access. Each role has specific permissions configured." 
-                    : "Watumie wajumbe link kuu ya kamati kisha uwape PIN zao halisi kulingana na cheo chao katika kamati. Kila mjumbe ana ruhusa zinazoendana na cheo chake."}
-                </p>
-                <div className="bg-slate-950 p-4 rounded-xl border border-white/5 space-y-3 font-mono text-[10px]">
-                  <p className="text-white flex flex-wrap items-center gap-1.5 leading-relaxed">
-                    <strong>URL MAALUM (Link):</strong> 
-                    <span className="text-amber-400 select-all underline decoration-amber-500/30 underline-offset-4 font-bold">{window.location.origin}/?portal=committee&eventId={event.id}</span>
-                  </p>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-                    <div className="flex justify-between items-center bg-white/5 p-2.5 px-3 rounded text-slate-350">
-                      <span>Mweka Hazina (Treasurer)</span>
-                      <span className="text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded tracking-widest">PIN: 2222</span>
-                    </div>
-                    <div className="flex justify-between items-center bg-white/5 p-2.5 px-3 rounded text-slate-350">
-                      <span>Katibu (Secretary)</span>
-                      <span className="text-blue-400 font-bold bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded tracking-widest">PIN: 3333</span>
-                    </div>
-                    <div className="flex justify-between items-center bg-white/5 p-2.5 px-3 rounded text-slate-350">
-                      <span>Mjumbe (Member)</span>
-                      <span className="text-indigo-400 font-bold bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded tracking-widest">PIN: 4444</span>
-                    </div>
-                    <div className="flex justify-between items-center bg-rose-500/5 border border-rose-500/10 p-2.5 px-3 rounded text-slate-350">
-                      <span>Mwenye Shughuli (Admin)</span>
-                      <span className="text-rose-400 font-bold bg-rose-500/20 border border-rose-500/30 px-2 py-0.5 rounded tracking-widest">PIN: 1234</span>
-                    </div>
-                  </div>
-                  
-                  <button 
-                    onClick={(e) => {
-                      const msg = `Ahlan! Karibu kwenye Portal ya Kamati ya sherehe yetu.\n\nBofya link hii kuingia: ${window.location.origin}/?portal=committee&eventId=${event.id}\n\nPIN ya Mweka Hazina: 2222\nPIN ya Katibu: 3333\nPIN ya Mjumbe wa kawaida: 4444\n\nTafadhali tumia nywila (PIN) inayoendana na cheo chako kuzuia muingiliano.`;
-                      navigator.clipboard.writeText(msg);
-                      alert(isEn ? 'Copied to clipboard' : 'Ujumbe umenakiliwa! Sasa unaweza kwenda ku-paste (kubandika) Whatsapp kwa wanakamati!');
-                    }}
-                    className="w-full mt-4 py-3 bg-white/5 hover:bg-white/10 active:scale-95 border border-white/10 hover:border-slate-400 text-white rounded-lg pb-[1px] uppercase tracking-wider font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-md"
-                  >
-                    <Clipboard className="w-3.5 h-3.5" /> 
-                    {isEn ? "Copy Access Message for WhatsApp" : "Nakili Ujumbe kwa ajili ya WhatsApp"}
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
 
         </div>
@@ -3884,6 +4851,169 @@ export default function CommitteeDashboard({
                   {isEn ? "Submit Payment" : "Sajili Matokeo"}
                 </button>
               </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* BULK DISPATCH ALL AT ONCE MODAL */}
+      {showBulkDispatchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in" id="bulk-dispatch-modal">
+          <div className="bg-[#0f172a] border border-emerald-500/30 w-full max-w-xl rounded-3xl p-6 space-y-5 relative overflow-hidden shadow-2xl">
+            
+            {/* Close Button */}
+            <button
+              onClick={() => setShowBulkDispatchModal(false)}
+              className="absolute right-4 top-4 text-slate-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Modal Header */}
+            <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-lg shrink-0">
+                <Send className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <span className="text-[9.5px] uppercase font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                  Batch Dispatch System
+                </span>
+                <h3 className="text-base font-black text-white uppercase tracking-wider mt-0.5 font-mono">
+                  🚀 Kutuma Kwa Wanakamati Wote Mara Moja
+                </h3>
+              </div>
+            </div>
+
+            {/* Summary Banner & Stats */}
+            <div className="p-4 bg-slate-900 border border-white/10 rounded-2xl grid grid-cols-2 sm:grid-cols-3 gap-3 text-center text-xs">
+              <div className="p-2 bg-white/[0.02] rounded-xl border border-white/5">
+                <p className="text-[10px] uppercase font-mono text-slate-400">Walengwa Wote</p>
+                <p className="text-sm font-black text-emerald-400 font-mono mt-0.5">{getTargetAudienceMembers().length}</p>
+              </div>
+              <div className="p-2 bg-white/[0.02] rounded-xl border border-white/5">
+                <p className="text-[10px] uppercase font-mono text-slate-400">Zilizotumwa</p>
+                <p className="text-sm font-black text-amber-400 font-mono mt-0.5">
+                  {Object.keys(sentMemberIds).length} / {getTargetAudienceMembers().length}
+                </p>
+              </div>
+              <div className="p-2 bg-white/[0.02] rounded-xl border border-white/5 col-span-2 sm:col-span-1">
+                <p className="text-[10px] uppercase font-mono text-slate-400">Hali ya Kutuma</p>
+                <p className="text-xs font-bold text-cyan-300 font-mono mt-0.5">
+                  {Object.keys(sentMemberIds).length === getTargetAudienceMembers().length && getTargetAudienceMembers().length > 0 
+                    ? "✓ Zimekamilika" 
+                    : "Tayari Kutuma"}
+                </p>
+              </div>
+            </div>
+
+            {/* Three Easy Channel Options */}
+            <div className="space-y-3">
+              
+              {/* Option 1: Multi-SMS Protocol */}
+              <div className="p-4 bg-gradient-to-r from-blue-950/40 via-slate-900 to-indigo-950/40 border border-blue-500/30 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-blue-400" />
+                    <h4 className="font-extrabold text-white text-xs uppercase font-mono">1. Tuma SMS Kwa Wote Mara Moja (Group SMS)</h4>
+                  </div>
+                  <span className="text-[9px] font-mono text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">Moja kwa Moja</span>
+                </div>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  Inafungua App ya SMS yenye namba za wanakamati wote {getTargetAudienceMembers().length} zikiwa zimeshapangwa kwenye 'To:'.
+                </p>
+                <button
+                  onClick={handleDispatchSMSAllAtOnce}
+                  className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs uppercase tracking-wider rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Fungua Group SMS Kwa Wote ({getTargetAudienceMembers().length})</span>
+                </button>
+              </div>
+
+              {/* Option 2: Sequential Direct WhatsApp Loop */}
+              <div className="p-4 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-teal-950/40 border border-emerald-500/30 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-emerald-400" />
+                    <h4 className="font-extrabold text-white text-xs uppercase font-mono">2. Tuma WhatsApp kwa Kila Mjumbe Mmoja Mmoja</h4>
+                  </div>
+                  <span className="text-[9px] font-mono text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Personalized</span>
+                </div>
+
+                <div className="max-h-[160px] overflow-y-auto space-y-1.5 pr-1">
+                  {getTargetAudienceMembers().map((m, idx) => {
+                    const isSent = !!sentMemberIds[m.id];
+                    return (
+                      <div 
+                        key={m.id}
+                        className={`p-2 rounded-xl border flex items-center justify-between gap-2 text-xs transition ${
+                          isSent 
+                            ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-200' 
+                            : 'bg-slate-900 border-white/5 text-slate-200'
+                        }`}
+                      >
+                        <div>
+                          <p className="font-bold text-[11px] uppercase flex items-center gap-1.5">
+                            <span>#{idx + 1} {m.name}</span>
+                            {isSent && <span className="text-emerald-400 font-mono text-[9px] font-bold">✓ Imetumwa</span>}
+                          </p>
+                          <p className="text-[9.5px] text-slate-400 font-mono">{m.position} • {m.phone}</p>
+                        </div>
+
+                        <button
+                          onClick={() => handleSendIndividualWhatsAppReminder(m)}
+                          className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase transition flex items-center gap-1 cursor-pointer shrink-0 ${
+                            isSent 
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' 
+                              : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black'
+                          }`}
+                        >
+                          <Phone className="w-3 h-3" />
+                          <span>{isSent ? "Tuma Tena" : "Tuma WhatsApp"}</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Option 3: Copy Comma-Separated Phones */}
+              <div className="p-3 bg-white/[0.02] border border-white/10 rounded-2xl flex items-center justify-between gap-3 text-xs">
+                <div>
+                  <p className="font-extrabold text-white text-[11px]">📋 Nakili Namba Zote za Simu</p>
+                  <p className="text-[10px] text-slate-400">Kwa ajili ya WhatsApp Broadcast au SMS Gateway</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const targets = getTargetAudienceMembers();
+                    const cleanPhones = targets.map(m => {
+                      let p = (m.phone || '').replace(/[^0-9]/g, '');
+                      if (p.startsWith('0')) p = '255' + p.substring(1);
+                      return p;
+                    }).filter(Boolean).join(', ');
+
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(cleanPhones);
+                    }
+                    setReminderToast('Namba zote zimenakiliwa!');
+                    setTimeout(() => setReminderToast(null), 3000);
+                  }}
+                  className="px-3 py-2 bg-white/10 hover:bg-white/20 border border-white/10 text-amber-300 font-bold rounded-xl text-[10px] uppercase transition cursor-pointer shrink-0"
+                >
+                  Nakili Namba ({getTargetAudienceMembers().length})
+                </button>
+              </div>
+
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setShowBulkDispatchModal(false)}
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold uppercase font-mono text-xs transition cursor-pointer"
+              >
+                Kamilisha & Funga
+              </button>
             </div>
 
           </div>

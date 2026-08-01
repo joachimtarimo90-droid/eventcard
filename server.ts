@@ -900,6 +900,132 @@ function getParamsForCount(count: number, guestData: any, eventData: any, fallba
 
 const metaMediaCache = new Map<string, { mediaId: string; timestamp: number }>();
 
+async function attemptEhubAutoRecovery(apiKey: string, apiSecret: string, formattedPhone: string, text: string, currentSenderId: string): Promise<string | null> {
+  try {
+    console.log(`[eHub Auto-Recovery] Attempting to fetch approved Sender IDs for auto-healing...`);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const method = "GET";
+    const path = "/api/v1/sender-ids";
+    const body = "";
+    const payload = timestamp + "\n" + method + "\n" + path + "\n" + body;
+    const signature = crypto.createHmac("sha256", apiSecret).update(payload).digest("hex");
+
+    const res = await fetch("https://sms.ehub.co.tz" + path, {
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer " + apiKey,
+        "X-Timestamp": timestamp.toString(),
+        "X-Signature": signature,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "EventCard-App/1.0"
+      }
+    });
+
+    const resText = await res.text();
+    console.log(`[eHub Auto-Recovery] GET sender-ids status: ${res.status}, body: ${resText.slice(0, 300)}`);
+    let data: any = {};
+    try { data = JSON.parse(resText); } catch {}
+
+    const extractItems = (d: any): any[] => {
+      if (!d) return [];
+      if (Array.isArray(d)) return d;
+      if (Array.isArray(d.data)) return d.data;
+      if (Array.isArray(d.own)) return d.own;
+      if (Array.isArray(d.items)) return d.items;
+      if (Array.isArray(d.sender_ids)) return d.sender_ids;
+      if (Array.isArray(d.senders)) return d.senders;
+      if (Array.isArray(d.results)) return d.results;
+      if (d.data && typeof d.data === "object") {
+        if (Array.isArray(d.data.items)) return d.data.items;
+        if (Array.isArray(d.data.own)) return d.data.own;
+        if (Array.isArray(d.data.sender_ids)) return d.data.sender_ids;
+        if (Array.isArray(d.data.senders)) return d.data.senders;
+        if (Array.isArray(d.data.data)) return d.data.data;
+      }
+      return [];
+    };
+
+    const rawItems = extractItems(data);
+
+    const isUuid = (str: string) => typeof str === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
+    const candidates: string[] = [];
+
+    // Extract approved sender_ids or ids from eHub response
+    for (const item of rawItems) {
+      const isApproved = !item.status || item.status === "approved" || item.status === "active";
+      if (isApproved) {
+        const sid = item.sender_id || item.id;
+        const itemId = item.id;
+        if (sid && isUuid(sid) && !candidates.includes(sid)) candidates.push(sid);
+        if (itemId && isUuid(itemId) && !candidates.includes(itemId)) candidates.push(itemId);
+      }
+    }
+
+    console.log(`[eHub Auto-Recovery] Candidate UUID Sender IDs to try:`, candidates);
+
+    for (const candidateSenderId of candidates) {
+      if (candidateSenderId === currentSenderId) continue;
+
+      console.log(`[eHub Auto-Recovery] Retrying dispatch with candidate Sender ID: '${candidateSenderId}'...`);
+      const retryTs = Math.floor(Date.now() / 1000);
+      const sendPath = "/api/v1/sms/send";
+      const bodyObj = {
+        sender_id: candidateSenderId,
+        to: formattedPhone,
+        message: text
+      };
+      const bodyStr = JSON.stringify(bodyObj);
+      const retryPayload = retryTs + "\nPOST\n" + sendPath + "\n" + bodyStr;
+      const retrySig = crypto.createHmac("sha256", apiSecret).update(retryPayload).digest("hex");
+
+      const retryRes = await fetch("https://sms.ehub.co.tz" + sendPath, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + apiKey,
+          "X-Timestamp": retryTs.toString(),
+          "X-Signature": retrySig,
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "User-Agent": "EventCard-App/1.0"
+        },
+        body: bodyStr
+      });
+
+      const retryText = await retryRes.text();
+      console.log(`[eHub Auto-Recovery] Candidate '${candidateSenderId}' response status: ${retryRes.status}, body: ${retryText.slice(0, 200)}`);
+
+      let isSuccess = false;
+      try {
+        const parsed = JSON.parse(retryText);
+        if (retryRes.ok && (parsed.success === true || parsed.status === "success" || parsed.status === "sent") && !parsed.error) {
+          isSuccess = true;
+        }
+      } catch {
+        if (retryRes.ok) isSuccess = true;
+      }
+
+      if (isSuccess) {
+        console.log(`[eHub Auto-Recovery] Success! Sender ID '${candidateSenderId}' worked! Updating saved settings...`);
+        try {
+          const db = await readDBLatest();
+          if (db.smsGatewaySettings) {
+            db.smsGatewaySettings.senderId = candidateSenderId;
+            db.smsGatewaySettings.senderIdStatus = 'approved';
+            await writeDB(db);
+          }
+        } catch (dbErr) {
+          console.error(`[eHub Auto-Recovery] Error persisting new senderId to DB:`, dbErr);
+        }
+        return retryText;
+      }
+    }
+  } catch (err) {
+    console.error(`[eHub Auto-Recovery] Error during auto-recovery process:`, err);
+  }
+  return null;
+}
+
 async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsapp', settings: any, scheduleTime?: string, templateParams?: string[], guestId?: string, appOrigin?: string, reqEventId?: string, reqTemplateName?: string, reqImageUrl?: string, lang?: string) {
   // Standardize/Clean Tanzanian phone numbers to 255XXXXXXXXX format
   const cleanedPhone = phone.replace(/\s+/g, '').replace(/[+\-]/g, '');
@@ -1679,20 +1805,46 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     return "SMS Simulation";
   }
 
-  const senderId = settings.senderId || "EVENT CARD";
+  let senderId = (settings.senderId || "").trim();
+  if (!senderId || (senderId === "EVENT CARD" && settings.provider === "meseji")) {
+    if (settings.provider === "meseji") {
+      senderId = "MESEJI";
+    } else if (settings.provider === "beem") {
+      senderId = "INFO";
+    } else if (settings.provider === "nextsms") {
+      senderId = "NEXTSMS";
+    } else if (settings.provider === "notifyAfrica") {
+      senderId = "NOTIFY";
+    } else if (!senderId) {
+      senderId = "EVENT CARD";
+    }
+  }
+
   let requestUrl = "";
   let fetchOptions: any = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   };
 
+  const apiKey = (settings.apiKey || "").trim();
+  const apiSecret = (settings.apiSecret || "").trim();
+
+  if (settings.provider !== "simulation" && settings.provider !== "custom" && !apiKey) {
+    throw new Error(`API Key ya SMS haijawekwa kwa ajili ya mtoa huduma (${settings.provider}). Tafadhali ingia kwenye Mipangilio ya SMS (Settings Icon) kisha uweke API Key na Sender ID yako.`);
+  }
+
   if (settings.provider === "meseji") {
     requestUrl = settings.url || "https://meseji.co.tz/api/v1/sms/send";
-    const apiKey = (settings.apiKey || "").trim();
+    if (requestUrl.endsWith("/api/v1") || requestUrl.endsWith("/api/v1/")) {
+      requestUrl = requestUrl.replace(/\/$/, "") + "/sms/send";
+    }
+
+    const authHeader = apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`;
 
     fetchOptions.headers = {
       ...fetchOptions.headers,
       "x-api-key": apiKey,
+      "Authorization": authHeader,
       "Accept": "application/json"
     };
     
@@ -1718,8 +1870,10 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
       requestUrl = requestUrl.replace(/\/$/, "") + "/sms/send";
     }
     
-    const apiKey = (settings.apiKey || "").trim();
-    const apiSecret = (settings.apiSecret || "").trim();
+    if (!apiSecret) {
+      throw new Error(`eHub API Secret haijawekwa. Tafadhali ingia kwenye Mipangilio ya SMS uweke API Secret iliyotolewa na eHub.`);
+    }
+
     const timestamp = Math.floor(Date.now() / 1000);
     
     let urlPath = "/api/v1/sms/send";
@@ -1756,7 +1910,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     
     fetchOptions.body = bodyStr;
     
-    console.log(`[SMS] eHub Dispatching to: ${requestUrl} (Path: ${urlPath})`);
+    console.log(`[SMS] eHub Dispatching to: ${requestUrl} (Path: ${urlPath}), SenderID: ${senderId}`);
   } else if (settings.provider === "custom") {
     requestUrl = settings.url;
     try {
@@ -1780,8 +1934,6 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     }
   } else if (settings.provider === "beem") {
     requestUrl = settings.url || "https://api.beem.africa/v1/send";
-    const apiKey = (settings.apiKey || "").trim();
-    const apiSecret = (settings.apiSecret || "").trim();
     
     fetchOptions.headers = {
       ...fetchOptions.headers,
@@ -1804,8 +1956,6 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     console.log(`[SMS] Beem Africa Dispatch: ${requestUrl}, Recipient: ${formattedPhone}, SenderID: ${senderId}`);
   } else if (settings.provider === "nextsms") {
     requestUrl = settings.url || "https://messaging-service.co.tz/api/sms/v1/text/single";
-    const apiKey = (settings.apiKey || "").trim();
-    const apiSecret = (settings.apiSecret || "").trim();
     
     const authHeader = apiSecret 
       ? "Basic " + Buffer.from(apiKey + ":" + apiSecret).toString("base64")
@@ -1826,7 +1976,6 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     console.log(`[SMS] NextSMS Dispatch: ${requestUrl}, Recipient: ${formattedPhone}, SenderID: ${senderId}`);
   } else if (settings.provider === "notifyAfrica") {
     requestUrl = settings.url || "https://api.notify.africa/v1/sms/send";
-    const apiKey = (settings.apiKey || "").trim();
     
     fetchOptions.headers = {
       ...fetchOptions.headers,
@@ -1921,7 +2070,6 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
       responseContent.toLowerCase().includes("token hash");
 
     if (isAuthError) {
-      const apiKey = (settings.apiKey || "").trim();
       if (settings.provider === "ehub") {
         throw new Error(`Kifunguo chako cha API au API Secret ya eHub si sahihi au kimeisha muda (Invalid or Inactive eHub API Key). Tafadhali ingia kwenye dashboard yako ya eHub SMS, thibitisha API Key na API Secret chini ya Mipangilio ya API, kisha uzisasishe kwenye Alama ya Mipangilio (Settings Icon) ya app hii. [Jibu la Gateway: ${sanitizedBody}]`);
       }
@@ -1931,18 +2079,27 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
       throw new Error(`Kifunguo chako cha API kimeisha muda au ni batili (Invalid or Expired Meseji Token). Tafadhali ingia kwenye akaunti yako ya Meseji.co.tz, thibitisha salio la SMS (Credits), na utengeneze token mpya chini ya API Settings, kisha uisasishe kwenye ukurasa wa 'Kutuma Mialiko/Ujumbe' > 'Alama ya Mipangilio' (Settings). [Jibu la Gateway: ${sanitizedBody}]`);
     }
 
-    const isSenderIdError = response.status === 403 || 
+    const isSenderIdError = response.status === 403 || response.status === 422 ||
       responseContent.toLowerCase().includes("sender id") ||
       responseContent.toLowerCase().includes("sender_id") ||
       responseContent.toLowerCase().includes("senderaddr") ||
-      responseContent.toLowerCase().includes("not approved");
+      responseContent.toLowerCase().includes("not approved") ||
+      responseContent.toLowerCase().includes("invalid sender") ||
+      responseContent.toLowerCase().includes("validation failed") ||
+      responseContent.toLowerCase().includes("valid uuid");
 
     if (isSenderIdError) {
-      if (settings.provider === "ehub" && responseContent.toLowerCase().includes("valid uuid")) {
-        throw new Error(`Hitilafu ya eHub: 'Sender ID' yako ("${senderId}") inapaswa kuwa UUID (kama vile 00420892-38bd-47b0-9a5f-ea55bef5d2d1), sio jina la maneno. Tafadhali nakili UUID ya Sender ID kutoka kwenye dashboard ya eHub na uiweke kwenye Mipangilio ya SMS ya app hii.`);
+      if (settings.provider === "ehub") {
+        console.log(`[eHub] Sender ID error detected for '${senderId}'. Attempting auto-recovery with approved sender IDs...`);
+        const recoveryRes = await attemptEhubAutoRecovery(apiKey, apiSecret, formattedPhone, text, senderId);
+        if (recoveryRes) {
+          console.log(`[eHub] Auto-recovery succeeded!`);
+          return recoveryRes;
+        }
+        throw new Error(`Hitilafu ya eHub: 'Sender ID' yako ("${senderId}") haijaidhinishwa kwenye akaunti yako ya eHub SMS. Tafadhali bonyeza 'Tafuta Sender IDs' kwenye Mipangilio ya SMS ya app hii ili kuchagua Sender ID iliyoidhinishwa na iliyopo tayari.`);
       }
       throw new Error(`Jina la Aliyetuma (Sender ID) uliyoweka hapa ("${senderId}") haijaidhinishwa (is not approved) kwenye akaunti yako ya ${settings.provider === "meseji" ? "Meseji.co.tz" : (settings.provider === "ehub" ? "eHub SMS" : "SMS Gateway")}. 
-Tafadhali ingia kwenye akaunti yako ya ${settings.provider === "meseji" ? "Meseji.co.tz" : (settings.provider === "ehub" ? "eHub SMS" : "SMS Gateway")} chini ya Sender ID na uombe uidhinishiwe jina hili, au badilisha 'Sender ID' kwenye Alama ya Mipangilio (Settings) ya app hii ili ilingane na ile ambayo tayari imekubaliwa kwenye akaunti yako (kama vile mtoa huduma anavyoelekeza). [Jibu la Gateway: ${sanitizedBody}]`);
+Tafadhali badilisha 'Sender ID' kwenye Alama ya Mipangilio (Settings) ya app hii kuwa "MESEJI" (kwa Meseji.co.tz) au uingie kwenye dashboard ya mtoa huduma wako kuiidhinisha. [Jibu la Gateway: ${sanitizedBody}]`);
     }
     
     if (response.status === 500 && settings.provider === "meseji") {
@@ -1958,8 +2115,16 @@ Tafadhali ingia kwenye akaunti yako ya ${settings.provider === "meseji" ? "Mesej
           retryBody.schedule_time = scheduleTime;
         }
         try {
+          const authHeader = apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`;
           const retryRes = await fetch(requestUrl, {
             ...fetchOptions,
+            headers: {
+              ...fetchOptions.headers,
+              "x-api-key": apiKey,
+              "Authorization": authHeader,
+              "Accept": "application/json",
+              "Content-Type": "application/json"
+            },
             body: JSON.stringify(retryBody)
           });
           const retryText = await retryRes.text();
@@ -1999,6 +2164,16 @@ Tafadhali ingia kwenye akaunti yako ya ${settings.provider === "meseji" ? "Mesej
     if (lowerStatus === "fail" || lowerStatus === "failed" || lowerStatus === "error" || isSuccessFalse || hasErrorKey) {
       const errMsg = parsed.message || parsed.error || parsed.errorMessage || responseContent;
       let cleanErrMsg = typeof errMsg === 'object' ? JSON.stringify(errMsg) : String(errMsg);
+      
+      if (settings.provider === "ehub" && (cleanErrMsg.toLowerCase().includes("sender_id") || cleanErrMsg.toLowerCase().includes("invalid sender") || cleanErrMsg.toLowerCase().includes("not approved") || cleanErrMsg.toLowerCase().includes("uuid"))) {
+        console.log(`[eHub 200 OK Response] Sender ID error in JSON body: '${cleanErrMsg}'. Attempting auto-recovery...`);
+        const recoveryRes = await attemptEhubAutoRecovery(apiKey, apiSecret, formattedPhone, text, senderId);
+        if (recoveryRes) {
+          console.log(`[eHub 200 OK Response] Auto-recovery succeeded!`);
+          return recoveryRes;
+        }
+      }
+
       cleanErrMsg = cleanErrMsg.replace(/["{}]/g, "").replace(/error/gi, "status_message");
       console.log(`[SMS-Gateway-Info] Handled gateway response check.`);
       throw new Error(`Hitilafu toka kwa Mtoa huduma: ${cleanErrMsg}`);

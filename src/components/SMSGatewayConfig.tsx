@@ -88,9 +88,10 @@ export default function SMSGatewayConfig() {
     setHasFetchedIds(false);
   }, [gatewaySettings.provider]);
 
-  const fetchEhubIds = async () => {
-    if (!gatewaySettings.apiKey || !gatewaySettings.apiSecret) {
-      alert(isEn ? "Please enter API Key and Secret first" : "Tafadhali weka API Key na Secret kwanza");
+  const fetchEhubIds = async (overrideSettings?: any) => {
+    const settingsToUse = overrideSettings || gatewaySettings;
+    if (!settingsToUse.apiKey || !settingsToUse.apiSecret) {
+      if (!overrideSettings) alert(isEn ? "Please enter API Key and Secret first" : "Tafadhali weka API Key na Secret kwanza");
       return;
     }
     setIsFetchingIds(true);
@@ -99,20 +100,43 @@ export default function SMSGatewayConfig() {
       const res = await fetch('/api/fetch-ehub-sender-ids', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings: gatewaySettings })
+        body: JSON.stringify({ settings: settingsToUse })
       });
       const data = await res.json();
       
-      if (data.success && (Array.isArray(data.data) || (data.data && Array.isArray(data.data.items)))) {
-        const ids = Array.isArray(data.data) ? data.data : data.data.items;
-        setAvailableIds(ids);
+      const items = Array.isArray(data) 
+        ? data 
+        : (Array.isArray(data?.own)
+            ? data.own
+            : (Array.isArray(data?.data) 
+                ? data.data 
+                : (data?.data?.own && Array.isArray(data.data.own)
+                    ? data.data.own
+                    : (data?.data?.items && Array.isArray(data.data.items) 
+                        ? data.data.items 
+                        : []))));
+
+      if (items.length > 0) {
+        setAvailableIds(items);
+        // Auto-select first approved UUID if current senderId is sample placeholder or non-UUID
+        const approvedItem = items.find((it: any) => !it.status || it.status === 'approved' || it.status === 'active') || items[0];
+        if (approvedItem) {
+          const candidateUuid = approvedItem.id || approvedItem.sender_id;
+          if (candidateUuid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidateUuid)) {
+            if (settingsToUse.senderId === '00420892-38bd-47b0-9a5f-ea55bef5d2d1' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(settingsToUse.senderId)) {
+              setGatewaySettings(prev => ({ ...prev, senderId: candidateUuid }));
+            }
+          }
+        }
+      } else if (data.success === false || data.error || data.message) {
+        const errorMsg = data.message || data.error || (isEn ? "No approved Sender IDs found" : "Hakuna Sender ID zilizoidhinishwa");
+        if (!overrideSettings) alert(isEn ? "Imeshindwa: " + errorMsg : "Imeshindwa: " + errorMsg);
+        setAvailableIds([]);
       } else {
-        const errorMsg = data.message || data.error || (isEn ? "Unknown error" : "Hitilafu isiyojulikana");
-        alert(isEn ? "Imeshindwa: " + errorMsg : "Imeshindwa: " + errorMsg);
         setAvailableIds([]);
       }
     } catch (err) {
-      alert(isEn ? "Connection error" : "Hitilafu ya mtandao");
+      if (!overrideSettings) alert(isEn ? "Connection error" : "Hitilafu ya mtandao");
     } finally {
       setIsFetchingIds(false);
     }
@@ -166,6 +190,9 @@ export default function SMSGatewayConfig() {
           } else {
             setWhatsappProvider('simulation');
             setWhatsappUrlInput('');
+          }
+          if (data.provider === 'ehub' && data.apiKey && data.apiSecret) {
+            fetchEhubIds(data);
           }
         }
         setIsLoaded(true);
@@ -413,11 +440,36 @@ export default function SMSGatewayConfig() {
                 className={`w-full bg-[#050b18] border border-white/10 rounded-xl px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${gatewaySettings.provider === 'ehub' ? '' : 'uppercase font-mono tracking-wider'} transition-all`}
               />
               {gatewaySettings.provider === 'ehub' && (
-                <p className="text-[10px] text-emerald-400 mt-1 font-medium leading-relaxed">
-                  {isEn 
-                    ? "⚠️ eHub requires the SENDER ID UUID (e.g. 00420892-...), NOT the name. Click 'Fetch' below to find yours." 
-                    : "⚠️ eHub inahitaji 'UUID' ya Sender ID (mfano: 00420892-...), SIO jina la maneno. Bonyeza 'Tafuta' hapo chini ili kuzipata kiurahisi."}
-                </p>
+                <div className="mt-1 space-y-1">
+                  <p className="text-[10px] text-amber-400 font-medium leading-relaxed bg-amber-500/10 p-2 rounded-lg border border-amber-500/20">
+                    {isEn 
+                      ? "⚠️ eHub requires a valid Sender ID UUID from your eHub account (not a word like 'EVENT CARD'). Click 'Fetch Sender IDs' below to select your real approved UUID." 
+                      : "⚠️ eHub inahitaji 'UUID' ya Sender ID kutoka akaunti yako ya eHub (sio neno kama 'EVENT CARD'). Bonyeza 'Tafuta Sender IDs' hapo chini ili kuchagua UUID yako halisi iliyoidhinishwa."}
+                  </p>
+                  {(gatewaySettings.senderId === '00420892-38bd-47b0-9a5f-ea55bef5d2d1' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(gatewaySettings.senderId)) && (
+                    <p className="text-[10px] text-red-400 font-bold bg-red-500/10 p-2 rounded-lg border border-red-500/20">
+                      {isEn
+                        ? "⚠️ Current Sender ID is invalid or sample placeholder. Please click 'Fetch Sender IDs' below to load your active eHub ID."
+                        : "⚠️ Sender ID iliyopo sasa si sahihi au ni mfano tu. Tafadhali bonyeza 'Tafuta Sender IDs' hapo chini kupata ID yako halisi."}
+                    </p>
+                  )}
+                </div>
+              )}
+              {gatewaySettings.provider === 'meseji' && (!gatewaySettings.senderId || gatewaySettings.senderId === 'EVENT CARD' || gatewaySettings.senderId !== 'MESEJI') && (
+                <div className="mt-1 flex items-center justify-between text-[10px] text-amber-400 bg-amber-500/10 p-2 rounded-lg border border-amber-500/20">
+                  <span>
+                    {isEn 
+                      ? "Default approved Sender ID for Meseji is 'MESEJI'." 
+                      : "Sender ID ya msingi iliyoidhinishwa Meseji ni 'MESEJI'."}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setGatewaySettings({ ...gatewaySettings, senderId: 'MESEJI' })}
+                    className="ml-2 text-[9px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 px-2 py-1 rounded border border-amber-500/30 transition-all shrink-0 cursor-pointer"
+                  >
+                    {isEn ? "Use MESEJI" : "Tumia MESEJI"}
+                  </button>
+                </div>
               )}
               {gatewaySettings.provider === 'ehub' && (
                 <div className="mt-2 space-y-2">

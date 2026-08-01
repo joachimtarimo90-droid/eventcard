@@ -265,7 +265,7 @@ export default function GuestInvitePage({ guest, event, settings, onRsvpSubmit }
         {!hideRSVP && (
           <div className="text-center space-y-2 pb-1 animate-fade-in">
              <h1 className="text-2xl font-extrabold tracking-tight text-white uppercase">
-               {isEn ? "INVITATION TO" : "MWALIKO WA"} {(event.name || (isEn ? "Event" : "Tukio")).toUpperCase()}
+               {isEn ? "INVITATION TO" : "MWALIKO WA"} {(event.name || (isEn ? "Event" : "Tukio")).replace(/^(MWALIKO\s+WA\s+|INVITATION\s+TO\s+)+/i, '').trim().toUpperCase()}
              </h1>
              <p className="text-sm text-neutral-400">
                {isEn ? "Welcome, dear" : "Karibu, mpendwa"} <span className="font-bold text-amber-400 uppercase">{guest.name}</span>

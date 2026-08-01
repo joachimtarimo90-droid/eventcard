@@ -7,228 +7,14 @@ import { useLanguage } from '../context/LanguageContext';
 import { isStatusSent } from '../utils/statusHelper';
 import { safeLocalStorage } from '../utils/storage';
 import * as XLSX from 'xlsx';
+import { 
+  ParsedGuestItem, 
+  parseUniversalGuestTable, 
+  parseTextToMatrix, 
+  parseFileToGuestMatrix 
+} from '../utils/excelParser';
 
-export interface ParsedGuestItem {
-  name: string;
-  phone: string;
-  cardType: string;
-  category?: string;
-  tags?: string[];
-  customFields?: Record<string, string>;
-  pledgeAmount?: number;
-  paidAmount?: number;
-  pledgeStatus?: 'No Pledge' | 'Pledged' | 'Partially Paid' | 'Fully Paid';
-}
-
-const parseTextToMatrix = (text: string): string[][] => {
-  if (!text) return [];
-  const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
-  return lines.map(line => {
-    // Tab separated (from Excel/Google Sheets copy paste)
-    if (line.includes('\t')) {
-      return line.split('\t').map(c => c.trim());
-    }
-    // CSV comma separated
-    if (line.includes(',')) {
-      const result: string[] = [];
-      let cell = '';
-      let inQuotes = false;
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-          result.push(cell.trim());
-          cell = '';
-        } else {
-          cell += char;
-        }
-      }
-      result.push(cell.trim());
-      return result;
-    }
-    if (line.includes(';')) {
-      return line.split(';').map(c => c.trim());
-    }
-    if (line.includes('|')) {
-      return line.split('|').map(c => c.trim());
-    }
-    return [line.trim()];
-  });
-};
-
-const parseUniversalGuestTable = (rawMatrix: (string | number)[][]): ParsedGuestItem[] => {
-  if (!rawMatrix || rawMatrix.length === 0) return [];
-
-  const validRows = rawMatrix.filter(row => row && row.some(cell => String(cell ?? '').trim() !== ''));
-  if (validRows.length === 0) return [];
-
-  let headerRowIndex = -1;
-  let nameCol = -1;
-  let phoneCol = -1;
-  let categoryCol = -1;
-  let cardTypeCol = -1;
-  let pledgeCol = -1;
-  let paidCol = -1;
-  let tableCol = -1;
-  let foodCol = -1;
-
-  const normHeader = (val: any): string => {
-    return String(val ?? '')
-      .toLowerCase()
-      .replace(/[*()]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  };
-
-  // Inspect first 5 rows to identify header names
-  for (let r = 0; r < Math.min(validRows.length, 5); r++) {
-    const row = validRows[r];
-    let foundName = -1;
-    let foundPhone = -1;
-    let foundCat = -1;
-    let foundCard = -1;
-    let foundPledge = -1;
-    let foundPaid = -1;
-    let foundTable = -1;
-    let foundFood = -1;
-
-    row.forEach((cell, cIdx) => {
-      const norm = normHeader(cell);
-      if (!norm) return;
-
-      if (foundName === -1 && (
-        norm.includes('guest name') || norm.includes('full name') || norm.includes('jina la mgeni') || norm.includes('jina') || norm.includes('mgeni') || norm.includes('name') || norm.includes('mchangiaji') || norm.includes('mlipaji')
-      )) {
-        foundName = cIdx;
-      }
-      else if (foundPhone === -1 && (
-        norm.includes('phone') || norm.includes('simu') || norm.includes('namba') || norm.includes('mobile') || norm.includes('contact') || norm.includes('tel')
-      )) {
-        foundPhone = cIdx;
-      }
-      else if (foundCat === -1 && (
-        norm.includes('category') || norm.includes('kategoria') || norm.includes('kikundi') || norm.includes('group') || norm.includes('kundi') || norm.includes('tag') || norm.includes('lebo')
-      )) {
-        foundCat = cIdx;
-      }
-      else if (foundCard === -1 && (
-        norm.includes('card type') || norm.includes('aina ya kadi') || norm.includes('card') || norm.includes('kadi') || norm.includes('single/double')
-      )) {
-        foundCard = cIdx;
-      }
-      else if (foundPledge === -1 && (
-        norm.includes('pledge') || norm.includes('ahadi') || norm.includes('pledged') || norm.includes('kiasi cha ahadi')
-      )) {
-        foundPledge = cIdx;
-      }
-      else if (foundPaid === -1 && (
-        norm.includes('paid') || norm.includes('iliyolipwa') || norm.includes('mchango') || norm.includes('cash') || norm.includes('michango') || norm.includes('kilicholipwa') || norm.includes('ilipwa')
-      )) {
-        foundPaid = cIdx;
-      }
-      else if (foundTable === -1 && (
-        norm.includes('table') || norm.includes('meza')
-      )) {
-        foundTable = cIdx;
-      }
-      else if (foundFood === -1 && (
-        norm.includes('food') || norm.includes('chakula')
-      )) {
-        foundFood = cIdx;
-      }
-    });
-
-    if (foundName !== -1) {
-      headerRowIndex = r;
-      nameCol = foundName;
-      phoneCol = foundPhone;
-      categoryCol = foundCat;
-      cardTypeCol = foundCard;
-      pledgeCol = foundPledge;
-      paidCol = foundPaid;
-      tableCol = foundTable;
-      foodCol = foundFood;
-      break;
-    }
-  }
-
-  let dataStartRow = 0;
-  if (headerRowIndex !== -1) {
-    dataStartRow = headerRowIndex + 1;
-  } else {
-    // Default column order fallback if header isn't matched
-    nameCol = 0;
-    phoneCol = 1;
-    categoryCol = 2;
-    pledgeCol = 3;
-    paidCol = 4;
-  }
-
-  const results: ParsedGuestItem[] = [];
-
-  for (let r = dataStartRow; r < validRows.length; r++) {
-    const row = validRows[r];
-    const nameVal = nameCol !== -1 && row[nameCol] != null ? String(row[nameCol]).trim() : '';
-    if (!nameVal) continue; // skip empty guest name row
-
-    const phoneVal = phoneCol !== -1 && row[phoneCol] != null ? String(row[phoneCol]).trim() : '';
-    const categoryVal = categoryCol !== -1 && row[categoryCol] != null ? String(row[categoryCol]).trim() : '';
-    const cardTypeRaw = cardTypeCol !== -1 && row[cardTypeCol] != null ? String(row[cardTypeCol]).trim().toUpperCase() : '';
-
-    let cardType = 'DOUBLE';
-    if (cardTypeRaw.includes('SINGLE')) cardType = 'SINGLE';
-    else if (cardTypeRaw.includes('DOUBLE')) cardType = 'DOUBLE';
-    else if (['SINGLE', 'DOUBLE'].includes(cardTypeRaw)) cardType = cardTypeRaw;
-    else if (categoryVal.toUpperCase().includes('SINGLE')) cardType = 'SINGLE';
-    else if (categoryVal.toUpperCase().includes('DOUBLE')) cardType = 'DOUBLE';
-
-    const parseAmount = (val: any): number => {
-      if (!val) return 0;
-      const str = String(val).replace(/,/g, '').replace(/[^0-9.]/g, '');
-      const num = parseFloat(str);
-      return isNaN(num) ? 0 : num;
-    };
-
-    const pledgeAmount = pledgeCol !== -1 ? parseAmount(row[pledgeCol]) : 0;
-    const paidAmount = paidCol !== -1 ? parseAmount(row[paidCol]) : 0;
-
-    let pledgeStatus: 'No Pledge' | 'Pledged' | 'Partially Paid' | 'Fully Paid' = 'No Pledge';
-    if (pledgeAmount > 0 || paidAmount > 0) {
-      if (paidAmount >= pledgeAmount && pledgeAmount > 0) {
-        pledgeStatus = 'Fully Paid';
-      } else if (paidAmount > 0) {
-        pledgeStatus = 'Partially Paid';
-      } else if (pledgeAmount > 0) {
-        pledgeStatus = 'Pledged';
-      }
-    }
-
-    const tableVal = tableCol !== -1 && row[tableCol] != null ? String(row[tableCol]).trim() : '';
-    const foodVal = foodCol !== -1 && row[foodCol] != null ? String(row[foodCol]).trim() : '';
-
-    const customFieldsObj: Record<string, string> = {};
-    if (tableVal) customFieldsObj.tableNumber = tableVal;
-    if (foodVal) customFieldsObj.foodPreference = foodVal;
-
-    const tags: string[] = [];
-    if (categoryVal) tags.push(categoryVal);
-
-    results.push({
-      name: nameVal,
-      phone: phoneVal,
-      cardType,
-      category: categoryVal || undefined,
-      tags,
-      customFields: Object.keys(customFieldsObj).length > 0 ? customFieldsObj : undefined,
-      pledgeAmount: pledgeAmount > 0 ? pledgeAmount : undefined,
-      paidAmount: paidAmount > 0 ? paidAmount : undefined,
-      pledgeStatus
-    });
-  }
-
-  return results;
-};
+export type { ParsedGuestItem };
 
 const isDuplicateGuestUniversal = (name: string, phone: string, existingGuests: Guest[]) => {
   const normName = (name || '').trim().toLowerCase();
@@ -244,7 +30,10 @@ const isDuplicateGuestUniversal = (name: string, phone: string, existingGuests: 
     const nameMatches = normName && existingNormName === normName;
     const phoneMatches = lastNdigits && existingLastNdigits && lastNdigits === existingLastNdigits;
 
-    return nameMatches || phoneMatches;
+    // Only consider duplicate if phone matches, OR if name matches AND both have phones
+    if (phoneMatches) return true;
+    if (nameMatches && lastNdigits && existingLastNdigits) return true;
+    return false;
   });
 };
 
@@ -671,35 +460,25 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
         pledgeStatus: item.pledgeStatus || 'No Pledge'
       };
 
-      // Check for duplicate in existing guests
+      // Check for duplicate in existing guests - require matching phone, OR matching name AND non-empty phone
+      const cleanPhone = standardisedPhone.replace(/\D/g, '');
+      const lastNdigits = cleanPhone.slice(-9);
+
       const existingDuplicate = guests.find(g => {
         const normName = item.name.trim().toLowerCase();
-        const cleanPhone = standardisedPhone.replace(/\D/g, '');
-        const lastNdigits = cleanPhone.slice(-9);
-
         const existingNormName = (g.name || '').trim().toLowerCase();
         const existingCleanPhone = (g.phone || '').replace(/\D/g, '');
         const existingLastNdigits = existingCleanPhone.slice(-9);
 
-        return (normName && existingNormName === normName) || (lastNdigits && existingLastNdigits && lastNdigits === existingLastNdigits);
-      });
+        const phoneMatches = lastNdigits.length >= 7 && existingLastNdigits.length >= 7 && lastNdigits === existingLastNdigits;
+        const nameMatches = normName && existingNormName === normName && lastNdigits.length >= 7 && existingLastNdigits.length >= 7;
 
-      // Check for duplicate in nonConflicts
-      const isSelfDuplicate = nonConflicts.some(g => {
-        const normName = item.name.trim().toLowerCase();
-        const cleanPhone = standardisedPhone.replace(/\D/g, '');
-        const lastNdigits = cleanPhone.slice(-9);
-
-        const existingNormName = g.name.trim().toLowerCase();
-        const existingCleanPhone = g.phone.replace(/\D/g, '');
-        const existingLastNdigits = existingCleanPhone.slice(-9);
-
-        return (normName && existingNormName === normName) || (lastNdigits && existingLastNdigits && lastNdigits === existingLastNdigits);
+        return phoneMatches || nameMatches;
       });
 
       if (existingDuplicate) {
         conflicts.push({ newGuest, existingGuest: existingDuplicate });
-      } else if (!isSelfDuplicate) {
+      } else {
         nonConflicts.push(newGuest);
       }
     });
@@ -861,35 +640,25 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
         pledgeStatus: item.pledgeStatus || 'No Pledge'
       };
 
-      // Check for duplicate in existing guests
+      // Check for duplicate in existing guests - require matching phone, OR matching name AND non-empty phone
+      const cleanPhone = standardisedPhone.replace(/\D/g, '');
+      const lastNdigits = cleanPhone.slice(-9);
+
       const existingDuplicate = guests.find(g => {
         const normName = item.name.trim().toLowerCase();
-        const cleanPhone = standardisedPhone.replace(/\D/g, '');
-        const lastNdigits = cleanPhone.slice(-9);
-
         const existingNormName = (g.name || '').trim().toLowerCase();
         const existingCleanPhone = (g.phone || '').replace(/\D/g, '');
         const existingLastNdigits = existingCleanPhone.slice(-9);
 
-        return (normName && existingNormName === normName) || (lastNdigits && existingLastNdigits && lastNdigits === existingLastNdigits);
-      });
+        const phoneMatches = lastNdigits.length >= 7 && existingLastNdigits.length >= 7 && lastNdigits === existingLastNdigits;
+        const nameMatches = normName && existingNormName === normName && lastNdigits.length >= 7 && existingLastNdigits.length >= 7;
 
-      // Check for duplicate in nonConflicts
-      const isSelfDuplicate = nonConflicts.some(g => {
-        const normName = item.name.trim().toLowerCase();
-        const cleanPhone = standardisedPhone.replace(/\D/g, '');
-        const lastNdigits = cleanPhone.slice(-9);
-
-        const existingNormName = g.name.trim().toLowerCase();
-        const existingCleanPhone = g.phone.replace(/\D/g, '');
-        const existingLastNdigits = existingCleanPhone.slice(-9);
-
-        return (normName && existingNormName === normName) || (lastNdigits && existingLastNdigits && lastNdigits === existingLastNdigits);
+        return phoneMatches || nameMatches;
       });
 
       if (existingDuplicate) {
         conflicts.push({ newGuest, existingGuest: existingDuplicate });
-      } else if (!isSelfDuplicate) {
+      } else {
         nonConflicts.push(newGuest);
       }
     });

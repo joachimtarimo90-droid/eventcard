@@ -240,6 +240,7 @@ export interface CommitteeMember {
   email: string;
   role: UserRole;
   position: string;
+  subCommittee?: string;
   permissionLevel: string;
   token?: string;
 }
