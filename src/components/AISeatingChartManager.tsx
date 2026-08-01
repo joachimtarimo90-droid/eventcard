@@ -85,7 +85,7 @@ export default function AISeatingChartManager({ event, guests, onUpdateGuests }:
     };
   }).filter(tbl => searchQuery ? tbl.filteredGuests.length > 0 : true);
 
-  const totalAssigned = guests.filter(g => g.tableNumber || g.table).length;
+  const totalAssigned = guests.filter(g => g.customFields?.tableNumber).length;
 
   return (
     <div className="space-y-6 text-white font-sans" id="ai-seating-chart-container">
@@ -186,7 +186,7 @@ export default function AISeatingChartManager({ event, guests, onUpdateGuests }:
           <div>
             <p className="text-[10px] font-mono text-slate-400 uppercase">{isEn ? "RSVP Attending" : "Watahudhuria (RSVP)"}</p>
             <p className="text-xl font-black text-blue-400">
-              {guests.filter(g => g.rsvpStatus === 'Atahudhuria' || g.rsvpStatus === 'Attending').length}
+              {guests.filter(g => g.rsvpStatus === 'Atahudhuria').length}
             </p>
           </div>
           <Shield className="w-6 h-6 text-blue-400" />

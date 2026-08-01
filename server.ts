@@ -2309,19 +2309,17 @@ async function startServer() {
         let currentGuests = current.guests || [];
         
         // Remove explicitly deleted guests
-        if (req.body.deletedGuestIds && Array.isArray(req.body.deletedGuestIds)) {
-          const deletedIds = new Set(req.body.deletedGuestIds);
-          // Safeguard: do not allow accidental mass deletion of guests (> 90% of database at once)
-          if (req.body.forceDeleteMass || deletedIds.size < currentGuests.length * 0.95 || currentGuests.length < 5) {
-            currentGuests = currentGuests.filter((g: any) => !deletedIds.has(g.id));
-          } else if (currentGuests.length > 0) {
-            console.warn("BLOCKED MASS GUEST DELETION ATTEMPT");
-          }
+        const deletedGuestIdsSet = new Set<string>(
+          Array.isArray(req.body.deletedGuestIds) ? req.body.deletedGuestIds : []
+        );
+
+        if (deletedGuestIdsSet.size > 0) {
+          currentGuests = currentGuests.filter((g: any) => !deletedGuestIdsSet.has(g.id));
         }
 
         const incomingIds = new Set(req.body.guests.map((g: any) => g.id));
         // Preserve any guests added concurrently on the server that the client doesn't know about yet
-        const newlyAddedOnServer = currentGuests.filter((g: any) => !incomingIds.has(g.id));
+        const newlyAddedOnServer = currentGuests.filter((g: any) => !incomingIds.has(g.id) && !deletedGuestIdsSet.has(g.id));
 
         const mergedIncoming = req.body.guests.map((cg: any) => {
           const sg = currentGuests.find((g: any) => g.id === cg.id);

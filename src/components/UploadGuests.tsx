@@ -5,8 +5,230 @@ import { EventDetails, TemplateSettings, Guest } from '../types';
 import { drawCardToCanvas } from '../utils/canvasHelper';
 import { useLanguage } from '../context/LanguageContext';
 import { isStatusSent } from '../utils/statusHelper';
-
 import { safeLocalStorage } from '../utils/storage';
+import * as XLSX from 'xlsx';
+
+export interface ParsedGuestItem {
+  name: string;
+  phone: string;
+  cardType: string;
+  category?: string;
+  tags?: string[];
+  customFields?: Record<string, string>;
+  pledgeAmount?: number;
+  paidAmount?: number;
+  pledgeStatus?: 'No Pledge' | 'Pledged' | 'Partially Paid' | 'Fully Paid';
+}
+
+const parseTextToMatrix = (text: string): string[][] => {
+  if (!text) return [];
+  const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+  return lines.map(line => {
+    // Tab separated (from Excel/Google Sheets copy paste)
+    if (line.includes('\t')) {
+      return line.split('\t').map(c => c.trim());
+    }
+    // CSV comma separated
+    if (line.includes(',')) {
+      const result: string[] = [];
+      let cell = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          result.push(cell.trim());
+          cell = '';
+        } else {
+          cell += char;
+        }
+      }
+      result.push(cell.trim());
+      return result;
+    }
+    if (line.includes(';')) {
+      return line.split(';').map(c => c.trim());
+    }
+    if (line.includes('|')) {
+      return line.split('|').map(c => c.trim());
+    }
+    return [line.trim()];
+  });
+};
+
+const parseUniversalGuestTable = (rawMatrix: (string | number)[][]): ParsedGuestItem[] => {
+  if (!rawMatrix || rawMatrix.length === 0) return [];
+
+  const validRows = rawMatrix.filter(row => row && row.some(cell => String(cell ?? '').trim() !== ''));
+  if (validRows.length === 0) return [];
+
+  let headerRowIndex = -1;
+  let nameCol = -1;
+  let phoneCol = -1;
+  let categoryCol = -1;
+  let cardTypeCol = -1;
+  let pledgeCol = -1;
+  let paidCol = -1;
+  let tableCol = -1;
+  let foodCol = -1;
+
+  const normHeader = (val: any): string => {
+    return String(val ?? '')
+      .toLowerCase()
+      .replace(/[*()]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  // Inspect first 5 rows to identify header names
+  for (let r = 0; r < Math.min(validRows.length, 5); r++) {
+    const row = validRows[r];
+    let foundName = -1;
+    let foundPhone = -1;
+    let foundCat = -1;
+    let foundCard = -1;
+    let foundPledge = -1;
+    let foundPaid = -1;
+    let foundTable = -1;
+    let foundFood = -1;
+
+    row.forEach((cell, cIdx) => {
+      const norm = normHeader(cell);
+      if (!norm) return;
+
+      if (foundName === -1 && (
+        norm.includes('guest name') || norm.includes('full name') || norm.includes('jina la mgeni') || norm.includes('jina') || norm.includes('mgeni') || norm.includes('name') || norm.includes('mchangiaji') || norm.includes('mlipaji')
+      )) {
+        foundName = cIdx;
+      }
+      else if (foundPhone === -1 && (
+        norm.includes('phone') || norm.includes('simu') || norm.includes('namba') || norm.includes('mobile') || norm.includes('contact') || norm.includes('tel')
+      )) {
+        foundPhone = cIdx;
+      }
+      else if (foundCat === -1 && (
+        norm.includes('category') || norm.includes('kategoria') || norm.includes('kikundi') || norm.includes('group') || norm.includes('kundi') || norm.includes('tag') || norm.includes('lebo')
+      )) {
+        foundCat = cIdx;
+      }
+      else if (foundCard === -1 && (
+        norm.includes('card type') || norm.includes('aina ya kadi') || norm.includes('card') || norm.includes('kadi') || norm.includes('single/double')
+      )) {
+        foundCard = cIdx;
+      }
+      else if (foundPledge === -1 && (
+        norm.includes('pledge') || norm.includes('ahadi') || norm.includes('pledged') || norm.includes('kiasi cha ahadi')
+      )) {
+        foundPledge = cIdx;
+      }
+      else if (foundPaid === -1 && (
+        norm.includes('paid') || norm.includes('iliyolipwa') || norm.includes('mchango') || norm.includes('cash') || norm.includes('michango') || norm.includes('kilicholipwa') || norm.includes('ilipwa')
+      )) {
+        foundPaid = cIdx;
+      }
+      else if (foundTable === -1 && (
+        norm.includes('table') || norm.includes('meza')
+      )) {
+        foundTable = cIdx;
+      }
+      else if (foundFood === -1 && (
+        norm.includes('food') || norm.includes('chakula')
+      )) {
+        foundFood = cIdx;
+      }
+    });
+
+    if (foundName !== -1) {
+      headerRowIndex = r;
+      nameCol = foundName;
+      phoneCol = foundPhone;
+      categoryCol = foundCat;
+      cardTypeCol = foundCard;
+      pledgeCol = foundPledge;
+      paidCol = foundPaid;
+      tableCol = foundTable;
+      foodCol = foundFood;
+      break;
+    }
+  }
+
+  let dataStartRow = 0;
+  if (headerRowIndex !== -1) {
+    dataStartRow = headerRowIndex + 1;
+  } else {
+    // Default column order fallback if header isn't matched
+    nameCol = 0;
+    phoneCol = 1;
+    categoryCol = 2;
+    pledgeCol = 3;
+    paidCol = 4;
+  }
+
+  const results: ParsedGuestItem[] = [];
+
+  for (let r = dataStartRow; r < validRows.length; r++) {
+    const row = validRows[r];
+    const nameVal = nameCol !== -1 && row[nameCol] != null ? String(row[nameCol]).trim() : '';
+    if (!nameVal) continue; // skip empty guest name row
+
+    const phoneVal = phoneCol !== -1 && row[phoneCol] != null ? String(row[phoneCol]).trim() : '';
+    const categoryVal = categoryCol !== -1 && row[categoryCol] != null ? String(row[categoryCol]).trim() : '';
+    const cardTypeRaw = cardTypeCol !== -1 && row[cardTypeCol] != null ? String(row[cardTypeCol]).trim().toUpperCase() : '';
+
+    let cardType = 'DOUBLE';
+    if (cardTypeRaw.includes('SINGLE')) cardType = 'SINGLE';
+    else if (cardTypeRaw.includes('DOUBLE')) cardType = 'DOUBLE';
+    else if (['SINGLE', 'DOUBLE'].includes(cardTypeRaw)) cardType = cardTypeRaw;
+    else if (categoryVal.toUpperCase().includes('SINGLE')) cardType = 'SINGLE';
+    else if (categoryVal.toUpperCase().includes('DOUBLE')) cardType = 'DOUBLE';
+
+    const parseAmount = (val: any): number => {
+      if (!val) return 0;
+      const str = String(val).replace(/,/g, '').replace(/[^0-9.]/g, '');
+      const num = parseFloat(str);
+      return isNaN(num) ? 0 : num;
+    };
+
+    const pledgeAmount = pledgeCol !== -1 ? parseAmount(row[pledgeCol]) : 0;
+    const paidAmount = paidCol !== -1 ? parseAmount(row[paidCol]) : 0;
+
+    let pledgeStatus: 'No Pledge' | 'Pledged' | 'Partially Paid' | 'Fully Paid' = 'No Pledge';
+    if (pledgeAmount > 0 || paidAmount > 0) {
+      if (paidAmount >= pledgeAmount && pledgeAmount > 0) {
+        pledgeStatus = 'Fully Paid';
+      } else if (paidAmount > 0) {
+        pledgeStatus = 'Partially Paid';
+      } else if (pledgeAmount > 0) {
+        pledgeStatus = 'Pledged';
+      }
+    }
+
+    const tableVal = tableCol !== -1 && row[tableCol] != null ? String(row[tableCol]).trim() : '';
+    const foodVal = foodCol !== -1 && row[foodCol] != null ? String(row[foodCol]).trim() : '';
+
+    const customFieldsObj: Record<string, string> = {};
+    if (tableVal) customFieldsObj.tableNumber = tableVal;
+    if (foodVal) customFieldsObj.foodPreference = foodVal;
+
+    const tags: string[] = [];
+    if (categoryVal) tags.push(categoryVal);
+
+    results.push({
+      name: nameVal,
+      phone: phoneVal,
+      cardType,
+      category: categoryVal || undefined,
+      tags,
+      customFields: Object.keys(customFieldsObj).length > 0 ? customFieldsObj : undefined,
+      pledgeAmount: pledgeAmount > 0 ? pledgeAmount : undefined,
+      paidAmount: paidAmount > 0 ? paidAmount : undefined,
+      pledgeStatus
+    });
+  }
+
+  return results;
+};
 
 const isDuplicateGuestUniversal = (name: string, phone: string, existingGuests: Guest[]) => {
   const normName = (name || '').trim().toLowerCase();
@@ -315,7 +537,7 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
   // Bulk input field
   const [bulkTextInput, setBulkTextInput] = useState('');
   const [bulkMode, setBulkMode] = useState<'text' | 'file'>('text');
-  const [parsedFileGuests, setParsedFileGuests] = useState<{ name: string; phone: string; cardType: string; tags?: string[]; customFields?: Record<string, string> }[]>([]);
+  const [parsedFileGuests, setParsedFileGuests] = useState<ParsedGuestItem[]>([]);
   const [fileName, setFileName] = useState('');
   const [csvError, setCsvError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -333,12 +555,13 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
   }, [isBulkModalOpen]);
 
   const handleDownloadSampleCSV = () => {
-    const headers = isEn ? "Guest Name,Phone Number,Card Type\n" : "Jina la Mgeni,Namba ya Simu,Aina ya Kadi\n";
+    const headers = "Guest Full Name *,Phone Number (Optional),Category,Pledge (TZS),Paid (TZS)\n";
     const rows = [
-      "Eugen Mamboya,0714786751,DOUBLE",
-      "Fatma Ally,0755883901,SINGLE",
-      "John Doe,0713998822,SINGLE",
-      "Amos Kipande,0766223344,DOUBLE"
+      "Arnold Kimaro,,VIP,5000000,3000000",
+      "Ernest Gao,,Wafanyakazi,250000,0",
+      "David Komba,,Ndugu,250000,0",
+      "Eng Gerald Baslei,0714786751,Kamati,1000000,600000",
+      "Kilonzo Izina,0755883901,Wafanyakazi,220000,70000"
     ].join("\n");
     
     try {
@@ -346,85 +569,26 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', 'eventcard_sample_guests.csv');
+      link.setAttribute('download', 'mfano_wa_orodha_ya_wageni.csv');
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     } catch (e) {
-      alert(isEn ? "Failed to download the CSV file." : "Imeshindikana kupakua faili la CSV.");
+      alert(isEn ? "Failed to download sample file." : "Imeshindikana kupakua mfano wa faili.");
     }
   };
 
-  // Handler for parsing raw CSV file content
+  // Handler for parsing raw CSV/Text file content
   const parseCSVFileContent = (content: string) => {
     setCsvError('');
-    const lines = content.split(/\r?\n/);
-    const matchedList: { name: string; phone: string; cardType: string; tags?: string[]; customFields?: Record<string, string> }[] = [];
+    const matrix = parseTextToMatrix(content);
+    const parsed = parseUniversalGuestTable(matrix);
 
-    const splitCSVLine = (line: string): string[] => {
-      const result: string[] = [];
-      let cell = '';
-      let inQuotes = false;
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-          result.push(cell.trim());
-          cell = '';
-        } else {
-          cell += char;
-        }
-      }
-      result.push(cell.trim());
-      return result;
-    };
-
-    lines.forEach((line) => {
-      if (!line.trim()) return;
-      const parts = splitCSVLine(line);
-      
-      // Check if it's a header line to automatically skip it
-      const isHeader = parts.some(part => {
-        const lower = part.toLowerCase();
-        return lower.includes('jina') || lower.includes('name') || lower.includes('phone') || lower.includes('simu') || lower.includes('aina') || lower.includes('type') || lower.includes('mgeni');
-      });
-      if (isHeader) return;
-      
-      if (parts[0] && parts[0].trim()) {
-        const name = parts[0].trim();
-        const phone = parts[1] ? parts[1].trim() : '';
-        let type = 'DOUBLE';
-        
-        if (parts[2]) {
-          const rawType = parts[2].trim().toUpperCase();
-          type = ['SINGLE', 'DOUBLE'].includes(rawType) ? rawType : 'UNCLASSIFIED';
-        }
-
-        const tagsPart = parts[3] ? parts[3].trim() : '';
-        const parsedTags = tagsPart ? tagsPart.split(';').map(t => t.trim()).filter(Boolean) : [];
-
-        const tableNum = parts[4] ? parts[4].trim() : '';
-        const foodPref = parts[5] ? parts[5].trim() : '';
-        const customFieldsObj: Record<string, string> = {};
-        if (tableNum) customFieldsObj.tableNumber = tableNum;
-        if (foodPref) customFieldsObj.foodPreference = foodPref;
-
-        matchedList.push({ 
-          name, 
-          phone, 
-          cardType: type,
-          tags: parsedTags,
-          customFields: customFieldsObj
-        });
-      }
-    });
-
-    if (matchedList.length === 0) {
-      setCsvError('Haikupata mgeni yeyote katika faili la CSV. Angalia kama muundo unaendana na mfano wetu.');
+    if (parsed.length === 0) {
+      setCsvError('Haikupata mgeni yeyote katika faili la CSV/Text. Hakikisha safu wima zina majina kama "Guest Full Name", "Pledge", "Paid", n.k.');
       setParsedFileGuests([]);
     } else {
-      setParsedFileGuests(matchedList);
+      setParsedFileGuests(parsed);
     }
   };
 
@@ -435,17 +599,41 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
     setCsvError('');
     setParsedFileGuests([]);
 
-    const reader = new FileReader();
-    reader.onload = (eventOnload) => {
-      const text = eventOnload.target?.result as string;
-      if (text) {
-        parseCSVFileContent(text);
-      }
-    };
-    reader.onerror = () => {
-      setCsvError('Imeshindikana kusoma faili la CSV kwenye kifaa chako.');
-    };
-    reader.readAsText(file);
+    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+
+    if (isExcel) {
+      const reader = new FileReader();
+      reader.onload = (eventOnload) => {
+        try {
+          const buffer = eventOnload.target?.result as ArrayBuffer;
+          const workbook = XLSX.read(buffer, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const rawMatrix: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
+          const parsed = parseUniversalGuestTable(rawMatrix);
+          if (parsed.length === 0) {
+            setCsvError('Haikupata mgeni yeyote katika faili la Excel. Hakikisha vichwa vya habari vinasomeka mfano "Guest Full Name", "Pledge", "Paid", n.k.');
+          } else {
+            setParsedFileGuests(parsed);
+          }
+        } catch (err) {
+          setCsvError('Imeshindikana kusoma faili la Excel.');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (eventOnload) => {
+        const text = eventOnload.target?.result as string;
+        if (text) {
+          parseCSVFileContent(text);
+        }
+      };
+      reader.onerror = () => {
+        setCsvError('Imeshindikana kusoma faili la CSV kwenye kifaa chako.');
+      };
+      reader.readAsText(file);
+    }
   };
 
   const handleAddParsedFileGuests = (e: React.FormEvent) => {
@@ -475,8 +663,12 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
         rsvpStatus: 'Bado',
         rsvpGuestsCount: item.cardType === 'DOUBLE' ? 2 : 1,
         checkedIn: false,
+        category: item.category,
         tags: itemTags,
-        customFields: itemCustomFields
+        customFields: itemCustomFields,
+        pledgeAmount: item.pledgeAmount,
+        paidAmount: item.paidAmount,
+        pledgeStatus: item.pledgeStatus || 'No Pledge'
       };
 
       // Check for duplicate in existing guests
@@ -513,7 +705,7 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
     });
 
     if (nonConflicts.length > 0) {
-      handleUploadInBatches(nonConflicts, "Pakia wageni kupitia CSV");
+      handleUploadInBatches(nonConflicts, "Pakia wageni kupitia faili (CSV/Excel)");
     }
 
     if (conflicts.length > 0) {
@@ -633,83 +825,72 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
     e.preventDefault();
     if (!bulkTextInput.trim()) return;
 
-    // Split rows on semi-colon or newlines
-    const lines = bulkTextInput.split('\n');
+    const matrix = parseTextToMatrix(bulkTextInput);
+    const parsedItems = parseUniversalGuestTable(matrix);
+
+    if (parsedItems.length === 0) {
+      alert(isEn ? "No guest records found in pasted text." : "Haikupata mgeni yeyote katika maandishi uliyoweka. Hakikisha yapo majina ya wageni.");
+      return;
+    }
+
     const nonConflicts: Guest[] = [];
     const conflicts: { newGuest: Guest; existingGuest: Guest }[] = [];
 
-    lines.forEach((line, index) => {
-      // Expect format: Jina la Mgeni, Namba ya Simu, CardType, Tags, TableNumber, FoodPreference
-      const parts = line.split(',');
-      if (parts[0] && parts[0].trim()) {
-        const name = parts[0].trim();
-        const phone = parts[1] ? parts[1].trim() : '';
-        const standardisedPhone = standardisePhoneNumber(phone);
+    parsedItems.forEach((item, index) => {
+      const id = 'G-' + (Date.now() + index).toString().slice(-6);
+      const shortCode = 'IP-' + Math.floor(1100 + Math.random() * 8800);
+      const standardisedPhone = standardisePhoneNumber(item.phone);
 
-        let type = 'DOUBLE';
-        if (parts[2]) {
-          const rawType = parts[2].trim().toUpperCase();
-          type = ['SINGLE', 'DOUBLE'].includes(rawType) ? rawType : 'UNCLASSIFIED';
-        }
+      const newGuest: Guest = {
+        id,
+        eventId: event.id,
+        code: shortCode,
+        name: item.name.trim(),
+        phone: standardisedPhone,
+        cardType: item.cardType,
+        smsStatus: 'Sijatuma',
+        whatsappStatus: 'Sijatuma',
+        rsvpStatus: 'Bado',
+        rsvpGuestsCount: item.cardType === 'DOUBLE' ? 2 : 1,
+        checkedIn: false,
+        category: item.category,
+        tags: item.tags || [],
+        customFields: item.customFields || {},
+        pledgeAmount: item.pledgeAmount,
+        paidAmount: item.paidAmount,
+        pledgeStatus: item.pledgeStatus || 'No Pledge'
+      };
 
-        const tagsPart = parts[3] ? parts[3].trim() : '';
-        const parsedTags = tagsPart ? tagsPart.split(';').map(t => t.trim()).filter(Boolean) : [];
+      // Check for duplicate in existing guests
+      const existingDuplicate = guests.find(g => {
+        const normName = item.name.trim().toLowerCase();
+        const cleanPhone = standardisedPhone.replace(/\D/g, '');
+        const lastNdigits = cleanPhone.slice(-9);
 
-        const tableNum = parts[4] ? parts[4].trim() : '';
-        const foodPref = parts[5] ? parts[5].trim() : '';
-        const customFieldsObj: Record<string, string> = {};
-        if (tableNum) customFieldsObj.tableNumber = tableNum;
-        if (foodPref) customFieldsObj.foodPreference = foodPref;
+        const existingNormName = (g.name || '').trim().toLowerCase();
+        const existingCleanPhone = (g.phone || '').replace(/\D/g, '');
+        const existingLastNdigits = existingCleanPhone.slice(-9);
 
-        const id = 'G-' + (Date.now() + index).toString().slice(-6);
-        const shortCode = 'IP-' + Math.floor(1100 + Math.random() * 8800);
-        const newGuest: Guest = {
-          id,
-          eventId: event.id,
-          code: shortCode,
-          name,
-          phone: standardisedPhone,
-          cardType: type,
-          smsStatus: 'Sijatuma',
-          whatsappStatus: 'Sijatuma',
-          rsvpStatus: 'Bado',
-          rsvpGuestsCount: type === 'DOUBLE' ? 2 : 1,
-          checkedIn: false,
-          tags: parsedTags,
-          customFields: customFieldsObj
-        };
+        return (normName && existingNormName === normName) || (lastNdigits && existingLastNdigits && lastNdigits === existingLastNdigits);
+      });
 
-        // Check for duplicate in existing guests
-        const existingDuplicate = guests.find(g => {
-          const normName = name.trim().toLowerCase();
-          const cleanPhone = standardisedPhone.replace(/\D/g, '');
-          const lastNdigits = cleanPhone.slice(-9);
+      // Check for duplicate in nonConflicts
+      const isSelfDuplicate = nonConflicts.some(g => {
+        const normName = item.name.trim().toLowerCase();
+        const cleanPhone = standardisedPhone.replace(/\D/g, '');
+        const lastNdigits = cleanPhone.slice(-9);
 
-          const existingNormName = (g.name || '').trim().toLowerCase();
-          const existingCleanPhone = (g.phone || '').replace(/\D/g, '');
-          const existingLastNdigits = existingCleanPhone.slice(-9);
+        const existingNormName = g.name.trim().toLowerCase();
+        const existingCleanPhone = g.phone.replace(/\D/g, '');
+        const existingLastNdigits = existingCleanPhone.slice(-9);
 
-          return (normName && existingNormName === normName) || (lastNdigits && existingLastNdigits && lastNdigits === existingLastNdigits);
-        });
+        return (normName && existingNormName === normName) || (lastNdigits && existingLastNdigits && lastNdigits === existingLastNdigits);
+      });
 
-        // Check for duplicate in nonConflicts
-        const isSelfDuplicate = nonConflicts.some(g => {
-          const normName = name.trim().toLowerCase();
-          const cleanPhone = standardisedPhone.replace(/\D/g, '');
-          const lastNdigits = cleanPhone.slice(-9);
-
-          const existingNormName = g.name.trim().toLowerCase();
-          const existingCleanPhone = g.phone.replace(/\D/g, '');
-          const existingLastNdigits = existingCleanPhone.slice(-9);
-
-          return (normName && existingNormName === normName) || (lastNdigits && existingLastNdigits && lastNdigits === existingLastNdigits);
-        });
-
-        if (existingDuplicate) {
-          conflicts.push({ newGuest, existingGuest: existingDuplicate });
-        } else if (!isSelfDuplicate) {
-          nonConflicts.push(newGuest);
-        }
+      if (existingDuplicate) {
+        conflicts.push({ newGuest, existingGuest: existingDuplicate });
+      } else if (!isSelfDuplicate) {
+        nonConflicts.push(newGuest);
       }
     });
 
@@ -1479,13 +1660,28 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                           <span className="text-emerald-400">WA:</span> {guest.whatsappCount || (isStatusSent(guest.whatsappStatus) ? 1 : 0)}
                         </span>
                       </div>
-                      {((guest.tags && guest.tags.length > 0) || (guest.customFields && Object.keys(guest.customFields).length > 0)) && (
+                      {((guest.tags && guest.tags.length > 0) || guest.category || (guest.pledgeAmount && guest.pledgeAmount > 0) || (guest.paidAmount && guest.paidAmount > 0) || (guest.customFields && Object.keys(guest.customFields).length > 0)) && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
-                          {guest.tags?.map((tag, tIdx) => (
+                          {guest.category && (
+                            <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-300 rounded border border-blue-500/20 text-[9px] font-bold">
+                              {guest.category}
+                            </span>
+                          )}
+                          {guest.tags?.filter(t => t !== guest.category).map((tag, tIdx) => (
                             <span key={tIdx} className="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-300 rounded border border-indigo-500/20 text-[9px] font-bold">
                               {tag}
                             </span>
                           ))}
+                          {guest.pledgeAmount && guest.pledgeAmount > 0 ? (
+                            <span className="px-1.5 py-0.5 bg-purple-500/10 text-purple-300 rounded border border-purple-500/20 text-[9px] font-bold font-mono">
+                              Ahadi: TZS {guest.pledgeAmount.toLocaleString()}
+                            </span>
+                          ) : null}
+                          {guest.paidAmount && guest.paidAmount > 0 ? (
+                            <span className="px-1.5 py-0.5 bg-emerald-500/15 text-emerald-300 rounded border border-emerald-500/30 text-[9px] font-bold font-mono">
+                              Paid: TZS {guest.paidAmount.toLocaleString()}
+                            </span>
+                          ) : null}
                           {guest.customFields && guest.customFields.tableNumber && (
                             <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-300 rounded border border-amber-500/20 text-[9px] font-bold">
                               {isEn ? 'Table' : 'Meza'}: {guest.customFields.tableNumber}
@@ -1737,28 +1933,28 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                 <X className="w-5 h-5" />
               </button>
 
-              <h3 className="text-base font-bold text-white">Uingizaji Wageni kwa Wingi (Bulk Add)</h3>
+              <h3 className="text-base font-bold text-white">Uingizaji Wageni kwa Wingi (Smart Bulk Add)</h3>
               <p className="text-[11px] text-slate-300 leading-normal">
-                Ingiza orodha ya wageni wako kwa kuweka <strong>Jina, Namba (Optional), Aina ya kadi (Optional)</strong> katika kila mstari mpya mmoja mmoja.
+                Mfumo utagundua na kupanga taarifa kiotomatiki kulingana na <strong>Kichwa cha Habari (Headers)</strong> kama <em>Guest Full Name, Phone, Category, Pledge, Paid</em> n.k. Si lazima kuweka taarifa zote au kwa mpangilio ule ule.
               </p>
 
               {/* Sample hint card */}
               <div className="bg-white/5 p-3 rounded-xl border border-white/10 font-mono text-[10px] text-slate-300 space-y-2">
                 <div className="space-y-0.5">
-                  <p className="font-bold text-white">Mfano wa muundo sahihi (CSV format):</p>
-                  <p>Jina la Mgeni wa Kwanza, 0714786751, DOUBLE</p>
-                  <p>Jina la Mgeni wa Pili, 0755883901, UNCLASSIFIED</p>
-                  <p>Jina la Mgeni wa Tatu, 0713998822, SINGLE</p>
+                  <p className="font-bold text-white">Mfano wa kadi/safu wima zinazotambuliwa:</p>
+                  <p className="text-emerald-300">Guest Full Name *, Phone Number, Category, Pledge, Paid</p>
+                  <p className="text-slate-400">Arnold Kimaro | VIP | Ahadi: 5,000,000 | Paid: 3,000,000</p>
+                  <p className="text-slate-400">Ernest Gao | Wafanyakazi | Ahadi: 250,000 | Paid: 0</p>
                 </div>
                 <div className="pt-2 border-t border-white/5 flex justify-between items-center gap-2">
-                  <span className="text-[9px] text-slate-400 font-sans">Je, ungependa kupata template tayari?</span>
+                  <span className="text-[9px] text-slate-400 font-sans">Unataka mfano wa faili la Excel/CSV?</span>
                   <button
                     type="button"
                     onClick={handleDownloadSampleCSV}
                     className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg text-[10px] font-sans transition cursor-pointer shrink-0"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Pakua CSV Template</span>
+                    <span>Pakua Excel/CSV Template</span>
                   </button>
                 </div>
               </div>
@@ -1774,7 +1970,7 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                       : 'border-transparent text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  <span>Mbinu ya 1: Paste Maandishi</span>
+                  <span>Mbinu ya 1: Paste kutoka Excel/Sheets</span>
                 </button>
                 <button
                   type="button"
@@ -1785,7 +1981,7 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                       : 'border-transparent text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  <span>Mbinu ya 2: Pakia Faili la CSV (Excel)</span>
+                  <span>Mbinu ya 2: Pakia Faili la Excel (.xlsx / .csv)</span>
                 </button>
               </div>
 
@@ -1803,17 +1999,34 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                       const file = e.dataTransfer.files?.[0];
                       if (file) {
                         setFileName(file.name);
-                        const reader = new FileReader();
-                        reader.onload = (eventOnload) => {
-                          const text = eventOnload.target?.result as string;
-                          if (text) {
-                            parseCSVFileContent(text);
-                          }
-                        };
-                        reader.onerror = () => {
-                          setCsvError('Imeshindikana kusoma faili la CSV kwenye kifaa chako.');
-                        };
-                        reader.readAsText(file);
+                        const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+                        if (isExcel) {
+                          const reader = new FileReader();
+                          reader.onload = (eventOnload) => {
+                            try {
+                              const buffer = eventOnload.target?.result as ArrayBuffer;
+                              const workbook = XLSX.read(buffer, { type: 'array' });
+                              const sheetName = workbook.SheetNames[0];
+                              const rawMatrix: any[][] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
+                              const parsed = parseUniversalGuestTable(rawMatrix);
+                              if (parsed.length === 0) {
+                                setCsvError('Haikupata mgeni yeyote katika faili la Excel.');
+                              } else {
+                                setParsedFileGuests(parsed);
+                              }
+                            } catch (err) {
+                              setCsvError('Imeshindikana kusoma faili la Excel.');
+                            }
+                          };
+                          reader.readAsArrayBuffer(file);
+                        } else {
+                          const reader = new FileReader();
+                          reader.onload = (eventOnload) => {
+                            const text = eventOnload.target?.result as string;
+                            if (text) parseCSVFileContent(text);
+                          };
+                          reader.readAsText(file);
+                        }
                       }
                     }}
                     onClick={() => fileInputRef.current?.click()}
@@ -1829,7 +2042,7 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                       type="file"
                       ref={fileInputRef}
                       onChange={handleFileChange}
-                      accept=".csv,.txt"
+                      accept=".xlsx,.xls,.csv,.txt"
                       className="hidden"
                     />
                     
@@ -1843,7 +2056,7 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                       <div className="space-y-2">
                         <Upload className="w-10 h-10 mx-auto text-blue-455 animate-pulse" />
                         <p className="font-semibold text-slate-200">Bofya hapa au Vuta na kuachia faili sasa (Drag & Drop)</p>
-                        <p className="text-[10px] text-slate-400">Inasaidia faili za .csv na .txt</p>
+                        <p className="text-[10px] text-slate-400">Inasaidia faili za Excel (.xlsx, .xls), CSV na Text (.txt)</p>
                       </div>
                     )}
                   </div>
@@ -1859,14 +2072,30 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                       <p className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">
                         Wageni waliopatikana kwenye faili ({parsedFileGuests.length}):
                       </p>
-                      <div className="border border-white/15 rounded-xl max-h-[120px] overflow-y-auto divide-y divide-white/5 bg-[#050b18] text-[10.5px]">
+                      <div className="border border-white/15 rounded-xl max-h-[140px] overflow-y-auto divide-y divide-white/5 bg-[#050b18] text-[10.5px]">
                         {parsedFileGuests.slice(0, 10).map((g, idx) => (
-                          <div key={idx} className="p-2 flex justify-between items-center text-slate-350">
-                            <span className="font-bold text-white truncate max-w-[130px]">{g.name}</span>
-                            <span className="font-mono">{g.phone}</span>
-                            <span className="bg-white/10 text-[9px] font-bold px-1.5 py-0.2 rounded border border-white/5">
-                              {g.cardType}
-                            </span>
+                          <div key={idx} className="p-2 flex flex-wrap justify-between items-center gap-1.5 text-slate-350">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white truncate max-w-[130px]">{g.name}</span>
+                              {g.phone && <span className="font-mono text-[10px] text-slate-400">{g.phone}</span>}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {g.category && (
+                                <span className="bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[9px] font-bold px-1.5 py-0.5 rounded">
+                                  {g.category}
+                                </span>
+                              )}
+                              {(g.pledgeAmount || 0) > 0 && (
+                                <span className="bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[9px] font-bold font-mono px-1.5 py-0.5 rounded">
+                                  Ahadi: TZS {g.pledgeAmount?.toLocaleString()}
+                                </span>
+                              )}
+                              {(g.paidAmount || 0) > 0 && (
+                                <span className="bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-[9px] font-bold font-mono px-1.5 py-0.5 rounded">
+                                  Paid: TZS {g.paidAmount?.toLocaleString()}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         ))}
                         {parsedFileGuests.length > 10 && (
@@ -1891,9 +2120,9 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                 <form onSubmit={handleAddBulkGuests} className="space-y-4">
                   <textarea
                     id="bulk-guests-textarea"
-                    rows={6}
+                    rows={7}
                     required
-                    placeholder="Andika au paste orodha ya wageni hapa..."
+                    placeholder={`Paste au andika orodha yako hapa kutoka Excel au Google Sheets...\n\nGuest Full Name *\tPhone Number (Optional)\tCategory\tPledge (TZS)\tPaid (TZS)\nArnold Kimaro\t\tVIP\t5,000,000\t3,000,000\nErnest Gao\t\tWafanyakazi\t250,000\t0`}
                     value={bulkTextInput}
                     onChange={(e) => setBulkTextInput(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 rounded-xl p-3 font-mono text-[11px] text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
@@ -1904,7 +2133,7 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                     id="submit-bulk-guests-btn"
                     className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] text-white font-bold rounded-xl transition shadow-md cursor-pointer"
                   >
-                    Ongeza Orodha Yote Sasa ✓
+                    Hifadhi na Ongeza Orodha Sasa ✓
                   </button>
                 </form>
               )}

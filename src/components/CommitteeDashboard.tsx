@@ -482,7 +482,7 @@ export default function CommitteeDashboard({
     if (treasuryTargetGuest.phone) {
       const isCompleted = (treasuryTargetGuest.paidAmount || 0) + amountVal >= (treasuryTargetGuest.pledgeAmount || 0);
       const refCode = treasuryRef || 'TXN-' + Math.floor(100000 + Math.random() * 899999);
-      const eventTitle = currentEvent?.name || 'Sherehe';
+      const eventTitle = event?.name || 'Sherehe';
       const payerName = treasuryTargetGuest.name;
       const amtStr = amountVal.toLocaleString();
       const totalPaid = ((treasuryTargetGuest.paidAmount || 0) + amountVal).toLocaleString();
@@ -505,7 +505,7 @@ export default function CommitteeDashboard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           guestId: treasuryTargetGuest.id,
-          eventId: currentEvent?.id || 'event-1',
+          eventId: event?.id || 'event-1',
           phone: treasuryTargetGuest.phone,
           text: msg,
           channel: 'sms',

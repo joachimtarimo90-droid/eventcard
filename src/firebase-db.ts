@@ -9,6 +9,7 @@ const DB_PATH = path.join(process.cwd(), "database.json");
 let inMemoryDB: any = null;
 
 let sqlConnectionFailed = false;
+let lastSqlFailTime = 0;
 
 function hasSQLConfig() {
   const envUrl = process.env.SQL_HOST || process.env.DATABASE_URL || process.env.SQL_DATABASE_URL;

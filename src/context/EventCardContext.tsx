@@ -99,13 +99,18 @@ export function EventCardProvider({ children }: { children: ReactNode }) {
         setGuests((prevGuests) => {
           const incomingIds = new Set(data.guests.map((g: any) => g.id));
           
+          // Filter out any guests from server that were deleted locally in this session
+          const filteredIncomingDataGuests = data.guests.filter(
+            (cg: any) => !deletedGuestIdsRef.current.has(cg.id)
+          );
+
           // Preserve local guests that aren't in incoming server data yet (e.g. freshly created or during local save)
           // UNLESS they were explicitly deleted!
           const unsavedLocalGuests = prevGuests.filter(
             (localG) => !incomingIds.has(localG.id) && !deletedGuestIdsRef.current.has(localG.id)
           );
 
-          const mergedFromData = data.guests.map((cg: any) => {
+          const mergedFromData = filteredIncomingDataGuests.map((cg: any) => {
             const localG = prevGuests?.find((g) => g.id === cg.id);
             if (localG && localG.cardImageUrl) {
               return { ...cg, cardImageUrl: localG.cardImageUrl };
@@ -206,7 +211,11 @@ export function EventCardProvider({ children }: { children: ReactNode }) {
 
       if (updates.guests && Array.isArray(updates.guests)) {
         const incomingIds = new Set(updates.guests.map((g: any) => g.id));
-        const deletedGuestIds = guestsState.filter(g => !incomingIds.has(g.id)).map(g => g.id);
+        const computedDeleted = guestsState.filter(g => !incomingIds.has(g.id)).map(g => g.id);
+        const deletedGuestIds = updates.deletedGuestIds && updates.deletedGuestIds.length > 0
+          ? Array.from(new Set([...updates.deletedGuestIds, ...computedDeleted]))
+          : computedDeleted;
+
         if (deletedGuestIds.length > 0) {
           sanitizedUpdates.deletedGuestIds = deletedGuestIds;
           deletedGuestIds.forEach(id => deletedGuestIdsRef.current.add(id));
@@ -260,11 +269,21 @@ export function EventCardProvider({ children }: { children: ReactNode }) {
 
   const updateGuests = (updatedActiveGuests: Guest[], actionDesc?: string, skipServerSave = false) => {
     if (!eventDetails) return;
+    const activeOldGuests = guestsState.filter(g => g.eventId === eventDetails.id || (!g.eventId && eventDetails.id === 'event-starter'));
+    const updatedActiveIds = new Set(updatedActiveGuests.map(g => g.id));
+    const deletedActiveIds = activeOldGuests.filter(g => !updatedActiveIds.has(g.id)).map(g => g.id);
+
+    deletedActiveIds.forEach(id => deletedGuestIdsRef.current.add(id));
+
     const otherGuests = guestsState.filter(g => g.eventId !== eventDetails.id && (g.eventId || eventDetails.id !== 'event-starter'));
     const merged = [...otherGuests, ...updatedActiveGuests];
     setGuests(merged);
+
     if (!skipServerSave) {
-      saveState({ guests: merged }, actionDesc || 'Amesasisha orodha ya wageni (Guests Updated)', `Tukio: ${eventDetails.name}`);
+      saveState({ 
+        guests: merged,
+        deletedGuestIds: deletedActiveIds.length > 0 ? deletedActiveIds : undefined 
+      }, actionDesc || 'Amesasisha orodha ya wageni (Guests Updated)', `Tukio: ${eventDetails.name}`);
     }
   };
 
