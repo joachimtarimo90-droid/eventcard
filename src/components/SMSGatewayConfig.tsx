@@ -282,9 +282,9 @@ export default function SMSGatewayConfig() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         phone: testPhone.trim(),
-        text: "hello_world",
+        text: isEn ? "Ujumbe wa Majaribio" : "Ujumbe wa Majaribio wa WhatsApp",
         channel: 'whatsapp',
-        templateParams: []
+        templateParams: ["Mjaribiwa", "EventCard"]
       })
     })
       .then(res => {
@@ -488,8 +488,9 @@ export default function SMSGatewayConfig() {
 
                   {availableIds.length > 0 ? (
                     <div className="bg-black/40 border border-white/5 rounded-lg p-2 space-y-2 max-h-40 overflow-y-auto">
-                      {availableIds.map((item) => (
+                      {availableIds.map((item, idx) => (
                           <div 
+                            key={item.id || item.sender_id || idx}
                             className="flex flex-col border-b border-white/5 pb-2 last:border-0 last:pb-0 cursor-pointer hover:bg-white/5 p-1 rounded transition-colors"
                             onClick={() => {
                               setGatewaySettings({ ...gatewaySettings, senderId: item.id });
@@ -732,11 +733,13 @@ export default function SMSGatewayConfig() {
                     </div>
                   </div>
 
-                   <div className="text-[9px] text-slate-400 leading-normal p-2 bg-black/40 rounded-lg mt-1">
-                    <p className="font-bold text-slate-300 pb-0.5">⚠️ {isEn ? "Important for Meta WABA:" : "Muhimu kwa Meta WABA:"}</p>
-                    {isEn 
-                      ? "Ensure your Meta message template parameters ({{1}}, {{2}}, {{3}}...) are aligned in the correct sequence. Our software maps variables in order of their appearance."
-                      : "Hakikisha template yako ya Meta ina vigezo kwa mpangilio sahihi. Mfumo wetu utatuma taarifa (Kama Jina la Mgeni, Ukumbi, n.k) kwa ulingano sahihi."}
+                   <div className="text-[9px] text-slate-400 leading-normal p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg mt-1 space-y-1">
+                    <p className="font-bold text-amber-300">⚠️ {isEn ? "Important for Live Phone Numbers:" : "Muhimu kwa Namba Halisi (Live Phone Numbers):"}</p>
+                    <p>
+                      {isEn 
+                        ? "If you are using a Live Meta WhatsApp Number, Meta restricts the default 'hello_world' test template. Please create an approved custom template in Meta WhatsApp Manager (e.g. kadi_mwaliko or mwaliko_wa_sherehe) and set its name in the field above."
+                        : "Kama unatumia Namba Halisi (Live Number) ya Meta WhatsApp, Meta hairuhusu kutumia template ya majaribio ya 'hello_world'. Tafadhali unda na kusajili Template mpya kule Meta WhatsApp Manager (Mfano: kadi_mwaliko au mwaliko_wa_sherehe) kisha weka jina la template hiyo hapo juu."}
+                    </p>
                   </div>
 
                   <div className="border-t border-white/10 pt-3 mt-3 space-y-2">
@@ -1011,8 +1014,8 @@ export default function SMSGatewayConfig() {
               </div>
             ) : (
               <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                {whatsappLogs.map((log: any) => (
-                  <div key={log.id} className="bg-[#070d19] border border-white/10 rounded-xl p-3 space-y-1.5 text-[10px]">
+                {whatsappLogs.map((log: any, idx: number) => (
+                  <div key={log.id || log.timestamp || `log-${idx}`} className="bg-[#070d19] border border-white/10 rounded-xl p-3 space-y-1.5 text-[10px]">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-white">{log.guestName}</span>

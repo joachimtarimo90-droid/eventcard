@@ -1,6 +1,6 @@
 import { db } from "./index.ts";
 import * as schema from "./schema.ts";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, notInArray } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
 
@@ -842,8 +842,21 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
       });
     }
 
-    // 3.8. Save Committee Members (BATCHED)
-    if (data.committee_members && Array.isArray(data.committee_members) && data.committee_members.length > 0) {
+    // 3.8. Save Committee Members (BATCHED with Delete Reconciliation)
+    if (data.committee_members && Array.isArray(data.committee_members)) {
+      const activeIds = data.committee_members.map((m: any) => String(m.id)).filter(Boolean);
+      try {
+        if (activeIds.length > 0) {
+          // Delete committee members from SQL table that are NOT in the active in-memory list
+          await db.delete(schema.committeeMembers).where(notInArray(schema.committeeMembers.id, activeIds));
+        } else {
+          // If the list is completely empty, delete all members
+          await db.delete(schema.committeeMembers);
+        }
+      } catch (delErr) {
+        console.error("[CloudSQL Sync] Failed to reconcile deleted committee members:", delErr);
+      }
+
       const values = data.committee_members
         .filter((m: any) => m.id)
         .map((m: any) => ({

@@ -47,6 +47,56 @@ export default function CommitteeDashboard({
   const [committeeMembers, setCommitteeMembers] = useState<CommitteeMember[]>([]);
   const [committeeRoles, setCommitteeRoles] = useState<{id: string; name: string; description: string; permissionLevel: string}[]>([]);
 
+  // Helper to score position for sorting according to hierarchy:
+  // 1. Mwenyekiti, 2. Makamu Mwenyekiti, 3. Katibu Mkuu, 4. Katibu Msaidizi, 5. Mweka Hazina, 6. Mweka Hazina Msaidizi, 7. Mkuu wa Kamati Ndogo, 8. Wajumbe
+  const getPositionScore = (pos: string): number => {
+    if (!pos) return 99;
+    const p = pos.toLowerCase();
+    
+    if (p.includes('mwenyekiti') || p.includes('chairperson') || p.includes('chairman') || p.includes('owner')) {
+      if (p.includes('makamu') || p.includes('vice')) {
+        return 2;
+      }
+      return 1;
+    }
+    if (p.includes('vice chair') || p.includes('makamu mwenyekiti')) {
+      return 2;
+    }
+    if (p.includes('katibu') || p.includes('secretary')) {
+      if (p.includes('msaidizi') || p.includes('makamu') || p.includes('assistant') || p.includes('vice')) {
+        return 4;
+      }
+      return 3;
+    }
+    if (p.includes('hazina') || p.includes('treasurer')) {
+      if (p.includes('msaidizi') || p.includes('makamu') || p.includes('assistant') || p.includes('vice')) {
+        return 6;
+      }
+      return 5;
+    }
+    if (p.includes('mkuu wa kamati') || p.includes('sub-committee head') || p.includes('head of sub-committee')) {
+      return 7;
+    }
+    if (p.includes('mjumbe') || p.includes('member')) {
+      return 8;
+    }
+    if (p.includes('mkuu')) {
+      return 7;
+    }
+    return 8;
+  };
+
+  const sortedCommitteeMembers = useMemo(() => {
+    return [...committeeMembers].sort((a, b) => {
+      const scoreA = getPositionScore(a.position);
+      const scoreB = getPositionScore(b.position);
+      if (scoreA !== scoreB) {
+        return scoreA - scoreB;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [committeeMembers]);
+
   // State for simulated logged-in committee role to showcase role-based features!
   const [activeRole, setActiveRole] = useState<'Event Owner' | 'Treasurer' | 'Secretary' | 'Committee Member'>('Event Owner');
 
@@ -113,6 +163,8 @@ export default function CommitteeDashboard({
   const [memberMethod, setMemberMethod] = useState<'SMS' | 'WhatsApp' | 'Email'>('WhatsApp');
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [invitationLinkSent, setInvitationLinkSent] = useState<string | null>(null);
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [deleteConfirmMember, setDeleteConfirmMember] = useState<CommitteeMember | null>(null);
 
   // Meeting Reminders & WhatsApp/SMS Dispatch states
   const [meetingTitle, setMeetingTitle] = useState('Kikao cha 3 cha Kamati ya Harusi');
@@ -663,10 +715,13 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
   const partialPaidList = useMemo(() => guests.filter(g => (g.pledgeAmount || 0) > 0 && (g.paidAmount || 0) > 0 && (g.paidAmount || 0) < (g.pledgeAmount || 0)), [guests]);
   const noPaymentPledgeList = useMemo(() => guests.filter(g => (g.pledgeAmount || 0) > 0 && (g.paidAmount || 0) === 0), [guests]);
 
-  // Handle saving new simulated member
+  // Handle saving new or edited simulated member
   const handleCreateMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!memberName || !memberPhone) return;
+
+    const isEditing = !!editingMemberId;
+    const memberId = editingMemberId || 'c-' + Date.now();
 
     let permission: any = 'Summary Access';
     const roleMatch = committeeRoles.find(r => r.name === memberPosition);
@@ -678,8 +733,9 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
       else if (memberPosition.includes('Katibu') || memberPosition === 'Secretary') permission = 'Viewer Access';
     }
 
+    const currentMember = committeeMembers.find(m => m.id === editingMemberId);
     const newMemberObj: CommitteeMember = {
-      id: 'c-' + Date.now(),
+      id: memberId,
       name: memberName,
       phone: memberPhone,
       email: memberEmail || 'kamati@eventcard.co.tz',
@@ -687,7 +743,7 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
       position: memberPosition,
       subCommittee: memberSubCommittee,
       permissionLevel: permission,
-      token: Math.random().toString(36).substring(2, 8)
+      token: isEditing && currentMember ? currentMember.token : Math.random().toString(36).substring(2, 8)
     };
 
     try {
@@ -697,12 +753,14 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          id: memberId,
           name: memberName,
           phone: memberPhone,
           email: memberEmail || 'kamati@eventcard.co.tz',
           position: memberPosition,
           subCommittee: memberSubCommittee,
-          permissionLevel: permission
+          permissionLevel: permission,
+          token: newMemberObj.token
         })
       });
       const data = await resp.json();
@@ -716,19 +774,33 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
           .then(res => res.json())
           .then(list => {
             if (Array.isArray(list) && list.length > 0) setCommitteeMembers(list);
-            else setCommitteeMembers(prev => [...prev, newMemberObj]);
+            else {
+              setCommitteeMembers(prev => {
+                if (isEditing) return prev.map(x => x.id === memberId ? newMemberObj : x);
+                return [...prev, newMemberObj];
+              });
+            }
           })
           .catch(() => {
-            setCommitteeMembers(prev => [...prev, newMemberObj]);
+            setCommitteeMembers(prev => {
+              if (isEditing) return prev.map(x => x.id === memberId ? newMemberObj : x);
+              return [...prev, newMemberObj];
+            });
           });
       } else {
-        setCommitteeMembers(prev => [...prev, newMemberObj]);
+        setCommitteeMembers(prev => {
+          if (isEditing) return prev.map(x => x.id === memberId ? newMemberObj : x);
+          return [...prev, newMemberObj];
+        });
         const urlToUse = typeof window !== 'undefined' ? window.location.origin : 'https://eventcard.co.tz';
         setInvitationLinkSent(`${urlToUse}/?token=${newMemberObj.token}&event=${event.id}`);
       }
     } catch (e) {
       console.error(e);
-      setCommitteeMembers(prev => [...prev, newMemberObj]);
+      setCommitteeMembers(prev => {
+        if (isEditing) return prev.map(x => x.id === memberId ? newMemberObj : x);
+        return [...prev, newMemberObj];
+      });
       const urlToUse = typeof window !== 'undefined' ? window.location.origin : 'https://eventcard.co.tz';
       setInvitationLinkSent(`${urlToUse}/?token=${newMemberObj.token}&event=${event.id}`);
     }
@@ -737,26 +809,30 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
     setMemberName('');
     setMemberPhone('');
     setMemberEmail('');
+    setMemberPosition('Mjumbe wa Kamati');
+    setMemberSubCommittee('Kamati Kuu ya Uendeshaji');
+    setEditingMemberId(null);
 
     // Activity log entry
-    addActivityLog('Event Owner (Admin)', `Alimualika mjumbe mpya: ${memberName} (${memberPosition} - ${memberSubCommittee}) kupitia ${memberMethod}`);
+    addActivityLog('Event Owner (Admin)', isEditing 
+      ? `Alihariri taarifa za kiongozi: ${memberName} (${memberPosition})`
+      : `Alimualika mjumbe mpya: ${memberName} (${memberPosition} - ${memberSubCommittee}) kupitia ${memberMethod}`
+    );
 
     // Push notification
     const newNotif: CommitteeNotification = {
       id: 'n-' + Date.now(),
-      type: 'pledge',
-      title: 'Mjumbe Mpya Alikwa',
-      message: `${memberName} ameajiriwa kama ${memberPosition} wa kamati. Salio la sasa linaweza kutazamwa na mfumo.`,
+      type: isEditing ? 'completed' : 'pledge',
+      title: isEditing ? 'Taarifa za Kiongozi Zimehaririwa' : 'Mjumbe Mpya Alikwa',
+      message: isEditing
+        ? `Taarifa za kiongozi ${memberName} (${memberPosition}) zimeboreshwa kikamilifu.`
+        : `${memberName} ameajiriwa kama ${memberPosition} wa kamati. Salio la sasa linaweza kutazamwa na mfumo.`,
       createdAt: new Date().toLocaleDateString('sw-TZ') + ' ' + new Date().toLocaleTimeString('sw-TZ', { hour: '2-digit', minute: '2-digit' }),
       read: false
     };
     const updatedNotifs = [newNotif, ...notifications];
     setNotifications(updatedNotifs);
     safeLocalStorage.setItem(`kadi_committee_notifications_${event.id}`, JSON.stringify(updatedNotifs));
-
-    setMemberName('');
-    setMemberPhone('');
-    setMemberEmail('');
   };
 
   // Treasurer records payment
@@ -3692,14 +3768,18 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             
-            {/* Form to add Leaders & Members */}
+            {/* Form to add/edit Leaders & Members */}
             <div className="lg:col-span-5 backdrop-blur-md bg-white/[0.02] border border-white/10 rounded-3xl p-6 space-y-4">
               <div className="border-b border-white/5 pb-2">
                 <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 font-mono text-[9px] px-2.5 py-1 rounded-full uppercase font-bold">
-                  {isEn ? "Add Leader / Member" : "Sajili Kiongozi / Mjumbe Mpya"}
+                  {editingMemberId 
+                    ? (isEn ? "Edit Leader / Member" : "Hariri Kiongozi / Mjumbe")
+                    : (isEn ? "Add Leader / Member" : "Sajili Kiongozi / Mjumbe Mpya")}
                 </span>
                 <h4 className="font-extrabold text-white text-xs uppercase font-mono tracking-wider mt-2">
-                  {isEn ? "Register Committee Executive" : "Weka Taarifa za Mwanakamati"}
+                  {editingMemberId 
+                    ? (isEn ? "Modify Committee Executive" : "Hariri Taarifa za Mwanakamati")
+                    : (isEn ? "Register Committee Executive" : "Weka Taarifa za Mwanakamati")}
                 </h4>
                 <p className="text-slate-400 text-[10.5px]">
                   {isEn 
@@ -3767,8 +3847,9 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                     <option value="Mwenyekiti wa Kamati">👑 Mwenyekiti wa Kamati (Chairperson)</option>
                     <option value="Makamu Mwenyekiti">🥈 Makamu Mwenyekiti (Vice Chair)</option>
                     <option value="Katibu Mkuu">📝 Katibu Mkuu (Secretary)</option>
-                    <option value="Makamu Katibu">✍️ Makamu Katibu (Vice Secretary)</option>
+                    <option value="Katibu Msaidizi">✍️ Katibu Msaidizi (Assistant Secretary)</option>
                     <option value="Mtunza Hazina / Mweka Hazina">💰 Mtunza Hazina / Mweka Hazina (Treasurer)</option>
+                    <option value="Mweka Hazina Msaidizi">💸 Mweka Hazina Msaidizi (Assistant Treasurer)</option>
                     <option value="Mkuu wa Kamati Ndogo">🏆 Mkuu wa Kamati Ndogo (Sub-committee Head)</option>
                     <option value="Mjumbe wa Kamati">👥 Mjumbe wa Kamati (Committee Member)</option>
                   </select>
@@ -3816,13 +3897,39 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                   </div>
                 </div>
 
-                <button
-                  type="submit"
-                  className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 text-white font-extrabold text-xs uppercase tracking-widest rounded-xl transition shadow-lg hover:brightness-110 cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <Crown className="w-4 h-4" />
-                  <span>{isEn ? "Register & Dispatch Login Access" : "Sajili Kiongozi / Mjumbe na Tuma Portal Link"}</span>
-                </button>
+                {editingMemberId ? (
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-extrabold text-xs uppercase tracking-widest rounded-xl transition shadow-lg hover:brightness-110 cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <UserCheck className="w-4 h-4" />
+                      <span>{isEn ? "Save Changes" : "Hifadhi Mabadiliko"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingMemberId(null);
+                        setMemberName('');
+                        setMemberPhone('');
+                        setMemberEmail('');
+                        setMemberPosition('Mjumbe wa Kamati');
+                        setMemberSubCommittee('Kamati Kuu ya Uendeshaji');
+                      }}
+                      className="px-4 py-3 bg-white/5 hover:bg-white/10 text-slate-350 border border-white/5 font-extrabold text-xs uppercase tracking-widest rounded-xl transition cursor-pointer"
+                    >
+                      {isEn ? "Cancel" : "Ghairi"}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="submit"
+                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 text-white font-extrabold text-xs uppercase tracking-widest rounded-xl transition shadow-lg hover:brightness-110 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <Crown className="w-4 h-4" />
+                    <span>{isEn ? "Register & Dispatch Login Access" : "Sajili Kiongozi / Mjumbe na Tuma Portal Link"}</span>
+                  </button>
+                )}
               </form>
 
               {/* Generated demo link simulator visual assistance */}
@@ -3860,7 +3967,7 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
               </div>
 
               <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
-                {committeeMembers.map(m => {
+                {sortedCommitteeMembers.map(m => {
                   const isLeader = m.position.includes('Mwenyekiti') || m.position.includes('Chairperson') || m.position.includes('Katibu') || m.position.includes('Secretary') || m.position.includes('Hazina') || m.position.includes('Treasurer');
                   
                   // Badge styling logic
@@ -3946,24 +4053,38 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                         </button>
 
                         {activeRole === 'Event Owner' && (
-                          <button
-                            onClick={() => {
-                              fetch(`/api/committee/members/${m.id}`, { method: 'DELETE' })
-                                .then(() => fetch('/api/committee/members'))
-                                .then(res => res.json())
-                                .then(list => {
-                                  if (Array.isArray(list)) setCommitteeMembers(list);
-                                  else setCommitteeMembers(prev => prev.filter(x => x.id !== m.id));
-                                })
-                                .catch(() => {
-                                  setCommitteeMembers(prev => prev.filter(x => x.id !== m.id));
-                                });
-                            }}
-                            className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-xl border border-red-500/20 text-[10px] font-bold transition cursor-pointer"
-                            title="Ondoa kwenye kamati"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => {
+                                setEditingMemberId(m.id);
+                                setMemberName(m.name);
+                                setMemberPhone(m.phone);
+                                setMemberEmail(m.email || '');
+                                setMemberPosition(m.position || 'Mjumbe wa Kamati');
+                                setMemberSubCommittee(m.subCommittee || 'Kamati Kuu ya Uendeshaji');
+                                
+                                const inputEl = document.getElementById('member-fullname');
+                                if (inputEl) {
+                                  inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  inputEl.focus();
+                                }
+                              }}
+                              className="p-2 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-xl border border-blue-500/20 text-[10px] font-bold transition cursor-pointer"
+                              title="Hariri taarifa"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setDeleteConfirmMember(m);
+                              }}
+                              className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-xl border border-red-500/20 text-[10px] font-bold transition cursor-pointer"
+                              title="Ondoa kwenye kamati"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -5089,6 +5210,79 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
 
             <p className="text-slate-500 text-[10px] font-mono text-center">EVENTCARD © 2026 • Powered by AI Studio Build</p>
 
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteConfirmMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fade-in" id="delete-member-confirm-modal">
+          <div className="bg-[#0b1329] border border-white/10 w-full max-w-sm rounded-3xl p-6 space-y-6 relative overflow-hidden">
+            <div className="text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mx-auto text-rose-500">
+                <Trash2 className="w-5 h-5 stroke-[1.5]" />
+              </div>
+              <h3 className="text-base font-black text-white uppercase tracking-wider">
+                {isEn ? "Confirm Deletion" : "Thibitisha Kufuta"}
+              </h3>
+              <p className="text-slate-300 text-xs">
+                {isEn 
+                  ? "Are you sure you want to remove this leader/member from the committee?" 
+                  : "Je, una uhakika unataka kumfuta kiongozi / mwanakamati huyu kutoka kwenye kamati ya sherehe?"}
+              </p>
+            </div>
+
+            <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl space-y-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">{isEn ? "Name:" : "Jina Kamili:"}</span>
+                <span className="text-white font-bold">{deleteConfirmMember.name}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">{isEn ? "Position:" : "Cheo / Nafasi:"}</span>
+                <span className="text-amber-400 font-bold">{deleteConfirmMember.position}</span>
+              </div>
+              {deleteConfirmMember.subCommittee && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">{isEn ? "Sub-committee:" : "Kamati Ndogo:"}</span>
+                  <span className="text-indigo-300 font-medium">{deleteConfirmMember.subCommittee}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setDeleteConfirmMember(null);
+                }}
+                className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5 font-bold uppercase text-[10px] rounded-xl transition cursor-pointer"
+              >
+                {isEn ? "Keep Member" : "Usiwasilishe / Ghairi"}
+              </button>
+              
+              <button
+                onClick={() => {
+                  const mId = deleteConfirmMember.id;
+                  const mName = deleteConfirmMember.name;
+                  const mPosition = deleteConfirmMember.position;
+                  setDeleteConfirmMember(null);
+                  fetch(`/api/committee/members/${mId}`, { method: 'DELETE' })
+                    .then(() => fetch('/api/committee/members'))
+                    .then(res => res.json())
+                    .then(list => {
+                      if (Array.isArray(list)) setCommitteeMembers(list);
+                      else setCommitteeMembers(prev => prev.filter(x => x.id !== mId));
+                    })
+                    .catch(() => {
+                      setCommitteeMembers(prev => prev.filter(x => x.id !== mId));
+                    });
+
+                  addActivityLog('Event Owner (Admin)', `Alimwondoa mwanakamati: ${mName} (${mPosition})`);
+                }}
+                className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white font-bold uppercase text-[10px] rounded-xl transition cursor-pointer shadow-lg shadow-rose-650/20"
+              >
+                {isEn ? "Delete Member" : "Ndiyo, Futa"}
+              </button>
+            </div>
           </div>
         </div>
       )}

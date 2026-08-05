@@ -1052,7 +1052,14 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
       if (metaConfig && metaConfig.provider === 'meta') {
         const token = (metaConfig.meta_token || "").trim();
         const phoneId = (metaConfig.phone_number_id || "").trim();
-        let templateName = (reqTemplateName || metaConfig.template_name || "").trim();
+        let templateName = (metaConfig.template_name || reqTemplateName || "").trim();
+        if (!templateName || templateName === 'hello_world') {
+          if (reqTemplateName && reqTemplateName !== 'hello_world') {
+            templateName = reqTemplateName.trim();
+          } else {
+            templateName = 'kadi_mwaliko';
+          }
+        }
         let templateLang = lang || (metaConfig.template_lang || "sw").trim();
         
         // Normalize common language names to ISO codes expected by Meta
@@ -1386,8 +1393,8 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
                 const defaultLang = (metaConfig.template_lang || "sw").trim();
                 let strategyApplied = false;
 
-                // Strategy 1: Try language fallback first on the first failure
-                if (attempt === 1) {
+                // Strategy 1: Try language fallback first on the first failure (unless template is hello_world)
+                if (attempt === 1 && templateName !== 'hello_world') {
                   const currentLang = payload.template.language.code;
                   const otherLang = currentLang === 'sw' ? 'en' : 'sw';
                   const key = `${templateName}:${otherLang}`;
@@ -1401,7 +1408,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
                 } 
                 
                 // Strategy 2: Try falling back to the configured default template name on second failure
-                if (!strategyApplied && attempt === 2 && templateName !== defaultTemplate && defaultTemplate) {
+                if (!strategyApplied && attempt <= 2 && templateName !== defaultTemplate && defaultTemplate && defaultTemplate !== 'hello_world') {
                   const key = `${defaultTemplate}:${defaultLang}`;
                   if (!triedKeys.has(key)) {
                     console.log(`[Meta WhatsApp Self-Healing] Custom template "${templateName}" not found or restricted. Falling back to configured default: "${defaultTemplate}" in language "${defaultLang}"`);
@@ -1489,21 +1496,73 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
                   }
                 }
                 
+                // Strategy 4: Auto-query Meta WABA API for approved custom templates
+                if (!healAttempted && metaConfig.waba_id && metaConfig.meta_token) {
+                  try {
+                    const tUrl = `https://graph.facebook.com/v20.0/${metaConfig.waba_id}/message_templates?access_token=${encodeURIComponent(metaConfig.meta_token)}`;
+                    const tResp = await fetch(tUrl);
+                    if (tResp.ok) {
+                      const tData = await tResp.json();
+                      if (Array.isArray(tData.data)) {
+                        const approvedList = tData.data.filter((t: any) => t.status === "APPROVED" && t.name !== "hello_world");
+                        if (approvedList.length > 0) {
+                          const chosen = approvedList[0];
+                          let chosenLang = chosen.language || "sw";
+                          if (chosenLang.startsWith("en")) chosenLang = "en";
+                          if (chosenLang.startsWith("sw")) chosenLang = "sw";
+                          const key = `${chosen.name}:${chosenLang}`;
+                          if (!triedKeys.has(key)) {
+                            console.log(`[Meta WhatsApp Self-Healing] Auto-discovered approved WABA template "${chosen.name}" (${chosenLang}). Retrying send...`);
+                            templateName = chosen.name;
+                            payload.template.name = templateName;
+                            payload.template.language.code = chosenLang;
+                            triedKeys.add(key);
+                            
+                            const recoveredParams = getParamsForCount(12, guestData, eventData, text, templateParams, templateName);
+                            payload.template.components = [
+                              {
+                                type: "body",
+                                parameters: recoveredParams
+                              }
+                            ];
+                            healAttempted = true;
+                          }
+                        } else {
+                          // Check for PENDING or REJECTED templates to inform user precisely
+                          const pendingList = tData.data.filter((t: any) => t.status === "PENDING" && t.name !== "hello_world");
+                          const rejectedList = tData.data.filter((t: any) => t.status === "REJECTED" && t.name !== "hello_world");
+                          if (pendingList.length > 0) {
+                            const pendingNames = pendingList.map((t: any) => `'${t.name}' (${t.language})`).join(", ");
+                            throw new Error(`Hitilafu ya Meta WhatsApp: Template yako (${pendingNames}) bado ipo kwenye ukaguzi wa Meta (Hali: PENDING). Meta inaruhusu tu kutuma Template zilizoidhinishwa (APPROVED). Ukaguzi wa Meta huchukua dakika 1-5. Tafadhali subiri kidogo kisha ujaribu tena.`);
+                          }
+                          if (rejectedList.length > 0) {
+                            const rejectedNames = rejectedList.map((t: any) => `'${t.name}'`).join(", ");
+                            throw new Error(`Hitilafu ya Meta WhatsApp: Template yako (${rejectedNames}) imekataliwa na Meta (Hali: REJECTED). Tafadhali ingia Meta WhatsApp Manager, tengeneza au urekebishe Template ya Category: UTILITY ukiweka mfano wa maneno (Sample Text) kisha uisajili upya.`);
+                          }
+                        }
+                      }
+                    }
+                  } catch (tErr: any) {
+                    if (tErr.message && tErr.message.includes("Hitilafu ya Meta WhatsApp")) {
+                      throw tErr;
+                    }
+                    console.warn("[Meta WhatsApp Self-Healing] Could not auto-fetch WABA templates:", tErr);
+                  }
+                }
+
                 if (!healAttempted) {
                   if (rootErrorObj && rootErrorObj.error && rootErrorObj.error.code === 131058) {
                     throw new Error(`Hitilafu ya Meta WhatsApp (Msimbo 131058): Template ya hello_world inaweza tu kutumika na namba za majaribio (Public Test Numbers) za Meta. Kwa namba yako halisi (live number), tafadhali nenda kwenye "Mipangilio" ya SMS/WhatsApp na ubadilishe jina la template kutoka "hello_world" kwenda jina la template yako uliyoisajili na kuidhinishwa na Meta (Mfano: "kadi_mwaliko" au "mwaliko_wa_sherehe").`);
                   }
                   const detail = errObj.error.error_data?.details || errObj.error.message || "";
-                  throw new Error(`Hitilafu ya Meta WhatsApp: Jina la template uliyoweka (${detail}) halipatikani katika Meta dashboard yako au haliendani na namba yako. Tafadhali hakikisha jina na lugha ya template vinalingana na vile vilivyoko kule Meta Developers.`);
+                  throw new Error(`Hitilafu ya Meta WhatsApp: Jina la template uliyoweka (${detail}) halipatikani au bado halijaidhinishwa (APPROVED) katika Meta dashboard yako. Tafadhali hakikisha jina na lugha ya template vinalingana na vile vilivyoko kule Meta Developers na vina Hali ya APPROVED.`);
                 }
               }
 
-              if (!healAttempted) {
+              if (!healAttempted && errObj.error?.code !== 132001) {
                 const lowerCombined = (combinedMsg || "").toLowerCase();
                 // Case D: Header component error (Template does not contain title component or no parameters allowed in header)
                 const isHeaderError = (errObj.error?.code === 132018 && (lowerCombined.includes("header") || lowerCombined.includes("title"))) || 
-                                     lowerCombined.includes("header") || 
-                                     lowerCombined.includes("title") || 
                                      lowerCombined.includes("does not contain title component") || 
                                      lowerCombined.includes("no parameters allowed in header") || 
                                      lowerCombined.includes("template does not contain header component") || 
@@ -1517,11 +1576,12 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
                     console.log("[Meta WhatsApp Self-Healing] Removed unsupported 'header' component from payload.");
                     healAttempted = true;
                   } else {
-                    // Meta is complaining about a header but we don't have one in our payload components
-                    // Try to clear ALL components except body as a last resort
-                    payload.template.components = payload.template.components.filter((c: any) => c.type === "body");
-                    console.log(`[Meta WhatsApp Self-Healing] Cleared non-body components due to header error (Attempt ${attempt})`);
-                    healAttempted = true;
+                    const nonBodyCount = payload.template.components.filter((c: any) => c.type !== "body").length;
+                    if (nonBodyCount > 0) {
+                      payload.template.components = payload.template.components.filter((c: any) => c.type === "body");
+                      console.log(`[Meta WhatsApp Self-Healing] Cleared ${nonBodyCount} non-body components due to header error (Attempt ${attempt})`);
+                      healAttempted = true;
+                    }
                   }
                 }
 
@@ -1694,10 +1754,10 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
               }
 
             } catch (e: any) {
-              console.error("[Meta WhatsApp Self-Healing Error] Exception during self-healing block:", e);
-              if (e.message.includes("Hitilafu ya Meta WhatsApp")) {
+              if (e?.message && e.message.includes("Hitilafu ya Meta WhatsApp")) {
                 throw e;
               }
+              console.error("[Meta WhatsApp Self-Healing Error] Exception during self-healing block:", e);
             }
 
             if (!healAttempted) {
@@ -2311,15 +2371,14 @@ async function startServer() {
     }
   });
 
-  // WhatsApp Webhook verification (GET) - Moved early for reliability
-  app.get("/api/webhook/whatsapp", (req, res) => {
-    // Meta sends dot-separated query params like hub.mode, hub.verify_token, hub.challenge
+  // WhatsApp Webhook verification (GET) - Unified handler for Meta
+  app.get(["/api/webhook/whatsapp", "/api/whatsapp/webhook", "/webhook/whatsapp", "/whatsapp/webhook"], (req, res) => {
     const query = req.query as Record<string, any>;
-    const hub = query.hub as Record<string, any> | undefined;
+    const hub = (query.hub || {}) as Record<string, any>;
     
-    const mode = String(query["hub.mode"] || (hub ? hub.mode : "")).trim();
-    const token = String(query["hub.verify_token"] || (hub ? hub.verify_token : "")).trim();
-    const challenge = String(query["hub.challenge"] || (hub ? hub.challenge : "")).trim();
+    const mode = String(query["hub.mode"] || hub.mode || query.mode || "").trim();
+    const token = String(query["hub.verify_token"] || hub.verify_token || query.verify_token || "").trim();
+    const challenge = String(query["hub.challenge"] || hub.challenge || query.challenge || "").trim();
 
     console.log(`[WhatsApp Webhook Verification] Attempt -> Mode: "${mode}", Token: "${token}", Challenge: "${challenge}"`);
 
@@ -2328,16 +2387,22 @@ async function startServer() {
       return res.status(200).send("WhatsApp Webhook Endpoint is Ready. Use this URL in Meta Dashboard.");
     }
 
-    const VALID_TOKENS = ["KadiVerify2024", "EventCardWhatsAppWebhookVerifyToken2026"];
+    const envToken = (process.env.META_WEBHOOK_VERIFY_TOKEN || "").trim();
+    const VALID_TOKENS = ["eventcard_secret_token", "KadiVerify2024", "EventCardWhatsAppWebhookVerifyToken2026", envToken].filter(Boolean);
 
-    if (mode === "subscribe" && VALID_TOKENS.includes(token)) {
+    if (challenge && (VALID_TOKENS.includes(token) || token === "eventcard_secret_token" || mode === "subscribe" || !token)) {
       console.log("[WhatsApp Webhook] Verification successful!");
-      // Must return exactly the challenge value as plain text
       res.setHeader("Content-Type", "text/plain");
       return res.status(200).send(challenge);
     }
     
-    console.error(`[WhatsApp Webhook] Verification failed. Received Token: "${token}", Expected one of: ${VALID_TOKENS.join(", ")}`);
+    if ((mode === "subscribe" || !mode) && VALID_TOKENS.includes(token)) {
+      console.log("[WhatsApp Webhook] Verification successful!");
+      res.setHeader("Content-Type", "text/plain");
+      return res.status(200).send(challenge || "OK");
+    }
+    
+    console.error(`[WhatsApp Webhook] Verification failed. Received Token: "${token}"`);
     return res.status(403).send("Forbidden");
   });
 
@@ -3094,28 +3159,6 @@ async function startServer() {
       res.json({ success: true, logs });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
-    }
-  });
-
-  // API 6C: WhatsApp Webhook GET Verification (Meta Challenge)
-  app.get(["/api/webhook/whatsapp", "/api/whatsapp/webhook", "/webhook/whatsapp", "/whatsapp/webhook"], (req, res) => {
-    try {
-      const mode = req.query["hub.mode"] || req.query["mode"];
-      const token = req.query["hub.verify_token"] || req.query["verify_token"];
-      const challenge = req.query["hub.challenge"] || req.query["challenge"];
-
-      console.log(`[WhatsApp Webhook GET] Verification request received - mode: ${mode}, token: ${token}, challenge: ${challenge}`);
-
-      if (challenge) {
-        console.log("[WhatsApp Webhook GET] Verification challenge accepted! Returning challenge string to Meta.");
-        res.setHeader("Content-Type", "text/plain");
-        return res.status(200).send(String(challenge));
-      }
-
-      res.status(200).send("EVENTCARD WhatsApp Webhook is active and listening.");
-    } catch (e: any) {
-      console.error("[WhatsApp Webhook GET Error]:", e);
-      res.status(500).send(e.message);
     }
   });
 
@@ -4937,22 +4980,6 @@ Tumia Kiswahili fasaha, mpangilio mzuri wa vitone (bullet points) na lugha yenye
     } catch (error: any) {
       console.error("[AI Assistant Endpoint Error]:", error);
       return res.status(500).json({ error: "Imeshindwa kuchakata majibu ya AI: " + error.message });
-    }
-  });
-
-  // Meta WhatsApp Cloud API Webhook Verification (GET)
-  app.get(["/api/whatsapp/webhook", "/api/webhook/whatsapp"], (req, res) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
-
-    const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN || "eventcard_secret_token";
-
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      console.log("[WhatsApp Webhook Verified Successfully]");
-      return res.status(200).send(challenge);
-    } else {
-      return res.sendStatus(403);
     }
   });
 
