@@ -8,6 +8,7 @@ interface GuestInvitePageProps {
   guest: Guest;
   event: EventDetails;
   settings: TemplateSettings;
+  viewMode?: 'seating' | 'venue' | 'card';
   onRsvpSubmit: (updatedGuest: Guest) => void;
 }
 
@@ -18,7 +19,7 @@ interface TableData {
   guests: { id: string; name: string; rsvpGuestsCount: number }[];
 }
 
-export default function GuestInvitePage({ guest, event, settings, onRsvpSubmit }: GuestInvitePageProps) {
+export default function GuestInvitePage({ guest, event, settings, viewMode: propViewMode, onRsvpSubmit }: GuestInvitePageProps) {
   const { language, setLanguage } = useLanguage();
   const isEn = language === 'en';
   const [rsvpStatus, setRsvpStatus] = useState(guest.rsvpStatus || 'Bado');
@@ -29,8 +30,8 @@ export default function GuestInvitePage({ guest, event, settings, onRsvpSubmit }
   const [cardImageUrl, setCardImageUrl] = useState<string>('');
   const [showPreviewMap, setShowPreviewMap] = useState(true);
   
-  // Determine view mode from URL parameters
-  const [viewMode] = useState<'all' | 'seating' | 'venue' | 'card'>(() => {
+  // Determine view mode from URL parameters or props
+  const [urlViewMode] = useState<'all' | 'seating' | 'venue' | 'card'>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const v = params.get('view') || params.get('mode');
@@ -43,24 +44,56 @@ export default function GuestInvitePage({ guest, event, settings, onRsvpSubmit }
     }
   });
 
-  const hideCard = viewMode === 'seating' || viewMode === 'venue';
-  const hideRSVP = viewMode === 'seating' || viewMode === 'venue' || viewMode === 'card';
-  const seatingOnly = viewMode === 'seating';
-  const venueOnly = viewMode === 'venue';
+  const effectiveViewMode = propViewMode || (urlViewMode !== 'all' ? urlViewMode : 'all');
 
-  const [activeTab, setActiveTab] = useState<'seating' | 'card'>(() => {
-    if (viewMode === 'card') return 'card';
+  const hideCard = effectiveViewMode === 'seating' || effectiveViewMode === 'venue';
+  const hideRSVP = effectiveViewMode === 'seating' || effectiveViewMode === 'venue' || effectiveViewMode === 'card';
+  const seatingOnly = effectiveViewMode === 'seating';
+  const venueOnly = effectiveViewMode === 'venue';
+
+  const [activeTab, setActiveTab] = useState<'seating' | 'card' | 'venue'>(() => {
+    if (effectiveViewMode === 'card') return 'card';
+    if (effectiveViewMode === 'venue') return 'venue';
     return 'seating';
   });
 
   // Ensure activeTab is consistent with viewMode
   useEffect(() => {
-    if (viewMode === 'seating' || viewMode === 'venue') {
+    if (effectiveViewMode === 'seating') {
       setActiveTab('seating');
-    } else if (viewMode === 'card') {
+    } else if (effectiveViewMode === 'venue') {
+      setActiveTab('venue');
+    } else if (effectiveViewMode === 'card') {
       setActiveTab('card');
     }
-  }, [viewMode]);
+  }, [effectiveViewMode]);
+
+  // Helper to dynamically calculate effective map link
+  const getEffectiveMapsLink = () => {
+    if (event.mapsLink && event.mapsLink.trim().length > 0) {
+      const trimmed = event.mapsLink.trim();
+      return trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `https://${trimmed}`;
+    }
+    if (event.coordinates && event.coordinates.trim().length > 0) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`;
+    }
+    if (event.eventHallName && event.eventHallName.trim().length > 0) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.eventHallName.trim() + " Dar es Salaam")}`;
+    }
+    return null;
+  };
+
+  const effectiveMapsLink = getEffectiveMapsLink();
+
+  // If in venue mode, auto-redirect directly to Google Maps
+  useEffect(() => {
+    if (venueOnly && effectiveMapsLink) {
+      const timer = setTimeout(() => {
+        window.location.replace(effectiveMapsLink);
+      }, 600);
+      return () => clearTimeout(timer);
+    }
+  }, [venueOnly, effectiveMapsLink]);
 
   // Handle auto-map preview
   useEffect(() => {
@@ -213,31 +246,117 @@ export default function GuestInvitePage({ guest, event, settings, onRsvpSubmit }
         
         {/* Modern Tab Selector */}
         {!hideCard && (
-          <div className="flex bg-neutral-900/80 border border-white/10 p-1 rounded-2xl backdrop-blur-md relative z-10 shadow-xl">
+          <div className="flex bg-neutral-900/90 border border-white/10 p-1 rounded-2xl backdrop-blur-md relative z-10 shadow-xl">
             <button
               type="button"
               onClick={() => setActiveTab('seating')}
-              className={`flex-1 py-3 text-[11px] font-black rounded-xl transition-all tracking-wider uppercase cursor-pointer flex items-center justify-center gap-2 ${
+              className={`flex-1 py-2.5 text-[10px] sm:text-[11px] font-black rounded-xl transition-all tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 ${
                 activeTab === 'seating'
                   ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-lg'
                   : 'text-neutral-400 hover:text-white'
               }`}
             >
-              🗺️ {isEn ? "SEATING & RSVP" : "RAMANI & RSVP"}
+              🎟️ {isEn ? "RSVP & SEATING" : "RSVP & MEZA"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('venue')}
+              className={`flex-1 py-2.5 text-[10px] sm:text-[11px] font-black rounded-xl transition-all tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 ${
+                activeTab === 'venue'
+                  ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              📍 {isEn ? "LOCATION" : "UKUMBI"}
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('card')}
-              className={`flex-1 py-3 text-[11px] font-black rounded-xl transition-all tracking-wider uppercase cursor-pointer flex items-center justify-center gap-2 ${
+              className={`flex-1 py-2.5 text-[10px] sm:text-[11px] font-black rounded-xl transition-all tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 ${
                 activeTab === 'card'
                   ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-lg'
                   : 'text-neutral-400 hover:text-white'
               }`}
             >
-              ✉️ {isEn ? "INVITATION CARD" : "KADI YA MWALIKO"}
+              ✉️ {isEn ? "CARD" : "KADI"}
             </button>
           </div>
         )}
+
+        {/* Dedicated Venue / Location View */}
+        {(activeTab === 'venue' || venueOnly) && (
+          <div className="space-y-6 py-2 animate-fade-in">
+            <div className="text-center space-y-2">
+              <p className="text-[12.5px] text-rose-400 font-extrabold tracking-wider uppercase">
+                📍 {isEn ? "VENUE LOCATION & MAP" : "RAMANI NA MAHALI PA UKUMBI"}
+              </p>
+              <p className="text-xs text-neutral-300">
+                {isEn ? "Location details for the event:" : "Maelezo ya mahali ukumbi wa sherehe ulipo:"}
+              </p>
+            </div>
+
+            <div className="bg-neutral-900/90 border border-white/10 rounded-3xl p-6 text-center space-y-5 shadow-2xl backdrop-blur-md">
+              <div className="space-y-2">
+                {event.eventHallName && (
+                  <span className="inline-block px-3.5 py-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] font-black uppercase tracking-widest rounded-full">
+                    🏛️ {event.eventHallName}
+                  </span>
+                )}
+                <h2 className="text-xl font-black text-white uppercase tracking-tight">
+                  {event.name}
+                </h2>
+                {event.date && (
+                  <p className="text-xs text-neutral-300 font-bold">
+                    📅 {event.date} {event.time ? `• ${event.time} ${event.period || ''}` : ''}
+                  </p>
+                )}
+                {event.coordinates && (
+                  <p className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 py-1 px-3 rounded-lg inline-block">
+                    📍 GPS: {event.coordinates}
+                  </p>
+                )}
+              </div>
+
+              {effectiveMapsLink ? (
+                <div className="space-y-4 pt-2">
+                  {/* Embedded Google Maps iFrame Preview */}
+                  <div className="w-full h-52 rounded-2xl overflow-hidden border border-white/10 shadow-inner relative bg-neutral-950">
+                    <iframe 
+                      title="Venue Map Preview"
+                      width="100%" 
+                      height="100%" 
+                      style={{ border: 0 }} 
+                      loading="lazy" 
+                      allowFullScreen
+                      src={`https://maps.google.com/maps?q=${encodeURIComponent(event.coordinates || event.eventHallName || 'Dar es Salaam')}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
+                    ></iframe>
+                  </div>
+
+                  <a 
+                    href={effectiveMapsLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center w-full py-4.5 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-black rounded-2xl transition shadow-xl active:scale-95 gap-3 text-sm cursor-pointer border border-rose-400/20"
+                  >
+                    🚀 {isEn ? "OPEN IN GOOGLE MAPS" : "FUNGUA KWENYE GOOGLE MAPS"}
+                  </a>
+
+                  <p className="text-[10.5px] text-neutral-400 leading-relaxed italic">
+                    {isEn 
+                      ? "Click the button above to launch live GPS directions on your phone." 
+                      : "Bofya kitufe hapo juu kuanza kupelekwa ukumbini moja kwa moja na simu yako."}
+                  </p>
+                </div>
+              ) : (
+                <div className="py-8 text-neutral-500 font-bold text-xs uppercase tracking-widest border border-dashed border-white/10 rounded-2xl">
+                  {isEn ? "Location Link Not Set" : "Kiungo cha Ramani Hakijawekwa"}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Event Hero Image & Invitation Card (Shown only when Card tab is active) */}
 
         {/* Event Hero Image & Invitation Card (Shown only when Card tab is active) */}
         {activeTab === 'card' && (
@@ -262,7 +381,7 @@ export default function GuestInvitePage({ guest, event, settings, onRsvpSubmit }
         )}
 
         {/* Header */}
-        {!hideRSVP && (
+        {!hideRSVP && !venueOnly && (
           <div className="text-center space-y-2 pb-1 animate-fade-in">
              <h1 className="text-2xl font-extrabold tracking-tight text-white uppercase">
                {isEn ? "INVITATION TO" : "MWALIKO WA"} {(event.name || (isEn ? "Event" : "Tukio")).replace(/^(MWALIKO\s+WA\s+|INVITATION\s+TO\s+)+/i, '').trim().toUpperCase()}
@@ -273,7 +392,7 @@ export default function GuestInvitePage({ guest, event, settings, onRsvpSubmit }
           </div>
         )}
         
-        {seatingOnly && (
+        {seatingOnly && !venueOnly && (
           <div className="text-center space-y-2 pb-1 animate-fade-in">
              <h1 className="text-2xl font-extrabold tracking-tight text-amber-400 uppercase">
                {isEn ? "YOUR TABLE SELECTION" : "MEZA YAKO NA UCHAGUZI"}
@@ -284,7 +403,7 @@ export default function GuestInvitePage({ guest, event, settings, onRsvpSubmit }
           </div>
         )}
 
-        {activeTab === 'seating' && (
+        {!venueOnly && activeTab === 'seating' && (
           <div className="space-y-6">
           <div className={`bg-neutral-900/60 border border-white/5 rounded-3xl shadow-2xl backdrop-blur-md ${hideRSVP ? 'p-4' : 'p-6'}`}>
             {!hideRSVP && (
@@ -304,53 +423,7 @@ export default function GuestInvitePage({ guest, event, settings, onRsvpSubmit }
               </div>
             )}
 
-            {venueOnly ? (
-              <div className="space-y-6 py-4 animate-fade-in">
-                <div className="text-center space-y-2">
-                  <p className="text-[12.5px] text-rose-400 font-extrabold tracking-wider uppercase">
-                    📍 {isEn ? "VENUE LOCATION" : "RAMANI YA UKUMBI"}
-                  </p>
-                  <p className="text-xs text-neutral-300">
-                    {isEn ? "Location details for the event:" : "Maelezo ya eneo la tukio:"}
-                  </p>
-                </div>
-
-                <div className="bg-neutral-950/40 border border-white/5 rounded-2xl p-6 text-center space-y-6">
-                  <div className="space-y-1">
-                    <h2 className="text-lg font-black text-white uppercase tracking-tight">
-                      {event.name}
-                    </h2>
-                    {event.eventHallName && (
-                      <p className="text-sm text-amber-400 font-bold">
-                        🏛️ {event.eventHallName}
-                      </p>
-                    )}
-                  </div>
-
-                  {event.mapsLink ? (
-                    <div className="space-y-4">
-                      <a 
-                        href={event.mapsLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center w-full py-5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl transition shadow-xl active:scale-95 gap-3 text-sm"
-                      >
-                        🚀 {isEn ? "OPEN IN GOOGLE MAPS" : "FUNGUA KWENYE MAPS"}
-                      </a>
-                      <p className="text-[10px] text-neutral-500 leading-relaxed italic">
-                        {isEn 
-                          ? "Click the button above to launch navigation on your phone." 
-                          : "Bofya kitufe hapo juu ili kuanza kuelekezwa na simu yako."}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="py-8 text-neutral-500 font-bold text-xs uppercase tracking-widest border border-dashed border-white/10 rounded-2xl">
-                      {isEn ? "Location Link Not Set" : "Kiungo cha Ramani Hakijawekwa"}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (hideRSVP || rsvpStatus === 'Atahudhuria') ? (
+            {(hideRSVP || rsvpStatus === 'Atahudhuria') ? (
               <div className="space-y-6">
                 {!hideRSVP && (
                   <div className="text-center bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl">
@@ -577,12 +650,12 @@ export default function GuestInvitePage({ guest, event, settings, onRsvpSubmit }
 
                 {!hideRSVP && (
                   <div className="flex gap-2 justify-between">
-                    {event.mapsLink && (
+                    {effectiveMapsLink && (
                       <a 
-                        href={event.mapsLink}
+                        href={effectiveMapsLink}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex-1 py-3 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 font-bold rounded-xl transition text-[11px] text-center border border-rose-500/20 flex items-center justify-center"
+                        className="flex-1 py-3 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 font-bold rounded-xl transition text-[11px] text-center border border-rose-500/20 flex items-center justify-center cursor-pointer"
                       >
                         📍 {isEn ? "View Location" : "Ramani"}
                       </a>

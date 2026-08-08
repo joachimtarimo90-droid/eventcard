@@ -743,7 +743,11 @@ function getParamsForCount(count: number, guestData: any, eventData: any, fallba
   const periodVal = translatePeriod(eventData?.period);
   const timeStr = `${eventData?.time || "12:00"} ${periodVal}`;
 
-  const standardValues = [
+  const cardLink = guestData?.cardUrl || (guestData?.id ? `https://eventcard.co.tz/card/${guestData.id}` : "https://eventcard.co.tz");
+
+  const isNoLinkTemplate = count === 12 || (templateName || "").toLowerCase().includes("bila_link") || (templateName || "").toLowerCase().includes("no_link");
+
+  const standardValues = isNoLinkTemplate ? [
     guestData?.name || guestFallback, // 1. Guest Name
     eventData?.hostName || hostFallback, // 2. Host Name
     eventData?.name || eventFallback, // 3. Event Name
@@ -756,6 +760,20 @@ function getParamsForCount(count: number, guestData: any, eventData: any, fallba
     isContribution ? "" : (eventData?.contact1 || ""), // 10. Contact 1 Phone
     isContribution ? "" : (eventData?.contact2Name || contact2Fallback), // 11. Contact 2 Name
     isContribution ? "" : (eventData?.contact2 || "") // 12. Contact 2 Phone
+  ] : [
+    guestData?.name || guestFallback, // 1. Guest Name
+    eventData?.hostName || hostFallback, // 2. Host Name
+    eventData?.name || eventFallback, // 3. Event Name
+    eventData?.date || "", // 4. Date
+    eventData?.eventHallName || venueFallback, // 5. Venue
+    timeStr, // 6. Time
+    guestData?.code || guestData?.id || "N/A", // 7. Card Number
+    isContribution ? "" : (guestData?.cardType || cardTypeFallback), // 8. Card Type
+    cardLink, // 9. Link
+    isContribution ? "" : (eventData?.contact1Name || contact1Fallback), // 10. Contact 1 Name
+    isContribution ? "" : (eventData?.contact1 || ""), // 11. Contact 1 Phone
+    isContribution ? "" : (eventData?.contact2Name || contact2Fallback), // 12. Contact 2 Name
+    isContribution ? "" : (eventData?.contact2 || "") // 13. Contact 2 Phone
   ];
 
   if (Array.isArray(incomingParams) && incomingParams.length > 0) {
@@ -1057,7 +1075,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
           if (reqTemplateName && reqTemplateName !== 'hello_world') {
             templateName = reqTemplateName.trim();
           } else {
-            templateName = 'kadi_mwaliko';
+            templateName = 'mwaliko_bila_link';
           }
         }
         let templateLang = lang || (metaConfig.template_lang || "sw").trim();
@@ -1866,7 +1884,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
   }
 
   let senderId = (settings.senderId || "").trim();
-  if (!senderId || (senderId === "EVENT CARD" && settings.provider === "meseji")) {
+  if (!senderId) {
     if (settings.provider === "meseji") {
       senderId = "MESEJI";
     } else if (settings.provider === "beem") {
@@ -1875,7 +1893,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
       senderId = "NEXTSMS";
     } else if (settings.provider === "notifyAfrica") {
       senderId = "NOTIFY";
-    } else if (!senderId) {
+    } else {
       senderId = "EVENT CARD";
     }
   }
@@ -1899,12 +1917,9 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
       requestUrl = requestUrl.replace(/\/$/, "") + "/sms/send";
     }
 
-    const authHeader = apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`;
-
     fetchOptions.headers = {
       ...fetchOptions.headers,
       "x-api-key": apiKey,
-      "Authorization": authHeader,
       "Accept": "application/json"
     };
     
@@ -2175,13 +2190,11 @@ Tafadhali badilisha 'Sender ID' kwenye Alama ya Mipangilio (Settings) ya app hii
           retryBody.schedule_time = scheduleTime;
         }
         try {
-          const authHeader = apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`;
           const retryRes = await fetch(requestUrl, {
             ...fetchOptions,
             headers: {
               ...fetchOptions.headers,
               "x-api-key": apiKey,
-              "Authorization": authHeader,
               "Accept": "application/json",
               "Content-Type": "application/json"
             },
@@ -2655,6 +2668,27 @@ async function startServer() {
         return res.status(400).send("Event ID missing.");
       }
       
+      const db = await readDB();
+      const event = db.events?.find((e: any) => String(e.id) === String(eventId));
+
+      if (event) {
+        let mapUrl = '';
+        if (event.mapsLink && event.mapsLink.trim().length > 0) {
+          mapUrl = event.mapsLink.trim();
+          if (!mapUrl.startsWith('http://') && !mapUrl.startsWith('https://')) {
+            mapUrl = `https://${mapUrl}`;
+          }
+        } else if (event.coordinates && event.coordinates.trim().length > 0) {
+          mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`;
+        } else if (event.eventHallName && event.eventHallName.trim().length > 0) {
+          mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.eventHallName.trim() + " Dar es Salaam")}`;
+        }
+
+        if (mapUrl) {
+          return res.redirect(mapUrl);
+        }
+      }
+
       const inviteParam = invite ? `&invite=${encodeURIComponent(invite)}` : '';
       return res.redirect(`/?eventId=${encodeURIComponent(eventId)}${inviteParam}&view=venue`);
     } catch (error) {

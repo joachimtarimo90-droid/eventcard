@@ -814,6 +814,7 @@ export default function App() {
           guest={guestInviteData.guest} 
           event={guestInviteData.event} 
           settings={guestInviteData.settings} 
+          viewMode={isVenueView ? 'venue' : (isSeatingView ? 'seating' : undefined)}
           onRsvpSubmit={(updatedGuest) => {
             setGuestInviteData({
               ...guestInviteData,
