@@ -2831,7 +2831,56 @@ export default function ContributionManager({
       doc.setTextColor(244, 63, 94); // Rose 500
       doc.text(`TZS ${totalBalance.toLocaleString()}`, 60, 52);
 
-      const tableData = listData.map(g => [
+      // Count 5 status categories for this list
+      let noPledgeCount = 0;
+      let pledgedOnlyCount = 0;
+      let partiallyPaidCount = 0;
+      let fullyPaidCount = 0;
+
+      listData.forEach(g => {
+        const pledge = Number(g.pledgeAmount) || 0;
+        const paid = Number(g.paidAmount) || 0;
+        const status = g.pledgeStatus;
+
+        if (status === 'No Pledge' || (pledge === 0 && paid === 0)) {
+          noPledgeCount++;
+        } else if (status === 'Fully Paid' || (pledge > 0 && paid >= pledge) || (pledge === 0 && paid > 0)) {
+          fullyPaidCount++;
+        } else if (status === 'Partially Paid' || (paid > 0 && paid < pledge)) {
+          partiallyPaidCount++;
+        } else {
+          pledgedOnlyCount++;
+        }
+      });
+
+      // Draw 5 mini summary boxes in PDF
+      const cardY2 = 56;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const cardWidth2 = (pageWidth - 28 - (5 - 1) * 3) / 5;
+      const summaryCards = [
+        { label: "HAWAJAAHIDI", value: `${noPledgeCount}`, color: [100, 116, 139] },
+        { label: "WALIOAHIDI TU", value: `${pledgedOnlyCount}`, color: [217, 119, 6] },
+        { label: "LIPA NUSU", value: `${partiallyPaidCount}`, color: [2, 132, 199] },
+        { label: "LIPA YOTE", value: `${fullyPaidCount}`, color: [22, 163, 74] },
+        { label: "WENYE MADENI", value: `${pledgedOnlyCount + partiallyPaidCount}`, color: [147, 51, 234] }
+      ];
+
+      summaryCards.forEach((card, i) => {
+        const x = 14 + i * (cardWidth2 + 3);
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(218, 223, 230);
+        doc.rect(x, cardY2, cardWidth2, 12, 'FD');
+        doc.setFontSize(5.5);
+        doc.setTextColor(100, 116, 139);
+        doc.setFont("helvetica", "bold");
+        doc.text(card.label, x + cardWidth2 / 2, cardY2 + 4, { align: 'center' });
+        doc.setFontSize(7.5);
+        doc.setTextColor(card.color[0], card.color[1], card.color[2]);
+        doc.text(card.value, x + cardWidth2 / 2, cardY2 + 9, { align: 'center' });
+      });
+
+      const tableData = listData.map((g, idx) => [
+        idx + 1,
         g.name,
         g.phone || '-',
         (g.pledgeAmount || 0).toLocaleString(),
@@ -2841,13 +2890,13 @@ export default function ContributionManager({
       ]);
 
       const headers = isEn 
-        ? [['Guest Name', 'Phone', 'Pledge (TZS)', 'Paid (TZS)', 'Balance (TZS)', 'Status']]
-        : [['Jina la Mgeni', 'Simu', 'Ahadi (TZS)', 'Malipo (TZS)', 'Deni (TZS)', 'Hali']];
+        ? [['S/N', 'Guest Name', 'Phone', 'Pledge (TZS)', 'Paid (TZS)', 'Balance (TZS)', 'Status']]
+        : [['S/N', 'Jina la Mgeni', 'Simu', 'Ahadi (TZS)', 'Malipo (TZS)', 'Deni (TZS)', 'Hali']];
 
       autoTable(doc, {
         head: headers,
         body: tableData,
-        startY: 62,
+        startY: 72,
         theme: 'grid',
         headStyles: { 
           fillColor: [240, 240, 240], 

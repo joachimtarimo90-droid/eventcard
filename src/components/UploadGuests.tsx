@@ -332,6 +332,40 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Function to deduplicate existing guests in memory and database
+  const handleRemoveDuplicates = () => {
+    const seenNames = new Set<string>();
+    const seenPhones = new Set<string>();
+    const uniqueGuests: Guest[] = [];
+    let removedCount = 0;
+
+    guests.forEach(g => {
+      const normName = (g.name || '').trim().toLowerCase();
+      const cleanPhone = (g.phone || '').replace(/\D/g, '');
+      const lastNdigits = cleanPhone.length >= 7 ? cleanPhone.slice(-9) : '';
+
+      const isNameDup = normName && seenNames.has(normName);
+      const isPhoneDup = lastNdigits && seenPhones.has(lastNdigits);
+
+      if (isNameDup || isPhoneDup) {
+        removedCount++;
+      } else {
+        if (normName) seenNames.add(normName);
+        if (lastNdigits) seenPhones.add(lastNdigits);
+        uniqueGuests.push(g);
+      }
+    });
+
+    if (removedCount > 0) {
+      onUpdateGuests(uniqueGuests, `Amesafisha wageni waliojirudia (${removedCount} wameondolewa)`);
+      alert(isEn 
+        ? `Successfully cleaned up! Removed ${removedCount} duplicate guest record(s).` 
+        : `Imefanikiwa kusafisha! Wageni ${removedCount} waliojirudia wameondolewa.`);
+    } else {
+      alert(isEn ? "No duplicate guests found!" : "Hakuna wageni waliojirudia waliopatikana!");
+    }
+  };
+
   // Clear states when bulk modal opens/closes
   useEffect(() => {
     if (!isBulkModalOpen) {
@@ -460,25 +494,36 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
         pledgeStatus: item.pledgeStatus || 'No Pledge'
       };
 
-      // Check for duplicate in existing guests - require matching phone, OR matching name AND non-empty phone
+      // Check for duplicate in existing guests OR within the incoming batch
       const cleanPhone = standardisedPhone.replace(/\D/g, '');
       const lastNdigits = cleanPhone.slice(-9);
+      const normName = item.name.trim().toLowerCase();
 
       const existingDuplicate = guests.find(g => {
-        const normName = item.name.trim().toLowerCase();
         const existingNormName = (g.name || '').trim().toLowerCase();
         const existingCleanPhone = (g.phone || '').replace(/\D/g, '');
         const existingLastNdigits = existingCleanPhone.slice(-9);
 
         const phoneMatches = lastNdigits.length >= 7 && existingLastNdigits.length >= 7 && lastNdigits === existingLastNdigits;
-        const nameMatches = normName && existingNormName === normName && lastNdigits.length >= 7 && existingLastNdigits.length >= 7;
+        const nameMatches = normName && existingNormName === normName;
+
+        return phoneMatches || nameMatches;
+      });
+
+      const batchDuplicate = nonConflicts.find(g => {
+        const existingNormName = (g.name || '').trim().toLowerCase();
+        const existingCleanPhone = (g.phone || '').replace(/\D/g, '');
+        const existingLastNdigits = existingCleanPhone.slice(-9);
+
+        const phoneMatches = lastNdigits.length >= 7 && existingLastNdigits.length >= 7 && lastNdigits === existingLastNdigits;
+        const nameMatches = normName && existingNormName === normName;
 
         return phoneMatches || nameMatches;
       });
 
       if (existingDuplicate) {
         conflicts.push({ newGuest, existingGuest: existingDuplicate });
-      } else {
+      } else if (!batchDuplicate) {
         nonConflicts.push(newGuest);
       }
     });
@@ -640,25 +685,36 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
         pledgeStatus: item.pledgeStatus || 'No Pledge'
       };
 
-      // Check for duplicate in existing guests - require matching phone, OR matching name AND non-empty phone
+      // Check for duplicate in existing guests OR within the incoming batch
       const cleanPhone = standardisedPhone.replace(/\D/g, '');
       const lastNdigits = cleanPhone.slice(-9);
+      const normName = item.name.trim().toLowerCase();
 
       const existingDuplicate = guests.find(g => {
-        const normName = item.name.trim().toLowerCase();
         const existingNormName = (g.name || '').trim().toLowerCase();
         const existingCleanPhone = (g.phone || '').replace(/\D/g, '');
         const existingLastNdigits = existingCleanPhone.slice(-9);
 
         const phoneMatches = lastNdigits.length >= 7 && existingLastNdigits.length >= 7 && lastNdigits === existingLastNdigits;
-        const nameMatches = normName && existingNormName === normName && lastNdigits.length >= 7 && existingLastNdigits.length >= 7;
+        const nameMatches = normName && existingNormName === normName;
+
+        return phoneMatches || nameMatches;
+      });
+
+      const batchDuplicate = nonConflicts.find(g => {
+        const existingNormName = (g.name || '').trim().toLowerCase();
+        const existingCleanPhone = (g.phone || '').replace(/\D/g, '');
+        const existingLastNdigits = existingCleanPhone.slice(-9);
+
+        const phoneMatches = lastNdigits.length >= 7 && existingLastNdigits.length >= 7 && lastNdigits === existingLastNdigits;
+        const nameMatches = normName && existingNormName === normName;
 
         return phoneMatches || nameMatches;
       });
 
       if (existingDuplicate) {
         conflicts.push({ newGuest, existingGuest: existingDuplicate });
-      } else {
+      } else if (!batchDuplicate) {
         nonConflicts.push(newGuest);
       }
     });
@@ -1313,15 +1369,27 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
           )}
 
           {guests.length > 0 && (
-            <button
-              id="clear-all-guests-btn"
-              onClick={() => setShowClearConfirm(true)}
-              className="flex-1 sm:flex-initial bg-rose-600/20 hover:bg-rose-600/40 border border-rose-500/30 text-rose-300 hover:text-white px-4 py-2.5 rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer font-bold"
-              title={isEn ? "Delete all guests at once" : "Futa wageni wote kwa wakati mmoja"}
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>{isEn ? "Delete All Guests" : "Futa Wageni Wote"}</span>
-            </button>
+            <>
+              <button
+                id="remove-duplicate-guests-btn"
+                onClick={handleRemoveDuplicates}
+                className="flex-1 sm:flex-initial bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 hover:text-white px-4 py-2.5 rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer font-bold"
+                title={isEn ? "Remove duplicate guest names or numbers" : "Ondoa wageni wote wenye majina au namba zinazofanana"}
+              >
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                <span>{isEn ? "Remove Duplicates" : "Safisha Waliojirudia"}</span>
+              </button>
+
+              <button
+                id="clear-all-guests-btn"
+                onClick={() => setShowClearConfirm(true)}
+                className="flex-1 sm:flex-initial bg-rose-600/20 hover:bg-rose-600/40 border border-rose-500/30 text-rose-300 hover:text-white px-4 py-2.5 rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer font-bold"
+                title={isEn ? "Delete all guests at once" : "Futa wageni wote kwa wakati mmoja"}
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isEn ? "Delete All Guests" : "Futa Wageni Wote"}</span>
+              </button>
+            </>
           )}
 
           <button

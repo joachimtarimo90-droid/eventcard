@@ -139,6 +139,7 @@ export default function PublicReportView({ event, guests }: PublicReportViewProp
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="border-b-2 border-slate-200">
+                        <th className="py-3 px-4 uppercase font-bold text-slate-500 text-center w-12">Na.</th>
                         <th className="py-3 px-4 uppercase font-bold text-slate-500">Jina</th>
                         <th className="py-3 px-4 uppercase font-bold text-slate-500 text-right">Ahadi (TZS)</th>
                         <th className="py-3 px-4 uppercase font-bold text-emerald-600 text-right">Imelipwa (TZS)</th>
@@ -146,11 +147,12 @@ export default function PublicReportView({ event, guests }: PublicReportViewProp
                       </tr>
                     </thead>
                     <tbody>
-                      {activePledgeList.map(g => {
+                      {activePledgeList.map((g, idx) => {
                          const pledge = Number(g.pledgeAmount) || 0;
                          const paid = Number(g.paidAmount) || 0;
                          return (
                            <tr key={g.id} className="border-b border-slate-100 hover:bg-slate-50">
+                             <td className="py-3 px-4 font-mono text-slate-400 text-center font-bold text-xs">{idx + 1}</td>
                              <td className="py-3 px-4 font-medium">{g.name}</td>
                              <td className="py-3 px-4 text-right font-mono">{pledge > 0 ? formatMoney(pledge) : '-'}</td>
                              <td className="py-3 px-4 text-right font-mono text-emerald-600 font-bold">{paid > 0 ? formatMoney(paid) : '-'}</td>
@@ -171,13 +173,15 @@ export default function PublicReportView({ event, guests }: PublicReportViewProp
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="border-b-2 border-slate-200">
+                        <th className="py-3 px-4 uppercase font-bold text-slate-500 text-center w-12">Na.</th>
                         <th className="py-3 px-4 uppercase font-bold text-slate-500">Jina</th>
                         <th className="py-3 px-4 uppercase font-bold text-emerald-600 text-right">Kiasi (TZS)</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {fullyPaidList.map(g => (
+                      {fullyPaidList.map((g, idx) => (
                         <tr key={g.id} className="border-b border-slate-100 hover:bg-slate-50">
+                          <td className="py-3 px-4 font-mono text-slate-400 text-center font-bold text-xs">{idx + 1}</td>
                           <td className="py-3 px-4 font-medium flex items-center gap-2">
                              <CheckCircle className="w-4 h-4 text-emerald-500" />
                              {g.name}
@@ -198,6 +202,7 @@ export default function PublicReportView({ event, guests }: PublicReportViewProp
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="border-b-2 border-slate-200">
+                        <th className="py-3 px-4 uppercase font-bold text-slate-500 text-center w-12">Na.</th>
                         <th className="py-3 px-4 uppercase font-bold text-slate-500">Jina</th>
                         <th className="py-3 px-4 uppercase font-bold text-slate-500 text-right">Ahadi (TZS)</th>
                         <th className="py-3 px-4 uppercase font-bold text-emerald-600 text-right">Imelipwa (TZS)</th>
@@ -205,11 +210,12 @@ export default function PublicReportView({ event, guests }: PublicReportViewProp
                       </tr>
                     </thead>
                     <tbody>
-                      {[...partialPaidList, ...noPaymentPledgeList].map(g => {
+                      {[...partialPaidList, ...noPaymentPledgeList].map((g, idx) => {
                          const pledge = Number(g.pledgeAmount) || 0;
                          const paid = Number(g.paidAmount) || 0;
                          return (
                            <tr key={g.id} className="border-b border-slate-100 hover:bg-slate-50">
+                             <td className="py-3 px-4 font-mono text-slate-400 text-center font-bold text-xs">{idx + 1}</td>
                              <td className="py-3 px-4 font-medium">{g.name}</td>
                              <td className="py-3 px-4 text-right font-mono">{formatMoney(pledge)}</td>
                              <td className="py-3 px-4 text-right font-mono text-emerald-600">{paid > 0 ? formatMoney(paid) : '-'}</td>

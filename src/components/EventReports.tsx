@@ -440,7 +440,6 @@ export default function EventReports({
 
     // DYNAMIC METRIC SUMMARY CARDS FOR ALL REPORT TYPES
     const cardY = 44;
-    const cardWidth = (pageWidth - 28) / 3;
     const cardHeight = 16;
     let tableStartY = 64;
 
@@ -448,9 +447,11 @@ export default function EventReports({
 
     if (selectedReport === 'Overall') {
       cardsData = [
-        { label: isEn ? "TOTAL LOADED" : "WALIOALIKWA (LOADED)", value: `${totalGuestsCount} Kadi`, color: [15, 23, 42] },
-        { label: isEn ? "EXPECTED (RSVP YES)" : "WATAKAOFIKA (RSVP YES)", value: `${attendingCount} Kadi (${totalRsvpPax} Watu)`, color: [22, 163, 74] },
-        { label: isEn ? "ADMISSION (CHECK-IN)" : "MAHUDHURIO (CHECK-IN)", value: `${checkedInCount} Kadi (${arivedPercent()}% Ratio)`, color: [59, 130, 246] }
+        { label: "HAWAJAAHIDI", value: `${pledgeStatusData.totals.noPledgeCount} Wageni`, color: [100, 116, 139] },
+        { label: "WALIOAHIDI TU", value: `${pledgeStatusData.totals.unpaidPledgeCount} Wageni`, color: [217, 119, 6] },
+        { label: "LIPA NUSU", value: `${pledgeStatusData.totals.partiallyPaidCount} Wageni`, color: [2, 132, 199] },
+        { label: "LIPA YOTE", value: `${pledgeStatusData.totals.fullyPaidCount} Wageni`, color: [22, 163, 74] },
+        { label: "WENYE MADENI", value: `${pledgeStatusData.totals.unpaidPledgeCount + pledgeStatusData.totals.partiallyPaidCount} Active`, color: [147, 51, 234] }
       ];
     } else if (selectedReport === 'Attendance_Only') {
       cardsData = [
@@ -472,9 +473,10 @@ export default function EventReports({
         { label: isEn ? "UNRESPONDED RATIO" : "UWIANO WA WASIOJIBU", value: `${pendingRatio}% ya wageni`, color: [225, 29, 72] }
       ];
     } else if (selectedReport === 'Outstanding') {
+      const pctPaidVsPledged = metrics.totalPledgedAmount > 0 ? ((metrics.totalPaidAmount / metrics.totalPledgedAmount) * 100).toFixed(1) : '0';
       cardsData = [
         { label: isEn ? "TOTAL PLEDGED" : "JUMLA YA AHADI", value: `${metrics.totalPledgedAmount.toLocaleString()} TZS`, color: [245, 158, 11] },
-        { label: isEn ? "CASH COLLECTED" : "FEDHA TASLIMU", value: `${metrics.totalPaidAmount.toLocaleString()} TZS`, color: [22, 163, 74] },
+        { label: isEn ? "CASH COLLECTED" : "FEDHA TASLIMU", value: `${metrics.totalPaidAmount.toLocaleString()} TZS (${pctPaidVsPledged}%)`, color: [22, 163, 74] },
         { label: isEn ? "OUTSTANDING DUE" : "SALIO LINOLODAIWA", value: `${metrics.outstandingBalance.toLocaleString()} TZS`, color: [225, 29, 72] }
       ];
     } else if (selectedReport === 'FullyPaid') {
@@ -485,10 +487,13 @@ export default function EventReports({
         { label: isEn ? "CLEARANCE RATIO" : "ASILIMIA YA ULIPAJI KAMILI", value: `${fullyPaidRatio}% ya wachangiaji`, color: [15, 23, 42] }
       ];
     } else if (selectedReport === 'Pledges') {
+      const pctPaidVsTarget = fundraisingTarget > 0 ? ((metrics.totalPaidAmount / fundraisingTarget) * 100).toFixed(1) : '0';
+      const pctPaidVsPledged = metrics.totalPledgedAmount > 0 ? ((metrics.totalPaidAmount / metrics.totalPledgedAmount) * 100).toFixed(1) : '0';
       cardsData = [
         { label: isEn ? "BUDGET TARGET" : "MALENGO YA BAJETI", value: `${fundraisingTarget.toLocaleString()} TZS`, color: [59, 130, 246] },
         { label: isEn ? "TOTAL PLEDGES" : "JUMLA AHADI", value: `${metrics.totalPledgedAmount.toLocaleString()} TZS`, color: [245, 158, 11] },
-        { label: isEn ? "PLEDGE TO TARGET COVER" : "UWIANO WA AHADI", value: `${fundraisingTarget > 0 ? Math.round((metrics.totalPledgedAmount / fundraisingTarget) * 100) : 0}% ya Bajeti`, color: [15, 23, 42] }
+        { label: isEn ? "COLLECTED VIA TARGET" : "MAKUSANYO (VIA TARGET)", value: `${pctPaidVsTarget}% ya Bajeti`, color: [16, 185, 129] },
+        { label: isEn ? "COLLECTED VIA PLEDGE" : "MAKUSANYO (VIA AHADI)", value: `${pctPaidVsPledged}% ya Ahadi`, color: [14, 116, 144] }
       ];
     } else if (selectedReport === 'NoPledge') {
       const noPledgeRatio = totalGuestsCount > 0 ? Math.round((pledgeStatusData.totals.noPledgeCount / totalGuestsCount) * 100) : 0;
@@ -500,16 +505,17 @@ export default function EventReports({
     }
 
     if (cardsData.length > 0) {
+      const cardWidth = (pageWidth - 20 - (cardsData.length - 1) * 3) / cardsData.length;
       cardsData.forEach((card, i) => {
-        const x = 10 + i * (cardWidth + 4);
+        const x = 10 + i * (cardWidth + 3);
         doc.setFillColor(248, 250, 252);
         doc.setDrawColor(218, 223, 230);
         doc.rect(x, cardY, cardWidth, cardHeight, 'FD');
-        doc.setFontSize(6.5);
+        doc.setFontSize(6);
         doc.setTextColor(100, 116, 139);
         doc.setFont("helvetica", "bold");
         doc.text(card.label, x + cardWidth / 2, cardY + 5, { align: 'center' });
-        doc.setFontSize(8.5);
+        doc.setFontSize(8);
         doc.setTextColor(card.color[0], card.color[1], card.color[2]);
         doc.text(card.value, x + cardWidth / 2, cardY + 11, { align: 'center' });
       });
@@ -1724,6 +1730,54 @@ export default function EventReports({
                 </div>
               </div>
 
+            </div>
+
+            {/* 5 Pledge & Contribution Status Summary Cards requested by user */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <div className="bg-slate-950/80 border border-slate-800 p-3.5 rounded-2xl text-center flex flex-col justify-between">
+                <span className="text-[9.5px] font-mono font-bold text-slate-400 uppercase tracking-wider">
+                  {isEn ? 'HAWAJAAHIDI (NO PLEDGE)' : 'HAWAJAAHIDI (NO PLEDGE)'}
+                </span>
+                <p className="text-2xl font-black font-mono text-white mt-1">
+                  {pledgeStatusData.totals.noPledgeCount}
+                </p>
+              </div>
+
+              <div className="bg-slate-950/80 border border-amber-500/30 p-3.5 rounded-2xl text-center flex flex-col justify-between">
+                <span className="text-[9.5px] font-mono font-bold text-amber-400 uppercase tracking-wider">
+                  {isEn ? 'WALIOAHIDI TU (PLEDGED)' : 'WALIOAHIDI TU (PLEDGED)'}
+                </span>
+                <p className="text-2xl font-black font-mono text-amber-400 mt-1">
+                  {pledgeStatusData.totals.unpaidPledgeCount}
+                </p>
+              </div>
+
+              <div className="bg-slate-950/80 border border-cyan-500/30 p-3.5 rounded-2xl text-center flex flex-col justify-between">
+                <span className="text-[9.5px] font-mono font-bold text-cyan-400 uppercase tracking-wider">
+                  {isEn ? 'LIPA NUSU (PARTIALLY)' : 'LIPA NUSU (PARTIALLY)'}
+                </span>
+                <p className="text-2xl font-black font-mono text-cyan-400 mt-1">
+                  {pledgeStatusData.totals.partiallyPaidCount}
+                </p>
+              </div>
+
+              <div className="bg-slate-950/80 border border-emerald-500/30 p-3.5 rounded-2xl text-center flex flex-col justify-between">
+                <span className="text-[9.5px] font-mono font-bold text-emerald-400 uppercase tracking-wider">
+                  {isEn ? 'LIPA YOTE (FULLY PAID)' : 'LIPA YOTE (FULLY PAID)'}
+                </span>
+                <p className="text-2xl font-black font-mono text-emerald-400 mt-1">
+                  {pledgeStatusData.totals.fullyPaidCount}
+                </p>
+              </div>
+
+              <div className="bg-slate-950/80 border border-purple-500/30 p-3.5 rounded-2xl text-center flex flex-col justify-between col-span-2 sm:col-span-1">
+                <span className="text-[9.5px] font-mono font-bold text-purple-400 uppercase tracking-wider">
+                  {isEn ? 'WENYE MADENI ACTIVE' : 'WENYE MADENI ACTIVE'}
+                </span>
+                <p className="text-2xl font-black font-mono text-purple-300 mt-1">
+                  {pledgeStatusData.totals.unpaidPledgeCount + pledgeStatusData.totals.partiallyPaidCount}
+                </p>
+              </div>
             </div>
 
             {/* Check-In Progress Gauge Section (Aggregating checkin and RSVP) */}

@@ -1115,41 +1115,127 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
       doc.setLineWidth(0.8);
       doc.line(12, 42, pageWidth - 12, 42);
 
-      // Summary Cards (4 Cards)
+      // Summary Cards (4 Main Budget Cards)
       const outstandingBal = metrics.totalPledgedAmount - metrics.totalPaidAmount;
-      const cardY = 48;
+      const pctPaidVsTarget = fundraisingTarget > 0 ? ((metrics.totalPaidAmount / fundraisingTarget) * 100).toFixed(1) : '0.0';
+      const pctPaidVsPledged = metrics.totalPledgedAmount > 0 ? ((metrics.totalPaidAmount / metrics.totalPledgedAmount) * 100).toFixed(1) : '0.0';
+      const pctPledgedVsTarget = fundraisingTarget > 0 ? ((metrics.totalPledgedAmount / fundraisingTarget) * 100).toFixed(1) : '0.0';
+      const pctOutstanding = metrics.totalPledgedAmount > 0 
+        ? Math.max(0, 100 - Number(pctPaidVsPledged)).toFixed(1) 
+        : '0.0';
+
+      const cardY = 46;
       const cardWidth = (pageWidth - 24 - 12) / 4; // 4 cards, total 12 margin gaps
-      const cardHeight = 24;
+      const cardHeight = 21;
 
       const cards = [
-        { label: isEn ? "TARGET BUDGET" : "MALENGO (TARGET)", value: `${fundraisingTarget.toLocaleString()} TZS`, bgColor: [59, 130, 246] },    // Blue 500
-        { label: isEn ? "TOTAL PLEDGED" : "JUMLA YA AHADI", value: `${metrics.totalPledgedAmount.toLocaleString()} TZS`, bgColor: [245, 158, 11] }, // Amber 500
-        { label: isEn ? "CASH COLLECTED" : "FEDHA TASLIMU", value: `${metrics.totalPaidAmount.toLocaleString()} TZS`, bgColor: [16, 185, 129] },  // Emerald 500
-        { label: isEn ? "OUTSTANDING BAL" : "DENI / SALIO", value: `${outstandingBal.toLocaleString()} TZS`, bgColor: [225, 29, 72] }      // Rose 600
+        { label: isEn ? "TARGET BUDGET" : "MALENGO (TARGET)", value: `${fundraisingTarget.toLocaleString()} TZS`, sub: `100% ${isEn ? 'Goal' : 'Lengo Kuu'}`, bgColor: [59, 130, 246] },
+        { label: isEn ? "TOTAL PLEDGED" : "JUMLA YA AHADI", value: `${metrics.totalPledgedAmount.toLocaleString()} TZS`, sub: `${pctPledgedVsTarget}% ${isEn ? 'of Budget' : 'ya Target'}`, bgColor: [245, 158, 11] },
+        { label: isEn ? "CASH COLLECTED" : "FEDHA TASLIMU", value: `${metrics.totalPaidAmount.toLocaleString()} TZS`, sub: `${pctPaidVsTarget}% Target • ${pctPaidVsPledged}% Ahadi`, bgColor: [16, 185, 129] },
+        { label: isEn ? "OUTSTANDING BAL" : "DENI / SALIO", value: `${outstandingBal.toLocaleString()} TZS`, sub: `${pctOutstanding}% ${isEn ? 'Pending' : 'Inadaiwa'}`, bgColor: [225, 29, 72] }
       ];
 
       cards.forEach((card, i) => {
         const x = 12 + i * (cardWidth + 4);
         doc.setFillColor(card.bgColor[0], card.bgColor[1], card.bgColor[2]);
-        doc.roundedRect(x, cardY, cardWidth, cardHeight, 3, 3, 'F');
+        doc.roundedRect(x, cardY, cardWidth, cardHeight, 2.5, 2.5, 'F');
         
-        doc.setFontSize(7.5);
+        doc.setFontSize(6.5);
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
-        doc.text(card.label, x + cardWidth / 2, cardY + 8, { align: 'center', letterSpacing: 0.5 } as any);
+        doc.text(card.label, x + cardWidth / 2, cardY + 5.5, { align: 'center', letterSpacing: 0.5 } as any);
         
-        doc.setFontSize(14);
-        doc.text(card.value, x + cardWidth / 2, cardY + 17, { align: 'center' });
+        doc.setFontSize(11.5);
+        doc.text(card.value, x + cardWidth / 2, cardY + 12.5, { align: 'center' });
+
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "bold");
+        doc.text(card.sub, x + cardWidth / 2, cardY + 17.5, { align: 'center' });
+      });
+
+      // --- DEDICATED FUNDS COLLECTION PROGRESS BANNER ---
+      const bannerY = cardY + cardHeight + 3.5; // 46 + 21 + 3.5 = 70.5
+      const bannerHeight = 10;
+      doc.setFillColor(15, 23, 42); // Slate 900
+      doc.roundedRect(12, bannerY, pageWidth - 24, bannerHeight, 2, 2, 'F');
+
+      // Banner Label
+      doc.setFontSize(7.5);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(251, 191, 36); // Amber 400
+      doc.text(
+        isEn ? "COLLECTION PROGRESS RATIO:" : "ASILIMIA YA MAKUSANYO YA FEDHA:", 
+        17, 
+        bannerY + 6.5
+      );
+
+      // Box 1: via Total Budget
+      const box1X = pageWidth - 146;
+      doc.setFillColor(6, 95, 70); // Dark Emerald 800
+      doc.setDrawColor(52, 211, 153); // Emerald 400 border
+      doc.roundedRect(box1X, bannerY + 2, 62, 6, 1.5, 1.5, 'FD');
+      doc.setFontSize(6.5);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(255, 255, 255);
+      doc.text(
+        isEn ? `via Total Budget: ${pctPaidVsTarget}%` : `via Total Budget (Target): ${pctPaidVsTarget}%`, 
+        box1X + 31, 
+        bannerY + 6, 
+        { align: 'center' }
+      );
+
+      // Box 2: via Total Pledges
+      const box2X = pageWidth - 78;
+      doc.setFillColor(21, 94, 117); // Dark Cyan 800
+      doc.setDrawColor(34, 211, 238); // Cyan 400 border
+      doc.roundedRect(box2X, bannerY + 2, 64, 6, 1.5, 1.5, 'FD');
+      doc.setFontSize(6.5);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(255, 255, 255);
+      doc.text(
+        isEn ? `via Total Pledges: ${pctPaidVsPledged}%` : `via Total Pledges (Ahadi): ${pctPaidVsPledged}%`, 
+        box2X + 32, 
+        bannerY + 6, 
+        { align: 'center' }
+      );
+
+      // 5 Pledge Status Summary Cards requested by user
+      const cardY2 = bannerY + bannerHeight + 3.5; // 70.5 + 10 + 3.5 = 84
+      const cardWidth2 = (pageWidth - 24 - 12) / 5; // 5 cards, total 12 margin gaps
+      const cardHeight2 = 13;
+
+      const pledgeCards = [
+        { label: "HAWAJAAHIDI", value: `${unpledgedList.length} Wageni`, textColor: [71, 85, 105], borderColor: [203, 213, 225], bgColor: [248, 250, 252] },
+        { label: "WALIOAHIDI TU", value: `${noPaymentPledgeList.length} Wageni`, textColor: [180, 83, 9], borderColor: [252, 211, 77], bgColor: [254, 252, 232] },
+        { label: "LIPA NUSU", value: `${partialPaidList.length} Wageni`, textColor: [14, 116, 144], borderColor: [103, 232, 249], bgColor: [236, 254, 255] },
+        { label: "LIPA YOTE", value: `${fullyPaidList.length} Wageni`, textColor: [21, 128, 61], borderColor: [110, 231, 183], bgColor: [236, 253, 245] },
+        { label: "WENYE MADENI", value: `${noPaymentPledgeList.length + partialPaidList.length} Active`, textColor: [126, 34, 206], borderColor: [216, 180, 254], bgColor: [250, 245, 255] }
+      ];
+
+      pledgeCards.forEach((card, i) => {
+        const x = 12 + i * (cardWidth2 + 3);
+        doc.setFillColor(card.bgColor[0], card.bgColor[1], card.bgColor[2]);
+        doc.setDrawColor(card.borderColor[0], card.borderColor[1], card.borderColor[2]);
+        doc.roundedRect(x, cardY2, cardWidth2, cardHeight2, 2, 2, 'FD');
+        
+        doc.setFontSize(5.8);
+        doc.setTextColor(card.textColor[0], card.textColor[1], card.textColor[2]);
+        doc.setFont("helvetica", "bold");
+        doc.text(card.label, x + cardWidth2 / 2, cardY2 + 4.5, { align: 'center' });
+        
+        doc.setFontSize(8.5);
+        doc.text(card.value, x + cardWidth2 / 2, cardY2 + 9.5, { align: 'center' });
       });
 
       // Group Summaries Section
-      const groupY = cardY + 32;
+      const groupY = cardY2 + cardHeight2 + 4; // 84 + 13 + 4 = 101
       doc.setFillColor(241, 245, 249); // Slate 100
-      doc.roundedRect(12, groupY, pageWidth - 24, 8, 1, 1, 'F');
+      doc.roundedRect(12, groupY, pageWidth - 24, 7, 1, 1, 'F');
       
-      doc.setFontSize(9);
+      doc.setFontSize(8.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(isEn ? "GROUP LEVEL SUMMARIES" : "MUHTASARI WA MAKUNDI / VIKAO", 15, groupY + 5.5);
+      doc.setFont("helvetica", "bold");
+      doc.text(isEn ? "GROUP LEVEL SUMMARIES" : "MUHTASARI WA MAKUNDI / VIKAO", 15, groupY + 5);
 
       const groupData = groupSummaries.list.map(data => [
         data.name.toUpperCase(),
@@ -1167,14 +1253,14 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
       ]);
 
       autoTable(doc, {
-        startY: groupY + 10,
+        startY: groupY + 9,
         head: [isEn 
           ? ['CAMPAIGN GROUP', 'COUNT', 'TOTAL PLEDGED', 'COLLECTED CASH', 'BALANCES'] 
           : ['KUNDI LA MCHANGIAJI', 'IDADI', 'JUMLA YA AHADI', 'KILICHOLIPWA', 'SALIO / DENI']],
         body: groupData,
         theme: 'grid',
-        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8.5, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
-        bodyStyles: { textColor: [0, 0, 0], fontSize: 8.5, lineColor: [0, 0, 0] },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
         styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, halign: 'center', lineColor: [0, 0, 0], lineWidth: 0.5 },
         columnStyles: {
           0: { halign: 'left', fontStyle: 'bold' } // Campaign group
@@ -1202,25 +1288,29 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
         }
       });
 
-      // Master Database Section
-      let tableY = (doc as any).lastAutoTable.finalY + 14;
+      // Master Database Section ("DAFTARI KUU LA MICHANGO YA WAGENI")
+      let lastY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY : groupY + 30;
+      let tableY = lastY + 10;
 
-      // if page space is running out, add a new page
-      if (tableY > doc.internal.pageSize.getHeight() - 40) {
+      // Check if page space is running out, move to a new page cleanly
+      const pageHeight = doc.internal.pageSize.getHeight();
+      if (tableY > pageHeight - 50) {
         doc.addPage();
         tableY = 15;
       }
 
       doc.setFillColor(241, 245, 249); // Slate 100
-      doc.roundedRect(12, tableY, pageWidth - 24, 8, 1, 1, 'F');
+      doc.roundedRect(12, tableY, pageWidth - 24, 7, 1, 1, 'F');
       
       doc.setFontSize(8.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(isEn ? "MASTER GUEST REVENUE DATABASE" : "DAFTARI KUU LA MICHANGO YA WAGENI", 15, tableY + 5.5);
+      doc.setFont("helvetica", "bold");
+      doc.text(isEn ? "MASTER GUEST REVENUE DATABASE" : "DAFTARI KUU LA MICHANGO YA WAGENI", 15, tableY + 5);
       
       doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139);
-      doc.text(isEn ? `${guests.length} GUESTS TOTAL` : `JUMLA YA WAGENI ${guests.length}`, pageWidth - 15, tableY + 5.5, { align: 'right' });
+      doc.setFont("helvetica", "normal");
+      doc.text(isEn ? `${guests.length} GUESTS TOTAL` : `JUMLA YA WAGENI ${guests.length}`, pageWidth - 15, tableY + 5, { align: 'right' });
 
       let snCounter = 1;
       const guestData = masterGuestList.map(g => {
@@ -1244,16 +1334,17 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
       });
 
       autoTable(doc, {
-        startY: tableY + 10,
+        startY: tableY + 9,
         head: [isEn 
           ? ['S/N', 'GUEST FULL NAME', 'MOBILE', 'PLEDGE', 'PAID AMT', 'BALANCE', 'CLEARANCE'] 
           : ['S/N', 'JINA LA MGENI', 'SIMU', 'AHADI', 'MALIPO', 'DENI', 'HALI']],
         body: guestData,
         theme: 'grid',
         headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
-        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
+        bodyStyles: { textColor: [0, 0, 0], fontSize: 7.5, lineColor: [0, 0, 0] },
         styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, halign: 'center', lineColor: [0, 0, 0], lineWidth: 0.5 },
         columnStyles: {
+          0: { cellWidth: 12 }, // S/N column
           1: { halign: 'left', fontStyle: 'bold' } // Guest name
         },
         didParseCell: (data) => {
@@ -1382,7 +1473,7 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
       // Summary cards
       const cardY = 44;
       const cardWidth = (pageWidth - 28) / 3;
-      const cardHeight = 18;
+      const cardHeight = 16;
 
       const cards = [
         { label: isEn ? "TARGET BUDGET" : "MALENGO (TARGET)", value: `${fundraisingTarget.toLocaleString()} TZS`, color: [15, 23, 42] },
@@ -1403,22 +1494,47 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
         
         doc.setFontSize(9.5);
         doc.setTextColor(card.color[0], card.color[1], card.color[2]);
-        doc.text(card.value, x + cardWidth / 2, cardY + 12, { align: 'center' });
+        doc.text(card.value, x + cardWidth / 2, cardY + 11.5, { align: 'center' });
+      });
+
+      // 5 Pledge Status Cards
+      const cardY2 = 63;
+      const cardWidth2 = (pageWidth - 20 - (5 - 1) * 3) / 5;
+      const cards2 = [
+        { label: "HAWAJAAHIDI", value: `${unpledgedList.length} Wageni`, color: [100, 116, 139] },
+        { label: "WALIOAHIDI TU", value: `${noPaymentPledgeList.length} Wageni`, color: [217, 119, 6] },
+        { label: "LIPA NUSU", value: `${partialPaidList.length} Wageni`, color: [2, 132, 199] },
+        { label: "LIPA YOTE", value: `${fullyPaidList.length} Wageni`, color: [22, 163, 74] },
+        { label: "WENYE MADENI", value: `${noPaymentPledgeList.length + partialPaidList.length} Active`, color: [147, 51, 234] }
+      ];
+
+      cards2.forEach((card, i) => {
+        const x = 10 + i * (cardWidth2 + 3);
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(218, 223, 230);
+        doc.rect(x, cardY2, cardWidth2, 14, 'FD');
+        doc.setFontSize(6);
+        doc.setTextColor(100, 116, 139);
+        doc.setFont("helvetica", "bold");
+        doc.text(card.label, x + cardWidth2 / 2, cardY2 + 4.5, { align: 'center' });
+        doc.setFontSize(8);
+        doc.setTextColor(card.color[0], card.color[1], card.color[2]);
+        doc.text(card.value, x + cardWidth2 / 2, cardY2 + 10, { align: 'center' });
       });
 
       // Quick message stats bar
-      const commY = 66;
+      const commY = 80;
       doc.setFillColor(241, 245, 249);
-      doc.rect(10, commY, pageWidth - 20, 7, 'F');
+      doc.rect(10, commY, pageWidth - 20, 6, 'F');
       doc.setFontSize(7.5);
       doc.setTextColor(51, 65, 85);
       doc.setFont("helvetica", "bold");
       doc.text(isEn 
         ? `TOTAL MESSAGES DISPATCHED: SMS Sent: ${totalSmsSent}  •  WhatsApp Sent: ${totalWhatsappSent}`
-        : `JUMLA YA MAWASILIANO YALIYOTUMWA: SMS Zilizotumwa: ${totalSmsSent}  •  WhatsApp Zilizotumwa: ${totalWhatsappSent}`, 13, commY + 4.8);
+        : `JUMLA YA MAWASILIANO YALIYOTUMWA: SMS Zilizotumwa: ${totalSmsSent}  •  WhatsApp Zilizotumwa: ${totalWhatsappSent}`, 13, commY + 4.2);
 
       // Group Summaries
-      const groupY = 77;
+      const groupY = 89;
       doc.setFillColor(243, 244, 246);
       doc.rect(10, groupY, pageWidth - 20, 8, 'F');
       doc.setFontSize(9);
@@ -3099,31 +3215,113 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                   {/* 2. SUMMARY METRICS ROW - 4 bordered cards */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* Card 1: Target - BLUE VIBRANT */}
-                    <div className="border border-blue-400 bg-blue-600 p-5 rounded-2xl text-center flex flex-col justify-between shadow-lg shadow-blue-500/20">
+                    <div className="border border-blue-400 bg-blue-600 p-4 rounded-2xl text-center flex flex-col justify-between shadow-lg shadow-blue-500/20">
                       <span className="text-[9.5px] font-black text-blue-50 uppercase tracking-[0.2em]">{isEn ? 'TARGET BUDGET' : 'MALENGO (TARGET)'}</span>
-                      <span className="text-xl font-black text-white mt-2 block font-mono">
+                      <span className="text-xl font-black text-white mt-1.5 block font-mono">
                         {fundraisingTarget.toLocaleString()} TZS
+                      </span>
+                      <span className="mt-2 text-[10px] font-extrabold text-blue-100 bg-blue-700/60 px-2 py-0.5 rounded-full inline-block font-mono">
+                        100% Lengo Kuu
                       </span>
                     </div>
                     {/* Card 2: Pledged - AMBER VIBRANT */}
-                    <div className="border border-amber-400 bg-amber-500 p-5 rounded-2xl text-center flex flex-col justify-between shadow-lg shadow-amber-500/20">
+                    <div className="border border-amber-400 bg-amber-500 p-4 rounded-2xl text-center flex flex-col justify-between shadow-lg shadow-amber-500/20">
                       <span className="text-[9.5px] font-black text-amber-50 uppercase tracking-[0.2em]">{isEn ? 'TOTAL PLEDGED' : 'JUMLA YA AHADI'}</span>
-                      <span className="text-xl font-black text-white mt-2 block font-mono">
+                      <span className="text-xl font-black text-white mt-1.5 block font-mono">
                         {metrics.totalPledgedAmount.toLocaleString()} TZS
+                      </span>
+                      <span className="mt-2 text-[10px] font-extrabold text-amber-950 bg-amber-200/90 px-2 py-0.5 rounded-full inline-block font-mono">
+                        {fundraisingTarget > 0 ? ((metrics.totalPledgedAmount / fundraisingTarget) * 100).toFixed(1) : '0.0'}% ya Target
                       </span>
                     </div>
                     {/* Card 3: Collected - EMERALD VIBRANT */}
-                    <div className="border border-emerald-400 bg-emerald-600 p-5 rounded-2xl text-center flex flex-col justify-between shadow-lg shadow-emerald-500/20">
+                    <div className="border border-emerald-400 bg-emerald-600 p-4 rounded-2xl text-center flex flex-col justify-between shadow-lg shadow-emerald-500/20">
                       <span className="text-[9.5px] font-black text-emerald-50 uppercase tracking-[0.2em]">{isEn ? 'CASH COLLECTED' : 'FEDHA TASLIMU'}</span>
-                      <span className="text-xl font-black text-white mt-2 block font-mono">
+                      <span className="text-xl font-black text-white mt-1.5 block font-mono">
                         {metrics.totalPaidAmount.toLocaleString()} TZS
+                      </span>
+                      <span className="mt-2 text-[10px] font-extrabold text-emerald-950 bg-emerald-200/95 px-2 py-0.5 rounded-full inline-block font-mono">
+                        {fundraisingTarget > 0 ? ((metrics.totalPaidAmount / fundraisingTarget) * 100).toFixed(1) : '0.0'}% Target • {metrics.totalPledgedAmount > 0 ? ((metrics.totalPaidAmount / metrics.totalPledgedAmount) * 100).toFixed(1) : '0.0'}% Ahadi
                       </span>
                     </div>
                     {/* Card 4: Outstanding - ROSE VIBRANT */}
-                    <div className="border border-rose-400 bg-rose-600 p-5 rounded-2xl text-center flex flex-col justify-between shadow-lg shadow-rose-500/20">
+                    <div className="border border-rose-400 bg-rose-600 p-4 rounded-2xl text-center flex flex-col justify-between shadow-lg shadow-rose-500/20">
                       <span className="text-[9.5px] font-black text-rose-50 uppercase tracking-[0.2em]">{isEn ? 'OUTSTANDING BAL' : 'DENI / SALIO'}</span>
-                      <span className="text-xl font-black text-white mt-2 block font-mono">
+                      <span className="text-xl font-black text-white mt-1.5 block font-mono">
                         {metrics.outstandingBalance.toLocaleString()} TZS
+                      </span>
+                      <span className="mt-2 text-[10px] font-extrabold text-rose-100 bg-rose-800/60 px-2 py-0.5 rounded-full inline-block font-mono">
+                        {(100 - Number(metrics.totalPledgedAmount > 0 ? ((metrics.totalPaidAmount / metrics.totalPledgedAmount) * 100).toFixed(1) : 0) > 0 ? (100 - Number(metrics.totalPledgedAmount > 0 ? ((metrics.totalPaidAmount / metrics.totalPledgedAmount) * 100).toFixed(1) : 0)).toFixed(1) : '0.0')}% Inadaiwa
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* COLLECTION PROGRESS RATIO BANNER */}
+                  <div className="bg-slate-900 text-white p-3.5 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 font-mono print-bg-gray mt-2">
+                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
+                      <span>{isEn ? 'FUNDS COLLECTION PROGRESS RATIO' : 'ASILIMIA YA MAKUSANYO YA FEDHA'}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      <div className="bg-slate-800 border border-emerald-500/40 px-3 py-1.5 rounded-lg flex items-center gap-2">
+                        <span className="text-slate-300">{isEn ? 'Via Target Budget:' : 'via Total Budget (Target):'}</span>
+                        <span className="font-black text-emerald-400 text-sm font-mono">
+                          {fundraisingTarget > 0 ? ((metrics.totalPaidAmount / fundraisingTarget) * 100).toFixed(1) : '0.0'}%
+                        </span>
+                      </div>
+                      <div className="bg-slate-800 border border-cyan-500/40 px-3 py-1.5 rounded-lg flex items-center gap-2">
+                        <span className="text-slate-300">{isEn ? 'Via Total Pledges:' : 'via Total Pledges (Ahadi):'}</span>
+                        <span className="font-black text-cyan-400 text-sm font-mono">
+                          {metrics.totalPledgedAmount > 0 ? ((metrics.totalPaidAmount / metrics.totalPledgedAmount) * 100).toFixed(1) : '0.0'}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 5 Pledge Status Summary Cards requested by user */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-2">
+                    <div className="border border-slate-300 bg-slate-100 p-3.5 rounded-xl text-center flex flex-col justify-between print-bg-gray">
+                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-wider font-mono">
+                        HAWAJAAHIDI (NO PLEDGE)
+                      </span>
+                      <span className="text-xl font-black text-slate-900 mt-1 font-mono">
+                        {unpledgedList.length}
+                      </span>
+                    </div>
+
+                    <div className="border border-amber-300 bg-amber-50 p-3.5 rounded-xl text-center flex flex-col justify-between print-bg-gray">
+                      <span className="text-[9px] font-black text-amber-800 uppercase tracking-wider font-mono">
+                        WALIOAHIDI TU (PLEDGED)
+                      </span>
+                      <span className="text-xl font-black text-amber-900 mt-1 font-mono">
+                        {noPaymentPledgeList.length}
+                      </span>
+                    </div>
+
+                    <div className="border border-cyan-300 bg-cyan-50 p-3.5 rounded-xl text-center flex flex-col justify-between print-bg-gray">
+                      <span className="text-[9px] font-black text-cyan-800 uppercase tracking-wider font-mono">
+                        LIPA NUSU (PARTIALLY)
+                      </span>
+                      <span className="text-xl font-black text-cyan-900 mt-1 font-mono">
+                        {partialPaidList.length}
+                      </span>
+                    </div>
+
+                    <div className="border border-emerald-300 bg-emerald-50 p-3.5 rounded-xl text-center flex flex-col justify-between print-bg-gray">
+                      <span className="text-[9px] font-black text-emerald-800 uppercase tracking-wider font-mono">
+                        LIPA YOTE (FULLY PAID)
+                      </span>
+                      <span className="text-xl font-black text-emerald-900 mt-1 font-mono">
+                        {fullyPaidList.length}
+                      </span>
+                    </div>
+
+                    <div className="border border-purple-300 bg-purple-50 p-3.5 rounded-xl text-center flex flex-col justify-between col-span-2 sm:col-span-1 print-bg-gray">
+                      <span className="text-[9px] font-black text-purple-800 uppercase tracking-wider font-mono">
+                        WENYE MADENI ACTIVE
+                      </span>
+                      <span className="text-xl font-black text-purple-900 mt-1 font-mono">
+                        {noPaymentPledgeList.length + partialPaidList.length}
                       </span>
                     </div>
                   </div>
@@ -3404,6 +3602,7 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                 <table className="w-full text-left border-collapse font-sans text-xs" id="table-outstanding-report">
                   <thead>
                     <tr className="border-b border-white/10 text-slate-400 font-mono text-[10px] uppercase">
+                      <th className="py-2 px-3 text-center w-10">S/N</th>
                       <th className="py-2 px-3">Guest Name</th>
                       <th className="py-2 px-3">Pledge Type</th>
                       <th className="py-2 px-3 text-right">Commitment TZS</th>
@@ -3415,12 +3614,13 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                   </thead>
                   <tbody className="divide-y divide-white/5 font-mono text-slate-200 text-[11px]">
                     {[...partialPaidList, ...noPaymentPledgeList].length === 0 ? (
-                      <tr><td colSpan={7} className="py-6 text-center text-slate-500">{isEn ? 'God is good! No one owes anything right now.' : 'Mungu ni mwema! Hakuna mtu anayedaiwa sasa hivi.'}</td></tr>
+                      <tr><td colSpan={8} className="py-6 text-center text-slate-500">{isEn ? 'God is good! No one owes anything right now.' : 'Mungu ni mwema! Hakuna mtu anayedaiwa sasa hivi.'}</td></tr>
                     ) : (
-                      [...partialPaidList, ...noPaymentPledgeList].map(g => {
+                      [...partialPaidList, ...noPaymentPledgeList].map((g, idx) => {
                         const b = (g.pledgeAmount || 0) - (g.paidAmount || 0);
                         return (
                           <tr key={g.id} className="hover:bg-white/5 transition-colors">
+                            <td className="py-2 px-3 text-center text-slate-500 font-semibold">{idx + 1}</td>
                             <td className="py-2 px-3 font-bold uppercase">{g.name}</td>
                             <td className="py-2 px-3 text-slate-400 uppercase text-[9.5px]">{(g.paidAmount || 0) > 0 ? 'LIPA NUSU' : 'HAIJALIPWA BADO'}</td>
                             <td className="py-2 px-3 text-right">TZS {(g.pledgeAmount || 0).toLocaleString()}</td>
@@ -3463,6 +3663,7 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                 <table className="w-full text-left border-collapse font-sans text-xs" id="table-fullypaid-report">
                   <thead>
                     <tr className="border-b border-white/10 text-slate-400 font-mono text-[10px] uppercase">
+                      <th className="py-2 px-3 text-center w-10">S/N</th>
                       <th className="py-2 px-3">Mchangiaji</th>
                       <th className="py-2 px-3">Simu ya Mkononi</th>
                       <th className="py-2 px-3 text-right">Goal Completed TZS</th>
@@ -3472,10 +3673,11 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                   </thead>
                   <tbody className="divide-y divide-white/5 font-mono text-slate-200 text-[11px]">
                     {fullyPaidList.length === 0 ? (
-                      <tr><td colSpan={5} className="py-6 text-center text-slate-500">Haipo kumbukumbu yoyote ya mchangiaji aliyelipa yote bado.</td></tr>
+                      <tr><td colSpan={6} className="py-6 text-center text-slate-500">Haipo kumbukumbu yoyote ya mchangiaji aliyelipa yote bado.</td></tr>
                     ) : (
-                      fullyPaidList.map(g => (
+                      fullyPaidList.map((g, idx) => (
                         <tr key={g.id} className="hover:bg-white/5 transition-colors">
+                          <td className="py-2 px-3 text-center text-slate-500 font-semibold">{idx + 1}</td>
                           <td className="py-2 px-3 font-bold uppercase">{g.name}</td>
                           <td className="py-2 px-3 text-slate-400">{g.phone || (isEn ? 'No phone' : 'Hakuna simu')}</td>
                           <td className="py-2 px-3 text-right text-emerald-400 font-black">TZS {(g.pledgeAmount || 0).toLocaleString()}</td>
@@ -3515,6 +3717,7 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                 <table className="w-full text-left border-collapse font-sans text-xs" id="table-pending-report">
                   <thead>
                     <tr className="border-b border-white/10 text-slate-400 font-mono text-[10px] uppercase">
+                      <th className="py-2 px-3 text-center w-10">S/N</th>
                       <th className="py-2 px-3">Mgeni</th>
                       <th className="py-2 px-3 font-mono">status</th>
                       <th className="py-2 px-3 text-right font-mono">Amount Pledge</th>
@@ -3524,10 +3727,11 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                   </thead>
                   <tbody className="divide-y divide-white/5 font-mono text-slate-200 text-[11px]">
                     {activePledgeList.length === 0 ? (
-                      <tr><td colSpan={5} className="py-6 text-center text-slate-500">Hakuna ahadi ya mchango iliyoandikishwa bado.</td></tr>
+                      <tr><td colSpan={6} className="py-6 text-center text-slate-500">Hakuna ahadi ya mchango iliyoandikishwa bado.</td></tr>
                     ) : (
-                      activePledgeList.map(g => (
+                      activePledgeList.map((g, idx) => (
                         <tr key={g.id} className="hover:bg-white/5 transition-colors">
+                          <td className="py-2 px-3 text-center text-slate-500 font-semibold">{idx + 1}</td>
                           <td className="py-2 px-3 font-bold uppercase">{g.name}</td>
                           <td className="py-2 px-3 text-amber-400 uppercase text-[9.5px]">{g.pledgeStatus}</td>
                           <td className="py-2 px-3 text-right font-black">TZS {(g.pledgeAmount || 0).toLocaleString()}</td>
@@ -3560,6 +3764,7 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                 <table className="w-full text-left border-collapse font-sans text-xs" id="table-attendance-report">
                   <thead>
                     <tr className="border-b border-white/10 text-slate-400 font-mono text-[10px] uppercase">
+                      <th className="py-2 px-3 text-center w-10">S/N</th>
                       <th className="py-2 px-3">Muda (Time)</th>
                       <th className="py-2 px-3">Jina la Mgeni</th>
                       <th className="py-2 px-3">Aina ya Kadi</th>
@@ -3570,12 +3775,13 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                   </thead>
                   <tbody className="divide-y divide-white/5 font-mono text-slate-200 text-[11px]">
                     {checkedInList.length === 0 ? (
-                      <tr><td colSpan={6} className="py-10 text-center text-slate-500 italic uppercase tracking-widest text-[9px]">Skani bado hazijaanza. Hakuna mahudhurio ya kuonyesha.</td></tr>
+                      <tr><td colSpan={7} className="py-10 text-center text-slate-500 italic uppercase tracking-widest text-[9px]">Skani bado hazijaanza. Hakuna mahudhurio ya kuonyesha.</td></tr>
                     ) : (
                       [...checkedInList]
                         .sort((a,b) => (b.checkedInTime || '').localeCompare(a.checkedInTime || ''))
-                        .map(g => (
+                        .map((g, idx) => (
                           <tr key={g.id} className="hover:bg-white/5 transition-colors">
+                            <td className="py-2.5 px-3 text-center text-slate-500 font-semibold">{idx + 1}</td>
                             <td className="py-2.5 px-3 text-blue-400 font-bold">{g.checkedInTime}</td>
                             <td className="py-2.5 px-3 font-bold uppercase">{g.name}</td>
                             <td className="py-2.5 px-3 text-slate-400 text-[9px]">{g.cardType}</td>
@@ -3614,6 +3820,7 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                 <table className="w-full text-left border-collapse font-sans text-xs" id="table-nopledge-report">
                   <thead>
                     <tr className="border-b border-white/10 text-slate-400 font-mono text-[10px] uppercase">
+                      <th className="py-2 px-3 text-center w-10">S/N</th>
                       <th className="py-2 px-3">Jina la Mgeni</th>
                       <th className="py-2 px-3">Mwasiliano ya Simu</th>
                       <th className="py-2 px-3 text-center">Registration Link</th>
@@ -3623,10 +3830,11 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                   </thead>
                   <tbody className="divide-y divide-white/5 font-mono text-slate-200 text-[11px]">
                     {unpledgedList.length === 0 ? (
-                      <tr><td colSpan={5} className="py-6 text-center text-slate-500">Safi sana! Wageni wote wameshasajili ahadi zao.</td></tr>
+                      <tr><td colSpan={6} className="py-6 text-center text-slate-500">Safi sana! Wageni wote wameshasajili ahadi zao.</td></tr>
                     ) : (
-                      unpledgedList.map(g => (
+                      unpledgedList.map((g, idx) => (
                         <tr key={g.id} className="hover:bg-white/5 transition-colors">
+                          <td className="py-2 px-3 text-center text-slate-500 font-semibold">{idx + 1}</td>
                           <td className="py-2 px-3 font-bold uppercase">{g.name}</td>
                           <td className="py-2 px-3 text-slate-400">{g.phone || 'Hakuna namba ya simu'}</td>
                           <td className="py-2 px-3 text-center text-slate-550 text-[10px]">https://eventcard.co.tz/pledge/{g.code}</td>
