@@ -2666,11 +2666,16 @@ async function startServer() {
       const cleanSearch = rawParam.split('?')[0].split('&')[0].trim();
       
       const db = await readDBLatest();
-      let event = null;
+      const allEvents: any[] = [];
+      if (Array.isArray(db.eventsList)) allEvents.push(...db.eventsList);
+      if (Array.isArray(db.events)) allEvents.push(...db.events);
+      if (db.eventDetails && typeof db.eventDetails === 'object') allEvents.push(db.eventDetails);
+
+      let event: any = null;
 
       if (cleanSearch) {
-        // 1. Check direct event ID match
-        event = db.events?.find((e: any) => String(e.id) === cleanSearch || String(e.code || '') === cleanSearch);
+        // 1. Check direct event ID or code match
+        event = allEvents.find((e: any) => String(e.id) === cleanSearch || String(e.code || '') === cleanSearch);
 
         // 2. If not found, check if cleanSearch is a guest code or ID
         if (!event && db.guests) {
@@ -2679,14 +2684,14 @@ async function startServer() {
             String(g.id || '').trim().toLowerCase() === cleanSearch.toLowerCase()
           );
           if (matchedGuest && matchedGuest.eventId) {
-            event = db.events?.find((e: any) => String(e.id) === String(matchedGuest.eventId));
+            event = allEvents.find((e: any) => String(e.id) === String(matchedGuest.eventId));
           }
         }
       }
 
       // 3. Fallback to default/first event if still not found
-      if (!event && db.events && db.events.length > 0) {
-        event = db.events[0];
+      if (!event && allEvents.length > 0) {
+        event = allEvents[0];
       }
 
       let mapUrl = '';
