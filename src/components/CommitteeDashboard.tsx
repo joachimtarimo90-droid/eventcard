@@ -1227,70 +1227,8 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
         doc.text(card.value, x + cardWidth2 / 2, cardY2 + 9.5, { align: 'center' });
       });
 
-      // Group Summaries Section
-      const groupY = cardY2 + cardHeight2 + 4; // 84 + 13 + 4 = 101
-      doc.setFillColor(241, 245, 249); // Slate 100
-      doc.roundedRect(12, groupY, pageWidth - 24, 7, 1, 1, 'F');
-      
-      doc.setFontSize(8.5);
-      doc.setTextColor(15, 23, 42);
-      doc.setFont("helvetica", "bold");
-      doc.text(isEn ? "GROUP LEVEL SUMMARIES" : "MUHTASARI WA MAKUNDI / VIKAO", 15, groupY + 5);
-
-      const groupData = groupSummaries.list.map(data => [
-        data.name.toUpperCase(),
-        data.count,
-        data.pledged.toLocaleString(),
-        data.collected.toLocaleString(),
-        data.balances.toLocaleString()
-      ]);
-      groupData.push([
-        isEn ? 'TOTALS' : 'JUMLA',
-        groupSummaries.totals.count,
-        groupSummaries.totals.pledged.toLocaleString(),
-        groupSummaries.totals.collected.toLocaleString(),
-        groupSummaries.totals.balances.toLocaleString()
-      ]);
-
-      autoTable(doc, {
-        startY: groupY + 9,
-        head: [isEn 
-          ? ['CAMPAIGN GROUP', 'COUNT', 'TOTAL PLEDGED', 'COLLECTED CASH', 'BALANCES'] 
-          : ['KUNDI LA MCHANGIAJI', 'IDADI', 'JUMLA YA AHADI', 'KILICHOLIPWA', 'SALIO / DENI']],
-        body: groupData,
-        theme: 'grid',
-        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
-        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
-        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, halign: 'center', lineColor: [0, 0, 0], lineWidth: 0.5 },
-        columnStyles: {
-          0: { halign: 'left', fontStyle: 'bold' } // Campaign group
-        },
-        didParseCell: (data) => {
-          if (data.section === 'body') {
-             if (data.row.index === groupData.length - 1) { // TOTALS row
-               data.cell.styles.fontStyle = 'bold';
-               data.cell.styles.fillColor = [248, 250, 252];
-               data.cell.styles.textColor = [15, 23, 42];
-             }
-             if (data.column.index === 2) { // Total Pledged
-                data.cell.styles.textColor = [180, 83, 9]; // Amber 700 / nice orange
-                data.cell.styles.fontStyle = 'bold';
-             }
-             if (data.column.index === 3) { // Cash Collected
-                data.cell.styles.textColor = [21, 128, 61]; // Green 600
-                data.cell.styles.fontStyle = 'bold';
-             }
-             if (data.column.index === 4) { // Balances
-                data.cell.styles.textColor = [220, 38, 38]; // Red 600
-                data.cell.styles.fontStyle = 'bold';
-             }
-          }
-        }
-      });
-
       // Master Database Section ("DAFTARI KUU LA MICHANGO YA WAGENI")
-      let lastY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY : groupY + 30;
-      let tableY = lastY + 10;
+      let tableY = cardY2 + cardHeight2 + 5;
 
       // Check if page space is running out, move to a new page cleanly
       const pageHeight = doc.internal.pageSize.getHeight();
@@ -1533,49 +1471,8 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
         ? `TOTAL MESSAGES DISPATCHED: SMS Sent: ${totalSmsSent}  •  WhatsApp Sent: ${totalWhatsappSent}`
         : `JUMLA YA MAWASILIANO YALIYOTUMWA: SMS Zilizotumwa: ${totalSmsSent}  •  WhatsApp Zilizotumwa: ${totalWhatsappSent}`, 13, commY + 4.2);
 
-      // Group Summaries
-      const groupY = 89;
-      doc.setFillColor(243, 244, 246);
-      doc.rect(10, groupY, pageWidth - 20, 8, 'F');
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text(isEn ? "GROUP LEVEL SUMMARIES" : "MUHTASARI WA MAKUNDI / VIKAO", 12, groupY + 5.5);
-
-      const groupData = groupSummaries.list.map(data => [
-        data.name,
-        data.count,
-        data.pledged.toLocaleString(),
-        data.collected.toLocaleString(),
-        data.balances.toLocaleString()
-      ]);
-      groupData.push([
-        isEn ? 'TOTALS' : 'JUMLA',
-        groupSummaries.totals.count,
-        groupSummaries.totals.pledged.toLocaleString(),
-        groupSummaries.totals.collected.toLocaleString(),
-        groupSummaries.totals.balances.toLocaleString()
-      ]);
-
-      autoTable(doc, {
-        startY: groupY + 11,
-        head: [isEn 
-          ? ['Campaign Group', 'Count', 'Total Pledged', 'Collected Cash', 'Balances']
-          : ['Kundi la Mchangiaji', 'Idadi', 'Jumla ya Ahadi', 'Kilicholipwa', 'Salio / Deni']],
-        body: groupData,
-        theme: 'grid',
-        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold', lineColor: [0, 0, 0], lineWidth: 0.5 },
-        bodyStyles: { textColor: [0, 0, 0], fontSize: 8, lineColor: [0, 0, 0] },
-        styles: { cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, fontSize: 8, lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
-        didParseCell: (data) => {
-          if (data.section === 'body' && data.row.index === groupData.length - 1) {
-            data.cell.styles.fontStyle = 'bold';
-            data.cell.styles.fillColor = [243, 244, 246];
-          }
-        }
-      });
-
       // Master Database
-      const dbY = (doc as any).lastAutoTable.finalY + 8;
+      const dbY = 88;
       doc.setFillColor(243, 244, 246);
       doc.rect(10, dbY, pageWidth - 20, 8, 'F');
       doc.setFontSize(9);
@@ -3326,49 +3223,7 @@ _Ujumbe huu umetolewa rasmi na Kamati ya Sherehe_`;
                     </div>
                   </div>
 
-                  {/* 3. GROUP LEVEL SUMMARIES SECTION */}
-                  <div className="space-y-3 pt-2">
-                    <div className="bg-slate-100 p-2.5 rounded-lg flex items-center justify-between print-bg-gray">
-                      <h3 className="font-black text-[11.5px] text-slate-900 uppercase tracking-wider">
-                        {isEn ? 'GROUP LEVEL SUMMARIES' : 'MUHTASARI KWA MAKUNDI'}
-                      </h3>
-                    </div>
-
-                    <div className="overflow-x-auto rounded-xl border border-slate-200 print-border-gray">
-                      <table className="w-full text-left border-collapse text-xs print-border-gray">
-                        <thead>
-                          <tr className="bg-[#dee5ed] text-slate-900 font-bold border-b border-slate-200 print-bg-header print-border-gray">
-                            <th className="py-2.5 px-4 border-r border-slate-200 print-border-gray uppercase tracking-wider">{isEn ? 'Campaign Group' : 'Kundi la Mchangiaji'}</th>
-                            <th className="py-2.5 px-4 border-r border-slate-200 text-center print-border-gray uppercase tracking-wider">{isEn ? 'Count' : 'Idadi'}</th>
-                            <th className="py-2.5 px-4 border-r border-slate-200 text-right print-border-gray uppercase tracking-wider">{isEn ? 'Total Pledged' : 'Jumla ya Ahadi'}</th>
-                            <th className="py-2.5 px-4 border-r border-slate-200 text-right print-border-gray uppercase tracking-wider">{isEn ? 'Collected Cash' : 'Makusanyo'}</th>
-                            <th className="py-2.5 px-4 text-right print-border-gray uppercase tracking-wider">{isEn ? 'Balances' : 'Mabaki (TZS)'}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200">
-                          {groupSummaries.list.map((group, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/50 print-border-gray">
-                              <td className="py-2.5 px-4 border-r border-slate-200 font-bold text-slate-800 print-border-gray uppercase">{group.name}</td>
-                              <td className="py-2.5 px-4 border-r border-slate-200 text-center text-slate-700 print-border-gray font-mono">{group.count}</td>
-                              <td className="py-2.5 px-4 border-r border-slate-200 text-right text-[#92400e] print-text-amber font-semibold print-border-gray font-mono">{group.pledged.toLocaleString()}</td>
-                              <td className="py-2.5 px-4 border-r border-slate-200 text-right text-[#16a34a] print-text-green font-semibold print-border-gray font-mono">{group.collected.toLocaleString()}</td>
-                              <td className="py-2.5 px-4 text-right text-[#dc2626] print-text-red font-semibold print-border-gray font-mono">{group.balances.toLocaleString()}</td>
-                            </tr>
-                          ))}
-                          {/* Aggregated Totals Row */}
-                          <tr className="bg-slate-100 font-black border-t-2 border-slate-300 print-bg-gray print-border-gray text-slate-900">
-                            <td className="py-2.5 px-4 border-r border-slate-200 print-border-gray">{isEn ? 'TOTALS' : 'JUMLA KUU'}</td>
-                            <td className="py-2.5 px-4 border-r border-slate-200 text-center print-border-gray font-mono">{groupSummaries.totals.count}</td>
-                            <td className="py-2.5 px-4 border-r border-slate-200 text-right text-[#92400e] print-text-amber print-border-gray font-mono">{groupSummaries.totals.pledged.toLocaleString()}</td>
-                            <td className="py-2.5 px-4 border-r border-slate-200 text-right text-[#16a34a] print-text-green print-border-gray font-mono">{groupSummaries.totals.collected.toLocaleString()}</td>
-                            <td className="py-2.5 px-4 text-right text-[#dc2626] print-text-red print-border-gray font-mono">{groupSummaries.totals.balances.toLocaleString()}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* 4. MASTER GUEST REVENUE DATABASE SECTION */}
+                  {/* 3. MASTER GUEST REVENUE DATABASE SECTION */}
                   <div className="space-y-3 pt-2">
                     <div className="bg-slate-100 p-2.5 rounded-lg flex items-center justify-between print-bg-gray">
                       <h3 className="font-black text-[11.5px] text-slate-900 uppercase tracking-wider">
