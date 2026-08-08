@@ -488,22 +488,37 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
               <label className="font-semibold text-slate-300 block text-[11px]" htmlFor="input-maps-link">
                 {language === 'sw' ? 'Kiungo cha Google Maps (Google Maps Link)' : 'Google Maps Location Link'}
               </label>
-              <input 
-                id="input-maps-link"
-                type="text"
-                placeholder={language === 'sw' ? 'Weka au paste kiungo cha Google Maps hapa...' : 'Paste Google Maps URL here (e.g., https://maps.app.goo.gl/...)'}
-                value={formData.mapsLink || ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  const extracted = extractCoordinates(val);
-                  setFormData({
-                    ...formData,
-                    mapsLink: val,
-                    coordinates: extracted || formData.coordinates
-                  });
-                }}
-                className="w-full bg-[#050b18] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-[#2563eb] transition-all placeholder-slate-500"
-              />
+              <div className="flex gap-2 items-center">
+                <input 
+                  id="input-maps-link"
+                  type="text"
+                  placeholder={language === 'sw' ? 'Weka au paste kiungo cha Google Maps hapa...' : 'Paste Google Maps URL here (e.g., https://maps.app.goo.gl/...)'}
+                  value={formData.mapsLink || ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const extracted = extractCoordinates(val);
+                    setFormData({
+                      ...formData,
+                      mapsLink: val,
+                      coordinates: extracted || formData.coordinates
+                    });
+                  }}
+                  className="flex-1 bg-[#050b18] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-[#2563eb] transition-all placeholder-slate-500"
+                />
+                {(!formData.mapsLink || formData.mapsLink.trim().length === 0) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const hall = formData.eventHallName || formData.name || 'Ukumbi';
+                      const generated = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(hall + ' Dar es Salaam')}`;
+                      setFormData({ ...formData, mapsLink: generated });
+                    }}
+                    className="shrink-0 px-3 py-2.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold transition cursor-pointer"
+                  >
+                    🗺️ {language === 'sw' ? 'Tengeneza Link ya Ramani' : 'Auto-Generate Link'}
+                  </button>
+                )}
+              </div>
               <p className="text-[10px] text-slate-400">
                 {language === 'sw' 
                   ? 'Ukishikilia na kupaste link ya ramani ya Google Maps hapa, coordinates zitajazwa zenyewe automatically chini.'

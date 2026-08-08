@@ -179,12 +179,48 @@ export default function App() {
   // Parse invite search query on mount
   useEffect(() => {
     try {
-      const params = new URLSearchParams(window.location.search);
-      const inviteCode = params.get('invite');
+      const searchStr = window.location.search || '';
+      const params = new URLSearchParams(searchStr);
+
+      // Extract raw parameters
+      let rawInvite = params.get('invite');
+      let rawEventId = params.get('eventId') || params.get('event_id');
+      let rawView = params.get('view') || params.get('mode') || params.get('v');
+
+      // Robust fallback extraction for double-encoded or malformed query strings
+      // e.g., ?eventId=%3Finvite%3DIP-5188%2C761214&view=venue or ?eventId=?invite=...
+      const fullHref = decodeURIComponent(window.location.href);
+
+      if (!rawInvite) {
+        const inviteMatch = fullHref.match(/invite=([a-zA-Z0-9_\-\,\.%\+]+)/i);
+        if (inviteMatch && inviteMatch[1]) {
+          rawInvite = inviteMatch[1].split('&')[0].split('?')[0].split('#')[0];
+        }
+      }
+
+      if (!rawView) {
+        const viewMatch = fullHref.match(/view=([a-zA-Z0-9_\-\.]+)/i);
+        if (viewMatch && viewMatch[1]) {
+          rawView = viewMatch[1];
+        }
+      }
+
+      // If rawEventId was contaminated with sub-queries (e.g. "?invite=...")
+      if (rawEventId && (rawEventId.includes('?') || rawEventId.includes('invite='))) {
+        const cleanMatch = rawEventId.match(/^([a-zA-Z0-9_\-\.]+)/);
+        rawEventId = cleanMatch ? cleanMatch[1] : undefined;
+      }
+
+      const inviteCode = rawInvite ? rawInvite.trim() : null;
+      const eventIdParam = rawEventId ? rawEventId.trim() : null;
+      const view = rawView ? rawView.toLowerCase().trim() : null;
+
+      const isVenueMode = view === 'venue' || view === 'location' || view === 'ukumbi';
+      const isSeatingMode = view === 'seating' || view === 'table' || view === 'map' || view === 'tables';
+
       const stdParam = params.get('std') === 'true';
       const pledgeParam = params.get('pledge') === 'true';
       const portalParam = params.get('portal');
-      const eventIdParam = params.get('eventId') || params.get('event_id');
       const scanParam = params.get('scan_mode') === 'true' || params.get('scan') === 'true';
       const usernameParam = params.get('username') || params.get('user');
       const passwordParam = params.get('password') || params.get('pass');
@@ -213,29 +249,29 @@ export default function App() {
       } else if (portalParam === 'committee' && eventIdParam) {
         setIsCommitteePortal(true);
         setPortalEventId(eventIdParam);
-      } else if (inviteCode) {
+      } else if (inviteCode || isVenueMode || isSeatingMode) {
         setIsGuestLoading(true);
         setIsStdView(stdParam);
         setIsPledgeView(pledgeParam);
         
-        const view = params.get('view') || params.get('mode');
-        if (view === 'seating' || view === 'table' || view === 'map' || view === 'tables') {
+        if (isSeatingMode) {
           setIsSeatingView(true);
-        } else if (view === 'venue' || view === 'location' || view === 'ukumbi') {
+        } else if (isVenueMode) {
           setIsVenueView(true);
         }
 
+        const lookupCode = inviteCode || 'venue';
         const eventIdQuery = eventIdParam ? `&eventId=${encodeURIComponent(eventIdParam)}` : '';
-        fetch(`/api/guest-lookup?code=${encodeURIComponent(inviteCode)}${eventIdQuery}`)
+        fetch(`/api/guest-lookup?code=${encodeURIComponent(lookupCode)}${eventIdQuery}`)
           .then((res) => {
             if (!res.ok) throw new Error('Mwaliko hauwezi kupatikana au kiungo kina makosa');
             return res.json();
           })
           .then((data) => {
-            if (data && data.guest) {
+            if (data && (data.guest || data.event)) {
               setGuestInviteData(data);
             } else {
-              throw new Error('Mgeni hajapatikana kwenye mfumo wetu');
+              throw new Error('Mgeni au taarifa za sherehe hazijapatikana');
             }
           })
           .catch((err: any) => {

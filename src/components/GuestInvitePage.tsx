@@ -80,18 +80,22 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
     if (event.eventHallName && event.eventHallName.trim().length > 0) {
       return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.eventHallName.trim() + " Dar es Salaam")}`;
     }
-    return null;
+    if (event.name && event.name.trim().length > 0) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.name.trim() + " Dar es Salaam")}`;
+    }
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("Dar es Salaam")}`;
   };
 
   const effectiveMapsLink = getEffectiveMapsLink();
 
-  // If in venue mode, auto-redirect directly to Google Maps
+  // If in venue mode, auto-redirect directly to Google Maps immediately
   useEffect(() => {
     if (venueOnly && effectiveMapsLink) {
-      const timer = setTimeout(() => {
-        window.location.replace(effectiveMapsLink);
-      }, 600);
-      return () => clearTimeout(timer);
+      try {
+        window.location.href = effectiveMapsLink;
+      } catch (e) {
+        // Fallback
+      }
     }
   }, [venueOnly, effectiveMapsLink]);
 
@@ -348,8 +352,13 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
                   </p>
                 </div>
               ) : (
-                <div className="py-8 text-neutral-500 font-bold text-xs uppercase tracking-widest border border-dashed border-white/10 rounded-2xl">
-                  {isEn ? "Location Link Not Set" : "Kiungo cha Ramani Hakijawekwa"}
+                <div className="py-6 px-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-200 text-xs space-y-2 text-center">
+                  <p className="font-bold text-sm">📍 {isEn ? "Location Link Not Configured" : "Kiungo cha Ramani (Google Maps) Bado Hakijawekwa"}</p>
+                  <p className="text-[11.5px] text-amber-100/80 leading-relaxed">
+                    {isEn 
+                      ? "The event organizers have not set a Google Maps link or coordinates yet in 'Event Details'. Please contact the committee or host for direct directions." 
+                      : "Kamati haijaweka Link ya Google Maps kwenye 'Taarifa za Sherehe'. Tafadhali wasiliana na kamati au mwenyeji kwa msaada wa kuelekezwa ukumbini."}
+                  </p>
                 </div>
               )}
             </div>

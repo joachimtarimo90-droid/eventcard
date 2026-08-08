@@ -2662,17 +2662,35 @@ async function startServer() {
   // API: Location Redirect
   app.get("/api/location", async (req, res) => {
     try {
-      const eventId = req.query.eventId as string;
-      const invite = req.query.invite as string;
-      if (!eventId) {
-        return res.status(400).send("Event ID missing.");
-      }
+      const rawParam = (req.query.eventId || req.query.invite || req.query.code || '') as string;
+      const cleanSearch = rawParam.split('?')[0].split('&')[0].trim();
       
-      const db = await readDB();
-      const event = db.events?.find((e: any) => String(e.id) === String(eventId));
+      const db = await readDBLatest();
+      let event = null;
 
+      if (cleanSearch) {
+        // 1. Check direct event ID match
+        event = db.events?.find((e: any) => String(e.id) === cleanSearch || String(e.code || '') === cleanSearch);
+
+        // 2. If not found, check if cleanSearch is a guest code or ID
+        if (!event && db.guests) {
+          const matchedGuest = db.guests.find((g: any) => 
+            String(g.code || '').trim().toLowerCase() === cleanSearch.toLowerCase() ||
+            String(g.id || '').trim().toLowerCase() === cleanSearch.toLowerCase()
+          );
+          if (matchedGuest && matchedGuest.eventId) {
+            event = db.events?.find((e: any) => String(e.id) === String(matchedGuest.eventId));
+          }
+        }
+      }
+
+      // 3. Fallback to default/first event if still not found
+      if (!event && db.events && db.events.length > 0) {
+        event = db.events[0];
+      }
+
+      let mapUrl = '';
       if (event) {
-        let mapUrl = '';
         if (event.mapsLink && event.mapsLink.trim().length > 0) {
           mapUrl = event.mapsLink.trim();
           if (!mapUrl.startsWith('http://') && !mapUrl.startsWith('https://')) {
@@ -2682,17 +2700,18 @@ async function startServer() {
           mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`;
         } else if (event.eventHallName && event.eventHallName.trim().length > 0) {
           mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.eventHallName.trim() + " Dar es Salaam")}`;
-        }
-
-        if (mapUrl) {
-          return res.redirect(mapUrl);
+        } else if (event.name && event.name.trim().length > 0) {
+          mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.name.trim() + " Dar es Salaam")}`;
         }
       }
 
-      const inviteParam = invite ? `&invite=${encodeURIComponent(invite)}` : '';
-      return res.redirect(`/?eventId=${encodeURIComponent(eventId)}${inviteParam}&view=venue`);
+      if (!mapUrl) {
+        mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("Dar es Salaam")}`;
+      }
+
+      return res.redirect(mapUrl);
     } catch (error) {
-      res.status(500).send("Server error");
+      return res.redirect("https://www.google.com/maps");
     }
   });
 

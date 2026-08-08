@@ -832,6 +832,41 @@ Karibu sana!`);
       '{Link}': (messageType === 'thank-you' || (isSms && !forceAppendLink)) ? "" : appUrl,
       '{kiungo}': (messageType === 'thank-you' || (isSms && !forceAppendLink)) ? "" : appUrl,
       '{inviteUrl}': (messageType === 'thank-you' || (isSms && !forceAppendLink)) ? "" : appUrl,
+      '{link_ramani}': (event.mapsLink && event.mapsLink.trim().length > 0) 
+        ? (event.mapsLink.trim().startsWith('http') ? event.mapsLink.trim() : `https://${event.mapsLink.trim()}`) 
+        : (event.coordinates && event.coordinates.trim().length > 0)
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((event.eventHallName || event.name || 'Dar es Salaam') + ' Dar es Salaam')}`,
+      '{{link_ramani}}': (event.mapsLink && event.mapsLink.trim().length > 0) 
+        ? (event.mapsLink.trim().startsWith('http') ? event.mapsLink.trim() : `https://${event.mapsLink.trim()}`) 
+        : (event.coordinates && event.coordinates.trim().length > 0)
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((event.eventHallName || event.name || 'Dar es Salaam') + ' Dar es Salaam')}`,
+      '{{location_link}}': (event.mapsLink && event.mapsLink.trim().length > 0) 
+        ? (event.mapsLink.trim().startsWith('http') ? event.mapsLink.trim() : `https://${event.mapsLink.trim()}`) 
+        : (event.coordinates && event.coordinates.trim().length > 0)
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((event.eventHallName || event.name || 'Dar es Salaam') + ' Dar es Salaam')}`,
+      '{LINK_RAMANI}': (event.mapsLink && event.mapsLink.trim().length > 0) 
+        ? (event.mapsLink.trim().startsWith('http') ? event.mapsLink.trim() : `https://${event.mapsLink.trim()}`) 
+        : (event.coordinates && event.coordinates.trim().length > 0)
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((event.eventHallName || event.name || 'Dar es Salaam') + ' Dar es Salaam')}`,
+      '{ramani}': (event.mapsLink && event.mapsLink.trim().length > 0) 
+        ? (event.mapsLink.trim().startsWith('http') ? event.mapsLink.trim() : `https://${event.mapsLink.trim()}`) 
+        : (event.coordinates && event.coordinates.trim().length > 0)
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((event.eventHallName || event.name || 'Dar es Salaam') + ' Dar es Salaam')}`,
+      '{{ramani}}': (event.mapsLink && event.mapsLink.trim().length > 0) 
+        ? (event.mapsLink.trim().startsWith('http') ? event.mapsLink.trim() : `https://${event.mapsLink.trim()}`) 
+        : (event.coordinates && event.coordinates.trim().length > 0)
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((event.eventHallName || event.name || 'Dar es Salaam') + ' Dar es Salaam')}`,
+      '{map_link}': (event.mapsLink && event.mapsLink.trim().length > 0) 
+        ? (event.mapsLink.trim().startsWith('http') ? event.mapsLink.trim() : `https://${event.mapsLink.trim()}`) 
+        : (event.coordinates && event.coordinates.trim().length > 0)
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((event.eventHallName || event.name || 'Dar es Salaam') + ' Dar es Salaam')}`,
       '{namba_mwaliko}': g.code || "[Code]",
       '{card_number}': g.code || "[Code]",
       '{inviteCode}': g.code || "[Code]",
