@@ -2697,16 +2697,16 @@ async function startServer() {
             mapUrl = `https://${mapUrl}`;
           }
         } else if (event.coordinates && event.coordinates.trim().length > 0) {
-          mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`;
+          mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(event.coordinates.trim())}`;
         } else if (event.eventHallName && event.eventHallName.trim().length > 0) {
-          mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.eventHallName.trim() + " Dar es Salaam")}`;
+          mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(event.eventHallName.trim() + " Dar es Salaam")}`;
         } else if (event.name && event.name.trim().length > 0) {
-          mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.name.trim() + " Dar es Salaam")}`;
+          mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(event.name.trim() + " Dar es Salaam")}`;
         }
       }
 
       if (!mapUrl) {
-        mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("Dar es Salaam")}`;
+        mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent("Dar es Salaam")}`;
       }
 
       return res.redirect(mapUrl);
