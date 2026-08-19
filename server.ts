@@ -2662,56 +2662,112 @@ async function startServer() {
   // API: Location Redirect
   app.get("/api/location", async (req, res) => {
     try {
-      const rawParam = (req.query.eventId || req.query.invite || req.query.code || '') as string;
+      const rawParam = (req.query.eventId || req.query.invite || req.query.code || req.query.guestId || req.query.id || req.query.q || '') as string;
       const cleanSearch = rawParam.split('?')[0].split('&')[0].trim();
+      const normalizedSearch = cleanSearch.replace(/[\s\-_]/g, '').toLowerCase();
       
       const db = await readDBLatest();
       const allEvents: any[] = [];
       if (Array.isArray(db.eventsList)) allEvents.push(...db.eventsList);
       if (Array.isArray(db.events)) allEvents.push(...db.events);
-      if (db.eventDetails && typeof db.eventDetails === 'object') allEvents.push(db.eventDetails);
+      if (db.eventDetails && typeof db.eventDetails === 'object' && db.eventDetails.id) allEvents.push(db.eventDetails);
 
       let event: any = null;
 
       if (cleanSearch) {
         // 1. Check direct event ID or code match
-        event = allEvents.find((e: any) => String(e.id) === cleanSearch || String(e.code || '') === cleanSearch);
+        event = allEvents.find((e: any) => 
+          String(e.id) === cleanSearch || 
+          String(e.code || '') === cleanSearch ||
+          String(e.id || '').replace(/[\s\-_]/g, '').toLowerCase() === normalizedSearch
+        );
 
         // 2. If not found, check if cleanSearch is a guest code or ID
-        if (!event && db.guests) {
-          const matchedGuest = db.guests.find((g: any) => 
-            String(g.code || '').trim().toLowerCase() === cleanSearch.toLowerCase() ||
-            String(g.id || '').trim().toLowerCase() === cleanSearch.toLowerCase()
-          );
+        if (!event && Array.isArray(db.guests)) {
+          const matchedGuest = db.guests.find((g: any) => {
+            const gCode = String(g.code || '').trim().toLowerCase();
+            const gId = String(g.id || '').trim().toLowerCase();
+            const gCodeNorm = gCode.replace(/[\s\-_]/g, '');
+            const gIdNorm = gId.replace(/[\s\-_]/g, '');
+            return (
+              gCode === cleanSearch.toLowerCase() ||
+              gId === cleanSearch.toLowerCase() ||
+              (normalizedSearch.length > 2 && (gCodeNorm === normalizedSearch || gIdNorm === normalizedSearch || gCodeNorm.includes(normalizedSearch) || normalizedSearch.includes(gCodeNorm)))
+            );
+          });
           if (matchedGuest && matchedGuest.eventId) {
             event = allEvents.find((e: any) => String(e.id) === String(matchedGuest.eventId));
           }
         }
       }
 
-      // 3. Fallback to default/first event if still not found
-      if (!event && allEvents.length > 0) {
-        event = allEvents[0];
+      // 3. Fallback to active eventDetails or first event if still not found
+      if (!event) {
+        if (db.eventDetails && (db.eventDetails.mapsLink || db.eventDetails.eventHallName || db.eventDetails.coordinates)) {
+          event = db.eventDetails;
+        } else if (allEvents.length > 0) {
+          event = allEvents.find((e: any) => e.mapsLink || e.eventHallName || e.coordinates) || allEvents[0];
+        }
       }
 
       let mapUrl = '';
+      let venueName = 'Ukumbi wa Sherehe';
       if (event) {
+        venueName = event.eventHallName || event.name || venueName;
         if (event.mapsLink && event.mapsLink.trim().length > 0) {
           mapUrl = event.mapsLink.trim();
           if (!mapUrl.startsWith('http://') && !mapUrl.startsWith('https://')) {
             mapUrl = `https://${mapUrl}`;
           }
         } else if (event.coordinates && event.coordinates.trim().length > 0) {
-          mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(event.coordinates.trim())}`;
+          mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`;
         } else if (event.eventHallName && event.eventHallName.trim().length > 0) {
-          mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(event.eventHallName.trim() + " Dar es Salaam")}`;
+          mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.eventHallName.trim() + " Dar es Salaam")}`;
         } else if (event.name && event.name.trim().length > 0) {
-          mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(event.name.trim() + " Dar es Salaam")}`;
+          mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.name.trim() + " Dar es Salaam")}`;
         }
       }
 
       if (!mapUrl) {
-        mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent("Dar es Salaam")}`;
+        mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("Dar es Salaam")}`;
+      }
+
+      // If user agent is WhatsApp in-app browser or mobile browser, also provide instant HTML redirect
+      const userAgent = (req.headers['user-agent'] || '').toLowerCase();
+      const accept = (req.headers['accept'] || '').toLowerCase();
+      
+      if (accept.includes('text/html')) {
+        const safeUrl = mapUrl.replace(/"/g, '&quot;');
+        const html = `<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="0;url=${safeUrl}">
+  <title>Kuelekea Ukumbini - ${venueName}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; text-align: center; box-sizing: border-box; }
+    .card { background: #1e293b; border-radius: 20px; padding: 32px 24px; max-width: 420px; width: 100%; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .icon { width: 56px; height: 56px; background: #0284c7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-size: 28px; }
+    h1 { font-size: 20px; font-weight: 700; margin: 0 0 8px; color: #ffffff; }
+    p { font-size: 14px; color: #94a3b8; margin: 0 0 24px; line-height: 1.5; }
+    .btn { display: inline-block; width: 100%; padding: 14px 20px; background: #0284c7; color: #ffffff; font-weight: 600; font-size: 15px; border-radius: 12px; text-decoration: none; box-sizing: border-box; }
+    .btn:hover { background: #0369a1; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📍</div>
+    <h1>${venueName}</h1>
+    <p>Inakuelekeza kwenye Ramani ya Ukumbi (Google Maps)...</p>
+    <a href="${safeUrl}" class="btn" id="mapBtn">Fungua Google Maps Moja kwa Moja</a>
+  </div>
+  <script>
+    window.location.href = "${safeUrl.replace(/\\/g, '\\\\')}";
+  </script>
+</body>
+</html>`;
+        return res.send(html);
       }
 
       return res.redirect(mapUrl);

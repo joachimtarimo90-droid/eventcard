@@ -75,15 +75,15 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
       return trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `https://${trimmed}`;
     }
     if (event.coordinates && event.coordinates.trim().length > 0) {
-      return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(event.coordinates.trim())}`;
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`;
     }
     if (event.eventHallName && event.eventHallName.trim().length > 0) {
-      return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(event.eventHallName.trim() + " Dar es Salaam")}`;
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.eventHallName.trim() + " Dar es Salaam")}`;
     }
     if (event.name && event.name.trim().length > 0) {
-      return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(event.name.trim() + " Dar es Salaam")}`;
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.name.trim() + " Dar es Salaam")}`;
     }
-    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent("Dar es Salaam")}`;
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("Dar es Salaam")}`;
   };
 
   const effectiveMapsLink = getEffectiveMapsLink();
