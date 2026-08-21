@@ -21,15 +21,53 @@ function hasSQLConfig() {
 }
 
 function getLocalDBFallback() {
+  if (inMemoryDB && typeof inMemoryDB === "object" && Object.keys(inMemoryDB).length > 0) {
+    return inMemoryDB;
+  }
+
+  // 1. Try reading primary database.json
   if (fs.existsSync(DB_PATH)) {
     try {
       const raw = fs.readFileSync(DB_PATH, "utf-8");
       const parsed = JSON.parse(raw);
-      return parsed;
-    } catch (err) {
-      console.error("[Fallback Local DB] Read failed:", err);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
+      }
+    } catch (err: any) {
+      console.warn("[Fallback Local DB] Primary read issue, checking backup file:", err?.message || err);
     }
   }
+
+  // 2. Try reading database.json.bak
+  const backupPath = DB_PATH + ".bak";
+  if (fs.existsSync(backupPath)) {
+    try {
+      const rawBak = fs.readFileSync(backupPath, "utf-8");
+      const parsedBak = JSON.parse(rawBak);
+      if (parsedBak && typeof parsedBak === "object") {
+        console.log("[Fallback Local DB] Successfully recovered from database.json.bak");
+        return parsedBak;
+      }
+    } catch (bakErr: any) {
+      console.warn("[Fallback Local DB] Backup read issue:", bakErr?.message || bakErr);
+    }
+  }
+
+  // 3. Try reading state.json
+  const statePath = path.join(process.cwd(), "state.json");
+  if (fs.existsSync(statePath)) {
+    try {
+      const rawState = fs.readFileSync(statePath, "utf-8");
+      const parsedState = JSON.parse(rawState);
+      if (parsedState && typeof parsedState === "object") {
+        console.log("[Fallback Local DB] Successfully loaded state from state.json");
+        return parsedState;
+      }
+    } catch (stateErr: any) {
+      console.warn("[Fallback Local DB] state.json read issue:", stateErr?.message || stateErr);
+    }
+  }
+
   return {
     eventsList: [],
     eventDetails: {},
@@ -150,6 +188,10 @@ export async function readDBLatest() {
     while (attempts > 0) {
       try {
         const state = await fetchFullStateFromDB();
+        const local = getLocalDBFallback();
+        if (local && typeof local === 'object' && local.uwalemiState) {
+          state.uwalemiState = local.uwalemiState;
+        }
         sqlConnectionFailed = false; // Reset error flag on successful query
         inMemoryDB = state;
         lastFetchTime = Date.now();
@@ -187,7 +229,15 @@ export function updateMemoryAndLocalFileOnly(data: any) {
   lastFetchTime = Date.now();
   try {
     const tmpPath = DB_PATH + ".tmp";
+    const backupPath = DB_PATH + ".bak";
     fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+    if (fs.existsSync(DB_PATH)) {
+      try {
+        fs.copyFileSync(DB_PATH, backupPath);
+      } catch (cpErr) {
+        // Non-fatal backup copy
+      }
+    }
     fs.renameSync(tmpPath, DB_PATH);
   } catch (e) {
     console.warn("Failed to write to local database file safely:", e);

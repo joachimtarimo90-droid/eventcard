@@ -29,7 +29,7 @@ function hasConnectionError(error: any): boolean {
   );
 }
 
-async function executeQuery<T>(label: string, queryFn: () => Promise<T>, retries = 2): Promise<T> {
+async function executeQuery<T>(label: string, queryFn: () => Promise<T>, retries = 3): Promise<T> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       return await queryFn();
@@ -38,7 +38,7 @@ async function executeQuery<T>(label: string, queryFn: () => Promise<T>, retries
 
       if (isConnectionDrop && attempt < retries) {
         console.warn(`[CloudSQL] ${label} attempt ${attempt} unreachable: ${error.message || error}. Retrying...`);
-        await wait(300);
+        await wait(attempt * 1500); // Exponential backoff: 1.5s, 3.0s
         continue;
       }
       
@@ -762,6 +762,12 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
         normalizedMap = { ...data.templateSettings };
       }
 
+      const safeInt = (val: any, fallback: number) => {
+        if (val === null || val === undefined) return fallback;
+        const num = Number(val);
+        return isNaN(num) ? fallback : Math.round(num);
+      };
+
       for (const [key, t] of Object.entries(normalizedMap)) {
         if (!t || typeof t !== "object") continue;
         const tsObj = t as any;
@@ -769,20 +775,20 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
         try {
           await db.insert(schema.templateSettings).values({
             id: String(key),
-            imageUrl: String(tsObj.imageUrl || ""),
+            imageUrl: String(tsObj.imageUrl || tsObj.image_url || ""),
             textColor: tsObj.textColor ? String(tsObj.textColor) : "#333333",
             fontFamily: tsObj.fontFamily ? String(tsObj.fontFamily) : "Inter",
-            guestNameX: typeof tsObj.guestNameX === "number" ? tsObj.guestNameX : 50,
-            guestNameY: typeof tsObj.guestNameY === "number" ? tsObj.guestNameY : 50,
-            guestNameSize: typeof tsObj.guestNameSize === "number" ? tsObj.guestNameSize : 24,
+            guestNameX: safeInt(tsObj.guestNameX, 50),
+            guestNameY: safeInt(tsObj.guestNameY, 50),
+            guestNameSize: safeInt(tsObj.guestNameSize, 24),
             guestNameColor: tsObj.guestNameColor ? String(tsObj.guestNameColor) : null,
-            qrCodeX: typeof tsObj.qrCodeX === "number" ? tsObj.qrCodeX : 50,
-            qrCodeY: typeof tsObj.qrCodeY === "number" ? tsObj.qrCodeY : 70,
-            qrCodeSize: typeof tsObj.qrCodeSize === "number" ? tsObj.qrCodeSize : 120,
+            qrCodeX: safeInt(tsObj.qrCodeX, 50),
+            qrCodeY: safeInt(tsObj.qrCodeY, 70),
+            qrCodeSize: safeInt(tsObj.qrCodeSize, 120),
             qrCodeColor: tsObj.qrCodeColor ? String(tsObj.qrCodeColor) : null,
-            cardTypeX: typeof tsObj.cardTypeX === "number" ? tsObj.cardTypeX : 50,
-            cardTypeY: typeof tsObj.cardTypeY === "number" ? tsObj.cardTypeY : 25,
-            cardTypeSize: typeof tsObj.cardTypeSize === "number" ? tsObj.cardTypeSize : 16,
+            cardTypeX: safeInt(tsObj.cardTypeX, 50),
+            cardTypeY: safeInt(tsObj.cardTypeY, 25),
+            cardTypeSize: safeInt(tsObj.cardTypeSize, 16),
             cardTypeColor: tsObj.cardTypeColor ? String(tsObj.cardTypeColor) : null,
             orientation: tsObj.orientation ? String(tsObj.orientation) : "portrait",
           }).onConflictDoUpdate({
@@ -914,14 +920,14 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
 
       for (const chunk of logChunks) {
         const values = chunk
-          .filter((l: any) => l.id)
+          .filter((l: any) => l && (l.id || l.timestamp))
           .map((l: any) => ({
-            id: String(l.id),
+            id: String(l.id || `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`),
             timestamp: String(l.timestamp || new Date().toISOString()),
-            user: String(l.user || "System"),
-            action: String(l.action || ""),
-            details: String(l.details || ""),
-            ipAddress: l.ipAddress ? String(l.ipAddress) : null,
+            user: typeof l.user === "object" ? JSON.stringify(l.user) : String(l.user || "System"),
+            action: String(l.action || "LOG"),
+            details: typeof l.details === "object" ? JSON.stringify(l.details) : String(l.details || ""),
+            ipAddress: l.ipAddress ? (Array.isArray(l.ipAddress) ? l.ipAddress.join(", ") : String(l.ipAddress)) : null,
           }));
 
         if (values.length > 0) {
@@ -929,7 +935,7 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
             target: schema.auditLogs.id,
             set: {
               timestamp: sql`EXCLUDED.timestamp`,
-              user: sql`EXCLUDED.user`,
+              user: sql`EXCLUDED."user"`,
               action: sql`EXCLUDED.action`,
               details: sql`EXCLUDED.details`,
               ipAddress: sql`EXCLUDED.ip_address`,

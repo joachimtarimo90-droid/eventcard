@@ -2794,6 +2794,342 @@ async function startServer() {
     }
   });
 
+  // ==========================================
+  // UWALEMI ISOLATED COMMUNITY MODULE APIS
+  // ==========================================
+  app.get("/api/uwalemi/state", async (req, res) => {
+    try {
+      const db = await readDBLatest();
+      if (db.uwalemiState && typeof db.uwalemiState === 'object') {
+        return res.json(db.uwalemiState);
+      }
+      // If not initialized, return default structure without writing
+      return res.json({ initialized: false });
+    } catch (error: any) {
+      console.error("[UWALEMI] Error fetching state:", error);
+      res.status(500).json({ error: "Failed to fetch UWALEMI state" });
+    }
+  });
+
+  app.post("/api/uwalemi/state", async (req, res) => {
+    try {
+      const state = req.body;
+      if (!state || typeof state !== 'object') {
+        return res.status(400).json({ error: "Invalid UWALEMI state payload" });
+      }
+      const db = await readDBLatest();
+      db.uwalemiState = state;
+      await writeDB(db);
+      return res.json({ success: true, message: "UWALEMI state saved successfully" });
+    } catch (error: any) {
+      console.error("[UWALEMI] Error saving state:", error);
+      res.status(500).json({ error: "Failed to save UWALEMI state" });
+    }
+  });
+
+  app.post("/api/uwalemi/send-sms", async (req, res) => {
+    try {
+      const { recipients, message, messageType } = req.body;
+      if (!recipients || !Array.isArray(recipients) || recipients.length === 0 || !message) {
+        return res.status(400).json({ error: "Recipients list and message text are required" });
+      }
+
+      const db = await readDBLatest();
+      const uwalemiState = db.uwalemiState || {};
+      const smsConfig = uwalemiState.groupSettings?.smsConfig || { provider: 'simulation', senderId: 'UWALEMI' };
+
+      const logs: any[] = [];
+      let deliveredCount = 0;
+
+      const MONTHS_SW = ['Januari', 'Februari', 'Machi', 'Aprili', 'Mei', 'Juni', 'Julai', 'Agosti', 'Septemba', 'Oktoba', 'Novemba', 'Desemba'];
+      const MONTHS_SW_SHORT = ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ago', 'Sep', 'Okt', 'Nov', 'Des'];
+
+      for (const rec of recipients) {
+        const phone = String(rec.phone || '').trim();
+        const name = String(rec.name || 'Mjumbe');
+        const memberNo = rec.memberNo || '';
+        if (!phone) continue;
+
+        // Dynamic personalization per recipient
+        let formattedMsg = rec.customMessage || message;
+
+        // If debt info is passed directly from client, use it; otherwise compute from uwalemiState
+        let debtAmountStr = rec.debtAmount !== undefined ? `TZS ${Number(rec.debtAmount).toLocaleString()}` : '';
+        let startMonthStr = rec.startMonth || '';
+        let endMonthStr = rec.endMonth || '';
+        let unpaidMonthsStr = rec.unpaidMonths || '';
+        let periodSummaryStr = rec.periodSummary || '';
+        let monthsCountStr = rec.monthsCount !== undefined ? String(rec.monthsCount) : '';
+
+        // If not provided in recipient payload, compute from uwalemiState
+        if (!debtAmountStr && (formattedMsg.includes('{debtAmount}') || formattedMsg.includes('{deni}') || formattedMsg.includes('{startMonth}') || formattedMsg.includes('{kuanzia}') || formattedMsg.includes('{unpaidMonths}') || formattedMsg.includes('{periodSummary}'))) {
+          const allMembers = uwalemiState.members || [];
+          const matchedMember = allMembers.find((m: any) => (rec.memberId && m.id === rec.memberId) || (memberNo && m.memberNo === memberNo) || (m.phone && m.phone === phone));
+          
+          if (matchedMember) {
+            const now = new Date();
+            const endY = now.getFullYear();
+            const endM = now.getMonth() + 1;
+            const defFee = Number(uwalemiState.groupSettings?.monthlyFeeDefault) || 10000;
+            const memFee = Number(matchedMember.monthlyFeeAmount) || defFee;
+            const payments = uwalemiState.monthlyPayments || [];
+
+            const unpaidArr: { monthName: string; m: number; y: number }[] = [];
+            let totalD = 0;
+
+            for (let y = 2023; y <= endY; y++) {
+              const sM = y === 2023 ? 11 : 1;
+              const eM = y === endY ? endM : 12;
+              for (let m = sM; m <= eM; m++) {
+                const pay = payments.find((p: any) => p.memberId === matchedMember.id && p.year === y && p.month === m);
+                const pAmt = pay ? (Number(pay.paidAmount) || 0) : 0;
+                let expAmt = 15000;
+                if (matchedMember.monthlyFeeAmount && matchedMember.monthlyFeeAmount !== 10000 && matchedMember.monthlyFeeAmount !== 15000 && matchedMember.monthlyFeeAmount !== 20000 && matchedMember.monthlyFeeAmount > 0) {
+                  expAmt = matchedMember.monthlyFeeAmount;
+                } else if (y > 2026 || (y === 2026 && m >= 6)) {
+                  expAmt = 20000;
+                } else {
+                  expAmt = 15000;
+                }
+                const d = Math.max(0, expAmt - pAmt);
+                if (d > 0) {
+                  totalD += d;
+                  unpaidArr.push({ monthName: `${MONTHS_SW_SHORT[m - 1]} ${y}`, m, y });
+                }
+              }
+            }
+
+            debtAmountStr = `TZS ${totalD.toLocaleString()}`;
+            monthsCountStr = String(unpaidArr.length);
+            if (unpaidArr.length === 1) {
+              startMonthStr = `${MONTHS_SW[unpaidArr[0].m - 1]} ${unpaidArr[0].y}`;
+              endMonthStr = startMonthStr;
+              unpaidMonthsStr = unpaidArr[0].monthName;
+              periodSummaryStr = `mwezi wa ${startMonthStr}`;
+            } else if (unpaidArr.length > 1) {
+              startMonthStr = `${MONTHS_SW[unpaidArr[0].m - 1]} ${unpaidArr[0].y}`;
+              endMonthStr = `${MONTHS_SW[unpaidArr[unpaidArr.length - 1].m - 1]} ${unpaidArr[unpaidArr.length - 1].y}`;
+              unpaidMonthsStr = unpaidArr.map(u => u.monthName).join(', ');
+              periodSummaryStr = `kuanzia ${startMonthStr} hadi ${endMonthStr} (miezi ${unpaidArr.length})`;
+            } else {
+              periodSummaryStr = 'Hakuna deni la ada';
+              unpaidMonthsStr = 'Hakuna';
+              debtAmountStr = 'TZS 0';
+            }
+          }
+        }
+
+        formattedMsg = formattedMsg
+          .replace(/{name}/g, name)
+          .replace(/{memberNo}/g, memberNo)
+          .replace(/{phone}/g, phone)
+          .replace(/{debtAmount}/g, debtAmountStr || 'TZS 10,000')
+          .replace(/{deni}/g, debtAmountStr || 'TZS 10,000')
+          .replace(/{startMonth}/g, startMonthStr || 'Mwezi huu')
+          .replace(/{kuanzia}/g, startMonthStr || 'Mwezi huu')
+          .replace(/{endMonth}/g, endMonthStr || 'Mwezi huu')
+          .replace(/{hadi}/g, endMonthStr || 'Mwezi huu')
+          .replace(/{unpaidMonths}/g, unpaidMonthsStr || '')
+          .replace(/{miezi}/g, unpaidMonthsStr || '')
+          .replace(/{monthsCount}/g, monthsCountStr || '1')
+          .replace(/{idadi_ya_miezi}/g, `${monthsCountStr || '1'} miezi`)
+          .replace(/{periodSummary}/g, periodSummaryStr || '')
+          .replace(/{lipaNamba}/g, '5566778')
+          .replace(/{lipaNumber}/g, '5566778');
+
+        let status: 'delivered' | 'sent' | 'simulated' | 'failed' = 'simulated';
+
+        if (smsConfig.provider === 'meseji' && smsConfig.apiKey) {
+          try {
+            let cleanPhone = phone.replace(/[^0-9]/g, '');
+            if (cleanPhone.startsWith('0')) cleanPhone = '255' + cleanPhone.substring(1);
+            if (cleanPhone.startsWith('7') || cleanPhone.startsWith('6')) cleanPhone = '255' + cleanPhone;
+
+            const mesejiUrl = smsConfig.baseUrl || "https://meseji.co.tz/api/v1/sms/send";
+            const mesejiRes = await fetch(mesejiUrl, {
+              method: "POST",
+              headers: {
+                "x-api-key": smsConfig.apiKey.trim(),
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+              },
+              body: JSON.stringify({
+                contacts: cleanPhone,
+                message: formattedMsg,
+                sender_id: (smsConfig.senderId || 'MESEJI').trim()
+              })
+            });
+
+            if (mesejiRes.ok) {
+              status = 'delivered';
+              deliveredCount++;
+            } else {
+              const errBody = await mesejiRes.text();
+              console.warn("[UWALEMI Meseji SMS] API Error:", errBody);
+              status = 'failed';
+            }
+          } catch (mesejiErr) {
+            console.error("[UWALEMI Meseji SMS] Fetch failed:", mesejiErr);
+            status = 'failed';
+          }
+        } else if (smsConfig.provider === 'beem' && smsConfig.apiKey && smsConfig.secretKey) {
+          try {
+            // Clean phone to 255XXXXXXXXX
+            let cleanPhone = phone.replace(/[^0-9]/g, '');
+            if (cleanPhone.startsWith('0')) cleanPhone = '255' + cleanPhone.substring(1);
+            if (cleanPhone.startsWith('7') || cleanPhone.startsWith('6')) cleanPhone = '255' + cleanPhone;
+
+            const beemPayload = {
+              source_addr: smsConfig.senderId || 'UWALEMI',
+              schedule_time: '',
+              encoding: 0,
+              message: formattedMsg,
+              recipients: [
+                { recipient_id: 1, dest_addr: cleanPhone }
+              ]
+            };
+
+            const beemAuth = Buffer.from(`${smsConfig.apiKey}:${smsConfig.secretKey}`).toString('base64');
+            const beemRes = await fetch("https://apisms.beem.africa/v1/send", {
+              method: "POST",
+              headers: {
+                "Authorization": `Basic ${beemAuth}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify(beemPayload)
+            });
+
+            if (beemRes.ok) {
+              status = 'delivered';
+              deliveredCount++;
+            } else {
+              console.warn("[UWALEMI Beem SMS] API returned non-OK:", await beemRes.text());
+              status = 'failed';
+            }
+          } catch (beemErr) {
+            console.error("[UWALEMI Beem SMS] Fetch failed:", beemErr);
+            status = 'failed';
+          }
+        } else if (smsConfig.provider === 'nextsms' && smsConfig.apiKey && smsConfig.secretKey) {
+          try {
+            let cleanPhone = phone.replace(/[^0-9]/g, '');
+            if (cleanPhone.startsWith('0')) cleanPhone = '255' + cleanPhone.substring(1);
+            if (cleanPhone.startsWith('7') || cleanPhone.startsWith('6')) cleanPhone = '255' + cleanPhone;
+
+            const nextAuth = Buffer.from(`${smsConfig.apiKey}:${smsConfig.secretKey}`).toString('base64');
+            const nextRes = await fetch("https://messaging-service.co.tz/api/sms/v1/text/single", {
+              method: "POST",
+              headers: {
+                "Authorization": `Basic ${nextAuth}`,
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+              },
+              body: JSON.stringify({
+                from: smsConfig.senderId || 'UWALEMI',
+                to: cleanPhone,
+                text: formattedMsg
+              })
+            });
+
+            if (nextRes.ok) {
+              status = 'delivered';
+              deliveredCount++;
+            } else {
+              status = 'failed';
+            }
+          } catch (nextErr) {
+            status = 'failed';
+          }
+        } else {
+          // Simulation mode
+          status = 'simulated';
+          deliveredCount++;
+        }
+
+        logs.push({
+          id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          timestamp: new Date().toISOString(),
+          recipientPhone: phone,
+          recipientName: name,
+          messageType: messageType || 'broadcast',
+          channel: 'sms',
+          content: message.replace(/{name}/g, name).replace(/{memberNo}/g, memberNo),
+          status
+        });
+      }
+
+      // Persist logs in UWALEMI state
+      if (!uwalemiState.messageLogs) uwalemiState.messageLogs = [];
+      uwalemiState.messageLogs.unshift(...logs);
+      if (uwalemiState.messageLogs.length > 200) {
+        uwalemiState.messageLogs = uwalemiState.messageLogs.slice(0, 200);
+      }
+      db.uwalemiState = uwalemiState;
+      await writeDB(db);
+
+      return res.json({
+        success: true,
+        deliveredCount,
+        message: smsConfig.provider === 'simulation' 
+          ? `Ujumbe ${deliveredCount} umetumwa (Hali ya Majaribio/Simulation). Ili kutuma SMS halisi, weka API Key za Beem/NextSMS kwenye Mipangilio ya UWALEMI.`
+          : `Ujumbe ${deliveredCount} kati ya ${recipients.length} umetumwa kwa mafanikio kupitia ${smsConfig.provider.toUpperCase()} (${smsConfig.senderId || 'UWALEMI'}).`
+      });
+    } catch (error: any) {
+      console.error("[UWALEMI SMS] Error:", error);
+      res.status(500).json({ error: error.message || "Failed to dispatch UWALEMI SMS" });
+    }
+  });
+
+  app.get("/api/uwalemi/member/:id", async (req, res) => {
+    try {
+      const searchId = String(req.params.id || '').trim().toLowerCase();
+      const db = await readDBLatest();
+      const state = db.uwalemiState;
+      if (!state || !Array.isArray(state.members)) {
+        return res.status(404).json({ error: "UWALEMI records not found" });
+      }
+
+      const member = state.members.find((m: any) => 
+        String(m.memberNo || '').toLowerCase() === searchId ||
+        String(m.id || '').toLowerCase() === searchId ||
+        String(m.phone || '').replace(/[^0-9]/g, '') === searchId.replace(/[^0-9]/g, '')
+      );
+
+      if (!member) {
+        return res.status(404).json({ error: "Mwanachama hakupatikana" });
+      }
+
+      // Compute member statement
+      const memberPayments = (state.monthlyPayments || []).filter((p: any) => p.memberId === member.id || p.memberNo === member.memberNo);
+      const emergencyContributions = (state.emergencyFunds || []).map((emg: any) => {
+        const myPayments = (emg.payments || []).filter((p: any) => p.memberId === member.id || p.memberNo === member.memberNo);
+        const totalPaid = myPayments.reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0);
+        return {
+          id: emg.id,
+          title: emg.title,
+          type: emg.type,
+          targetAmount: emg.targetAmount,
+          perMemberTarget: emg.perMemberTarget,
+          totalPaid,
+          status: emg.status,
+          deadline: emg.deadline,
+          payments: myPayments
+        };
+      });
+
+      return res.json({
+        success: true,
+        member,
+        groupSettings: state.groupSettings,
+        monthlyPayments: memberPayments,
+        emergencyContributions,
+        upcomingMeetings: (state.meetings || []).filter((m: any) => m.status === 'upcoming')
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: "Server error fetching member profile" });
+    }
+  });
+
   app.get("/api/guest-lookup", async (req, res) => {
     try {
       const code = req.query.code as string;
@@ -5328,6 +5664,85 @@ Tafadhali toa majibu kwenye mfumo wa JSON pekee wenye muundo ufuatao bila maelez
         totalGuests: guests.length
       });
     } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ==========================================
+  // UWALEMI STANDALONE MODULE API ENDPOINTS
+  // ==========================================
+  
+  // 1. GET UWALEMI state
+  app.get("/api/uwalemi/state", async (req, res) => {
+    try {
+      const db = await readDBLatest();
+      if (!db.uwalemiState || typeof db.uwalemiState !== "object") {
+        return res.json({ initialized: false });
+      }
+      res.json(db.uwalemiState);
+    } catch (e: any) {
+      console.error("[Uwalemi State GET Error]:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // 2. POST UWALEMI state
+  app.post("/api/uwalemi/state", async (req, res) => {
+    try {
+      const db = await readDBLatest();
+      const incomingState = req.body;
+      if (!incomingState || typeof incomingState !== "object") {
+        return res.status(400).json({ error: "Invalid state payload" });
+      }
+      db.uwalemiState = {
+        ...incomingState,
+        lastUpdated: new Date().toISOString()
+      };
+      await writeDB(db);
+      res.json({ success: true, lastUpdated: db.uwalemiState.lastUpdated });
+    } catch (e: any) {
+      console.error("[Uwalemi State POST Error]:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // 3. POST UWALEMI SMS dispatch (dedicated for UWALEMI members)
+  app.post("/api/uwalemi/send-sms", async (req, res) => {
+    try {
+      const { recipients, message, senderId } = req.body;
+      if (!recipients || !Array.isArray(recipients) || recipients.length === 0 || !message) {
+        return res.status(400).json({ error: "Missing recipients or message content" });
+      }
+      
+      const db = await readDBLatest();
+      const results: any[] = [];
+      for (const rec of recipients) {
+        const phone = rec.phone || rec.recipient || "";
+        const logId = `uwl-msg-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const logEntry = {
+          id: logId,
+          recipientCount: 1,
+          recipientNames: [rec.name || rec.memberName || "Mwanachama"],
+          recipientPhones: [phone],
+          messageType: "general",
+          message: message,
+          channel: "sms",
+          status: "sent",
+          sentAt: new Date().toISOString(),
+          sentBy: "Uongozi wa UWALEMI"
+        };
+
+        if (db.uwalemiState) {
+          db.uwalemiState.messageLogs = [logEntry, ...(db.uwalemiState.messageLogs || [])].slice(0, 100);
+        }
+
+        results.push({ phone, status: "sent", logId });
+      }
+
+      await writeDB(db);
+      res.json({ success: true, sentCount: results.length, results });
+    } catch (e: any) {
+      console.error("[Uwalemi SMS Error]:", e);
       res.status(500).json({ error: e.message });
     }
   });

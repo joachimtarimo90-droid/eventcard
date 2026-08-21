@@ -13,9 +13,9 @@ export const createPool = () => {
     return new Pool({
       connectionString: databaseUrl,
       ssl: isLocal ? false : { rejectUnauthorized: false },
-      connectionTimeoutMillis: 5000,
-      idleTimeoutMillis: 10000,
-      max: 4,
+      connectionTimeoutMillis: 30000,
+      idleTimeoutMillis: 30000,
+      max: 15,
       keepAlive: true,
     });
   }

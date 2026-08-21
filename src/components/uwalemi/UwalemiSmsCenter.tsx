@@ -1,0 +1,943 @@
+import React, { useState, useMemo } from 'react';
+import { UwalemiState, UwalemiSmsConfig, UwalemiMessageLog, UwalemiMember } from '../../types/uwalemi';
+import { 
+  sendUwalemiSms, 
+  sortMembersByLeadership, 
+  calculateAllMembersFeeDebts, 
+  calculateMemberFeeDebt,
+  formatPersonalizedUwalemiSms,
+  UwalemiMemberFeeDebtInfo 
+} from '../../services/uwalemiService';
+import { 
+  Send, 
+  MessageSquare, 
+  Settings, 
+  CheckCircle2, 
+  XCircle, 
+  Clock, 
+  Users, 
+  Key, 
+  ShieldAlert, 
+  Smartphone, 
+  Share2, 
+  RefreshCw,
+  Sliders,
+  History,
+  Sparkles,
+  AlertTriangle,
+  Check,
+  Search,
+  Calendar,
+  DollarSign,
+  Tag
+} from 'lucide-react';
+
+interface Props {
+  state: UwalemiState;
+  onSaveState: (state: UwalemiState) => Promise<boolean>;
+  initialRecipients?: { name: string; phone: string; memberNo: string; memberId?: string }[];
+  initialTemplate?: string;
+}
+
+export const UwalemiSmsCenter: React.FC<Props> = ({
+  state,
+  onSaveState,
+  initialRecipients,
+  initialTemplate
+}) => {
+  const [activeSubTab, setActiveSubTab] = useState<'compose' | 'gateway' | 'logs'>('compose');
+  
+  // Compose State
+  const [recipientFilter, setRecipientFilter] = useState<'all' | 'all_debtors' | 'unpaid_month' | 'custom'>('all_debtors');
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [memberSearchTerm, setMemberSearchTerm] = useState<string>('');
+  
+  const defaultSmartTemplate = `Habari {name}, kikundi cha UWALEMI kinakukumbusha kulipa ada zako za kila mwezi: unadaiwa {debtAmount} {periodSummary} ({unpaidMonths}). Tafadhali kamilisha malipo kupitia M-Koba au 0758 219 298 Eva Lema. Lema, Nguvu Moja!`;
+  
+  const [messageText, setMessageText] = useState<string>(
+    initialTemplate || defaultSmartTemplate
+  );
+  const [messageType, setMessageType] = useState<'broadcast' | 'reminder' | 'emergency' | 'meeting' | 'receipt'>('reminder');
+  const [isSending, setIsSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [previewMemberIndex, setPreviewMemberIndex] = useState<number>(0);
+
+  // Gateway Config State
+  const [gatewayConfig, setGatewayConfig] = useState<UwalemiSmsConfig>(
+    state.groupSettings?.smsConfig || {
+      provider: 'simulation',
+      apiKey: '',
+      secretKey: '',
+      senderId: 'UWALEMI',
+      autoSendReceipts: true,
+      autoSendMeetingAlerts: true,
+      autoSendMonthlyReminder: true
+    }
+  );
+
+  const members = useMemo(() => sortMembersByLeadership(state.members || []), [state.members]);
+  const messageLogs = state.messageLogs || [];
+
+  // Calculate debts for all members
+  const memberDebts = useMemo(() => {
+    return calculateAllMembersFeeDebts(state);
+  }, [state]);
+
+  const memberDebtsMap = useMemo(() => {
+    const map = new Map<string, UwalemiMemberFeeDebtInfo>();
+    memberDebts.forEach(d => map.set(d.memberId, d));
+    return map;
+  }, [memberDebts]);
+
+  // Current month unpaid member IDs
+  const currentMonthUnpaidIds = useMemo(() => {
+    const currentMonth = new Date().getMonth() + 1;
+    const currentYear = new Date().getFullYear();
+    const paidIds = new Set(
+      (state.monthlyPayments || [])
+        .filter(p => p.year === currentYear && p.month === currentMonth && p.status === 'paid')
+        .map(p => p.memberId)
+    );
+    return new Set(members.filter(m => m.status === 'active' && !paidIds.has(m.id)).map(m => m.id));
+  }, [state.monthlyPayments, members]);
+
+  // Determine recipients
+  const targetRecipients = useMemo(() => {
+    if (initialRecipients && initialRecipients.length > 0 && recipientFilter === 'custom' && selectedMemberIds.length === 0) {
+      return initialRecipients.map(r => {
+        const debt = r.memberId ? memberDebtsMap.get(r.memberId) : memberDebts.find(d => d.memberNo === r.memberNo);
+        return {
+          name: r.name,
+          phone: r.phone,
+          memberNo: r.memberNo,
+          memberId: r.memberId || debt?.memberId,
+          debtAmount: debt?.totalDebt,
+          startMonth: debt?.startMonthName,
+          endMonth: debt?.endMonthName,
+          unpaidMonths: debt?.unpaidMonthsText,
+          periodSummary: debt?.periodSummary,
+          monthsCount: debt?.unpaidCount
+        };
+      });
+    }
+
+    if (recipientFilter === 'all') {
+      return members.filter(m => m.status === 'active').map(m => {
+        const debt = memberDebtsMap.get(m.id);
+        return {
+          name: m.fullName,
+          phone: m.phone,
+          memberNo: m.memberNo,
+          memberId: m.id,
+          debtAmount: debt?.totalDebt,
+          startMonth: debt?.startMonthName,
+          endMonth: debt?.endMonthName,
+          unpaidMonths: debt?.unpaidMonthsText,
+          periodSummary: debt?.periodSummary,
+          monthsCount: debt?.unpaidCount
+        };
+      });
+    }
+
+    if (recipientFilter === 'all_debtors') {
+      return memberDebts
+        .filter(d => d.totalDebt > 0 && d.status === 'active')
+        .map(d => ({
+          name: d.memberName,
+          phone: d.phone,
+          memberNo: d.memberNo,
+          memberId: d.memberId,
+          debtAmount: d.totalDebt,
+          startMonth: d.startMonthName,
+          endMonth: d.endMonthName,
+          unpaidMonths: d.unpaidMonthsText,
+          periodSummary: d.periodSummary,
+          monthsCount: d.unpaidCount
+        }));
+    }
+
+    if (recipientFilter === 'unpaid_month') {
+      return members
+        .filter(m => currentMonthUnpaidIds.has(m.id))
+        .map(m => {
+          const debt = memberDebtsMap.get(m.id);
+          return {
+            name: m.fullName,
+            phone: m.phone,
+            memberNo: m.memberNo,
+            memberId: m.id,
+            debtAmount: debt?.totalDebt,
+            startMonth: debt?.startMonthName,
+            endMonth: debt?.endMonthName,
+            unpaidMonths: debt?.unpaidMonthsText,
+            periodSummary: debt?.periodSummary,
+            monthsCount: debt?.unpaidCount
+          };
+        });
+    }
+
+    // Custom
+    return members
+      .filter(m => selectedMemberIds.includes(m.id))
+      .map(m => {
+        const debt = memberDebtsMap.get(m.id);
+        return {
+          name: m.fullName,
+          phone: m.phone,
+          memberNo: m.memberNo,
+          memberId: m.id,
+          debtAmount: debt?.totalDebt,
+          startMonth: debt?.startMonthName,
+          endMonth: debt?.endMonthName,
+          unpaidMonths: debt?.unpaidMonthsText,
+          periodSummary: debt?.periodSummary,
+          monthsCount: debt?.unpaidCount
+        };
+      });
+  }, [recipientFilter, selectedMemberIds, initialRecipients, members, memberDebts, memberDebtsMap, currentMonthUnpaidIds]);
+
+  const handleApplyTemplate = (type: string) => {
+    if (type === 'smart_debt_reminder') {
+      setMessageText(`Habari {name}, kikundi cha UWALEMI kinakukumbusha kulipa ada zako za kila mwezi: unadaiwa {debtAmount} {periodSummary} ({unpaidMonths}). Tafadhali kamilisha malipo kupitia M-Koba au 0758 219 298 Eva Lema. Lema, Nguvu Moja!`);
+      setMessageType('reminder');
+    } else if (type === 'single_month_reminder') {
+      setMessageText(`Habari {name}, hii ni taarifa ya kukumbusha ada yako ya kikundi cha UWALEMI ya mwezi huu ({monthlyFee}). Tafadhali kamilisha malipo kupitia M-Koba au 0758 219 298 Eva Lema. Lema, Nguvu Moja!`);
+      setMessageType('reminder');
+    } else if (type === 'emergency_alert') {
+      setMessageText(`TAARIFA YA MSIBA / DHARURA - UWALEMI\nHabari {name}, kikundi kinatangaza mchango wa dharura wa TZS 20,000 kusaidiana na mwanachama mwenzetu. Mwisho wa kuchanga ni siku 14 kuanzia leo. Lipa kupitia M-Koba au 0758 219 298 Eva Lema. Lema, Nguvu Moja!`);
+      setMessageType('emergency');
+    } else if (type === 'meeting_notice') {
+      setMessageText(`WITO WA KIKAO CHA UWALEMI\nHabari {name}, unataarifiwa kuhudhuria kikao chetu cha kawaida siku ya Jumapili saa 8:00 mchana Ukumbi wa Vatican, Sinza. Fika bila kukosa. Lema, Nguvu Moja!`);
+      setMessageType('meeting');
+    } else if (type === 'general_broadcast') {
+      setMessageText(`Habari {name}, hii ni taarifa kutoka uongozi wa kikundi cha UWALEMI. Tunaomba ushirikiano wako katika shughuli za kikundi. Lema, Nguvu Moja!`);
+      setMessageType('broadcast');
+    }
+  };
+
+  const insertTag = (tag: string) => {
+    setMessageText(prev => prev + ` ${tag} `);
+  };
+
+  // Preview formatting
+  const previewDebtInfo: UwalemiMemberFeeDebtInfo = useMemo(() => {
+    if (targetRecipients.length > 0) {
+      const idx = Math.min(previewMemberIndex, targetRecipients.length - 1);
+      const rec = targetRecipients[idx];
+      if (rec.memberId && memberDebtsMap.has(rec.memberId)) {
+        return memberDebtsMap.get(rec.memberId)!;
+      }
+      const matched = memberDebts.find(d => d.memberNo === rec.memberNo || d.memberName === rec.name);
+      if (matched) return matched;
+      return {
+        memberId: rec.memberId || 'temp',
+        memberNo: rec.memberNo || 'UWL-001',
+        memberName: rec.name || 'Mjumbe',
+        phone: rec.phone || '',
+        role: 'Mjumbe',
+        status: 'active',
+        monthlyFee: 15000,
+        totalDebt: rec.debtAmount || 40000,
+        unpaidCount: rec.monthsCount || 4,
+        startMonthName: rec.startMonth || 'Novemba 2023',
+        endMonthName: rec.endMonth || 'Februari 2024',
+        unpaidMonthsList: ['Nov 2023', 'Des 2023', 'Jan 2024', 'Feb 2024'],
+        unpaidMonthsText: rec.unpaidMonths || 'Nov 2023, Des 2023, Jan 2024, Feb 2024',
+        periodSummary: rec.periodSummary || 'kuanzia Novemba 2023 hadi Februari 2024 (miezi 4)',
+        breakdown: []
+      };
+    }
+    // Default sample preview
+    const sample = memberDebts.find(d => d.totalDebt > 0) || memberDebts[0];
+    if (sample) return sample;
+    return {
+      memberId: 'sample',
+      memberNo: 'UWL-001',
+      memberName: 'James Lema',
+      phone: '0712345678',
+      role: 'Mjumbe',
+      status: 'active',
+      monthlyFee: 15000,
+      totalDebt: 40000,
+      unpaidCount: 4,
+      startMonthName: 'Novemba 2023',
+      endMonthName: 'Februari 2024',
+      unpaidMonthsList: ['Nov 2023', 'Des 2023', 'Jan 2024', 'Feb 2024'],
+      unpaidMonthsText: 'Nov 2023, Des 2023, Jan 2024, Feb 2024',
+      periodSummary: 'kuanzia Novemba 2023 hadi Februari 2024 (miezi 4)',
+      breakdown: []
+    };
+  }, [targetRecipients, previewMemberIndex, memberDebtsMap, memberDebts]);
+
+  const renderedPreviewText = useMemo(() => {
+    return formatPersonalizedUwalemiSms(messageText, previewDebtInfo);
+  }, [messageText, previewDebtInfo]);
+
+  const handleSendSms = async () => {
+    if (targetRecipients.length === 0) {
+      alert('Tafadhali chagua angalau mpokeaji mmoja mwenye namba ya simu.');
+      return;
+    }
+    if (!messageText.trim()) {
+      alert('Tafadhali andika ujumbe wako kwanza.');
+      return;
+    }
+
+    setIsSending(true);
+    setSendResult(null);
+
+    const result = await sendUwalemiSms({
+      recipients: targetRecipients,
+      message: messageText,
+      messageType
+    });
+
+    setIsSending(false);
+    setSendResult({
+      success: result.success,
+      message: result.message
+    });
+  };
+
+  const handleSaveGateway = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const updatedSettings = {
+      ...state.groupSettings,
+      smsConfig: gatewayConfig
+    };
+    const updatedState = { ...state, groupSettings: updatedSettings };
+    await onSaveState(updatedState);
+    alert('Mipangilio ya SMS Gateway ya UWALEMI imehifadhiwa kwa mafanikio!');
+  };
+
+  const debtorsCount = memberDebts.filter(d => d.totalDebt > 0 && d.status === 'active').length;
+  const totalDebtsAmount = memberDebts.reduce((sum, d) => sum + (d.status === 'active' ? d.totalDebt : 0), 0);
+
+  return (
+    <div className="space-y-6 animate-fadeIn pb-12" id="uwalemi-sms-center">
+      {/* Header */}
+      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-md">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-emerald-400" />
+              <h2 className="text-xl font-bold text-white">Kituo cha SMS & Vikumbusho vya Madeni ya Ada</h2>
+              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Smart Debt Tracking
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Hutambua mwanachama anayedaiwa ada kuanzia mwezi gani, idadi ya miezi, na kiasi halisi anachodaiwa kwa usahihi.
+            </p>
+          </div>
+
+          {/* Sub-tabs switchers */}
+          <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 self-start md:self-auto">
+            <button
+              onClick={() => setActiveSubTab('compose')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                activeSubTab === 'compose' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Tuma Ujumbe (Compose)
+            </button>
+            <button
+              onClick={() => setActiveSubTab('gateway')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                activeSubTab === 'gateway' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Mipangilio ya Gateway
+            </button>
+            <button
+              onClick={() => setActiveSubTab('logs')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                activeSubTab === 'logs' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Kumbukumbu ({messageLogs.length})
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* VIEW 1: COMPOSE & SEND */}
+      {activeSubTab === 'compose' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left 2 Cols: Composer */}
+          <div className="lg:col-span-2 bg-slate-900/70 border border-slate-800 rounded-2xl p-6 backdrop-blur-md space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Send className="w-4 h-4 text-emerald-400" />
+                Andika Ujumbe kwa Wajumbe ({targetRecipients.length} Wateule)
+              </h3>
+              <span className="text-xs text-slate-400 font-mono">
+                Sender ID: <strong className="text-emerald-400">{gatewayConfig.senderId || 'UWALEMI'}</strong>
+              </span>
+            </div>
+
+            {/* Quick Templates Pills */}
+            <div>
+              <span className="text-[11px] text-slate-400 block mb-1.5 font-semibold">Violezo vya Haraka (Templates):</span>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleApplyTemplate('smart_debt_reminder')}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-[11px] font-bold border border-emerald-500/30 cursor-pointer flex items-center gap-1"
+                >
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  ⚡ Ukumbusho wa Madeni Yote (Kuanzia Mwezi & Kiasi)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyTemplate('single_month_reminder')}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-slate-700 cursor-pointer"
+                >
+                  💳 Ada ya Mwezi Huu Pekee
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyTemplate('meeting_notice')}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-slate-700 cursor-pointer"
+                >
+                  📅 Wito wa Kikao
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyTemplate('emergency_alert')}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-slate-700 cursor-pointer"
+                >
+                  🆘 Taarifa ya Msiba
+                </button>
+              </div>
+            </div>
+
+            {/* Tag Badges Toolbar */}
+            <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1.5 flex items-center gap-1">
+                <Tag className="w-3 h-3 text-emerald-400" />
+                Bofya Kigezo Kuingiza Kwenye Ujumbe (Dynamic Tags):
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => insertTag('{name}')}
+                  title="Jina la Mwanachama"
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 text-[10.5px] font-mono border border-slate-700 cursor-pointer"
+                >
+                  {"{name}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{memberNo}')}
+                  title="Namba ya UWALEMI (mf. UWL-001)"
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 text-[10.5px] font-mono border border-slate-700 cursor-pointer"
+                >
+                  {"{memberNo}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{debtAmount}')}
+                  title="Kiasi cha Deni Analodaiwa (mf. TZS 40,000)"
+                  className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10.5px] font-mono border border-amber-500/40 cursor-pointer font-bold"
+                >
+                  {"{debtAmount}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{startMonth}')}
+                  title="Mwezi Anaoanzia Kudaiwa (mf. Novemba 2023)"
+                  className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10.5px] font-mono border border-amber-500/40 cursor-pointer font-bold"
+                >
+                  {"{startMonth}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{endMonth}')}
+                  title="Mwezi wa Mwisho Anaodaiwa (mf. Februari 2024)"
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10.5px] font-mono border border-slate-700 cursor-pointer"
+                >
+                  {"{endMonth}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{periodSummary}')}
+                  title="Maelezo ya Kipindi (mf. kuanzia Novemba 2023 hadi Februari 2024 (miezi 4))"
+                  className="px-2 py-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 text-[10.5px] font-mono border border-purple-500/40 cursor-pointer font-bold"
+                >
+                  {"{periodSummary}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{unpaidMonths}')}
+                  title="Orodha ya Miezi Anayodaiwa (mf. Nov 2023, Des 2023, Jan 2024)"
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10.5px] font-mono border border-slate-700 cursor-pointer"
+                >
+                  {"{unpaidMonths}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{monthsCount}')}
+                  title="Idadi ya Miezi (mf. 4)"
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10.5px] font-mono border border-slate-700 cursor-pointer"
+                >
+                  {"{monthsCount}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{lipaNamba}')}
+                  title="Njia ya Malipo (M-Koba / 0758 219 298 Eva Lema)"
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10.5px] font-mono border border-slate-700 cursor-pointer"
+                >
+                  {"{lipaNamba}"}
+                </button>
+              </div>
+            </div>
+
+            {/* Message Area */}
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs text-slate-300 font-semibold">Ujumbe Wako (Template):</label>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  Urefu: {messageText.length} herufi • ~{Math.ceil(messageText.length / 160) || 1} SMS
+                </span>
+              </div>
+              <textarea
+                rows={4}
+                value={messageText}
+                onChange={(e) => setMessageText(e.target.value)}
+                placeholder="Andika ujumbe wako hapa..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 leading-relaxed font-sans"
+              />
+            </div>
+
+            {/* Preview Box with Recipient Selector */}
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs font-bold text-white">Muonekano wa Ujumbe kwa Mjumbe:</span>
+                </div>
+                {targetRecipients.length > 1 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-400">Sampuli ya Mjumbe:</span>
+                    <select
+                      value={previewMemberIndex}
+                      onChange={(e) => setPreviewMemberIndex(Number(e.target.value))}
+                      className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      {targetRecipients.map((rec, idx) => (
+                        <option key={idx} value={idx}>
+                          {rec.memberNo ? `${rec.memberNo} - ` : ''}{rec.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Recipient Debt Breakdown Badge */}
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20">
+                  {previewDebtInfo.memberNo} {previewDebtInfo.memberName}
+                </span>
+                {previewDebtInfo.totalDebt > 0 ? (
+                  <>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 font-bold border border-amber-500/30">
+                      Deni: TZS {previewDebtInfo.totalDebt.toLocaleString()}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                      Kuanzia: {previewDebtInfo.startMonthName} ({previewDebtInfo.unpaidCount} miezi)
+                    </span>
+                  </>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 font-bold border border-emerald-500/30">
+                    ✓ Hana deni la ada
+                  </span>
+                )}
+              </div>
+
+              <div className="bg-slate-900/80 rounded-lg p-3 border border-slate-800">
+                <p className="text-xs text-slate-200 whitespace-pre-wrap font-sans leading-relaxed">
+                  {renderedPreviewText}
+                </p>
+              </div>
+            </div>
+
+            {/* Send Result Notification */}
+            {sendResult && (
+              <div className={`p-4 rounded-xl text-xs flex items-start gap-3 border ${
+                sendResult.success 
+                  ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300' 
+                  : 'bg-rose-950/30 border-rose-500/30 text-rose-300'
+              }`}>
+                {sendResult.success ? <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400" /> : <XCircle className="w-5 h-5 shrink-0 text-rose-400" />}
+                <div>
+                  <div className="font-bold">{sendResult.success ? 'Ujumbe Umetumwa Kikamilifu!' : 'Hitilafu ya Kutuma'}</div>
+                  <div className="mt-0.5">{sendResult.message}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  const cleanPhone = (previewDebtInfo.phone || '').replace(/[^0-9]/g, '');
+                  const waUrl = cleanPhone 
+                    ? `https://wa.me/${cleanPhone.startsWith('0') ? '255' + cleanPhone.substring(1) : cleanPhone}?text=${encodeURIComponent(renderedPreviewText)}`
+                    : `https://wa.me/?text=${encodeURIComponent(renderedPreviewText)}`;
+                  window.open(waUrl, '_blank');
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-semibold transition-all cursor-pointer shadow-md"
+              >
+                <Share2 className="w-4 h-4" />
+                Tuma kwa WhatsApp ({previewDebtInfo.memberName})
+              </button>
+
+              <button
+                type="button"
+                disabled={isSending || targetRecipients.length === 0}
+                onClick={handleSendSms}
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold shadow-lg shadow-emerald-900/40 transition-all cursor-pointer"
+              >
+                {isSending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {isSending ? 'Inatuma...' : `Tuma SMS kwa Wajumbe ${targetRecipients.length}`}
+              </button>
+            </div>
+          </div>
+
+          {/* Right 1 Col: Recipient Filter Picker & Debtor Stats */}
+          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 backdrop-blur-md space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-400" />
+                Chagua Wapokeaji
+              </h3>
+              <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                {targetRecipients.length} Wateule
+              </span>
+            </div>
+
+            {/* Quick Stats of Debts */}
+            <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">Wenye Madeni ya Ada:</span>
+                <span className="font-bold text-amber-400">{debtorsCount} wajumbe</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">Jumla ya Madeni:</span>
+                <span className="font-bold text-rose-400">TZS {totalDebtsAmount.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <label className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                recipientFilter === 'all_debtors' ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+              }`}>
+                <input
+                  type="radio"
+                  name="recFilter"
+                  checked={recipientFilter === 'all_debtors'}
+                  onChange={() => setRecipientFilter('all_debtors')}
+                  className="text-emerald-500 mt-0.5"
+                />
+                <div>
+                  <span className="font-bold text-white flex items-center gap-1.5">
+                    ⚡ Wenye Madeni Yote ya Ada
+                    <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono">
+                      {debtorsCount}
+                    </span>
+                  </span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">
+                    Huchuja wote wanaodaiwa ada kuanzia mwezi walioanza kudaiwa.
+                  </span>
+                </div>
+              </label>
+
+              <label className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                recipientFilter === 'unpaid_month' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+              }`}>
+                <input
+                  type="radio"
+                  name="recFilter"
+                  checked={recipientFilter === 'unpaid_month'}
+                  onChange={() => setRecipientFilter('unpaid_month')}
+                  className="text-emerald-500 mt-0.5"
+                />
+                <div>
+                  <span className="font-bold text-white block">Wasolipa Ada ya Mwezi Huu</span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">
+                    Wajumbe {currentMonthUnpaidIds.size} ambao hawajakamilisha mwezi wa sasa.
+                  </span>
+                </div>
+              </label>
+
+              <label className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                recipientFilter === 'all' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+              }`}>
+                <input
+                  type="radio"
+                  name="recFilter"
+                  checked={recipientFilter === 'all'}
+                  onChange={() => setRecipientFilter('all')}
+                  className="text-emerald-500 mt-0.5"
+                />
+                <div>
+                  <span className="font-bold text-white block">Wajumbe Wote Hai ({members.filter(m => m.status === 'active').length})</span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">
+                    Tuma tangazo au taarifa ya jumla kwa wajumbe wote.
+                  </span>
+                </div>
+              </label>
+
+              <label className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                recipientFilter === 'custom' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+              }`}>
+                <input
+                  type="radio"
+                  name="recFilter"
+                  checked={recipientFilter === 'custom'}
+                  onChange={() => setRecipientFilter('custom')}
+                  className="text-emerald-500 mt-0.5"
+                />
+                <div>
+                  <span className="font-bold text-white block">Chagua Mjumbe Mmoja Mmoja</span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">
+                    Chagua wajumbe maalum kutoka kwenye orodha.
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            {recipientFilter === 'custom' && (
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Tafuta jina au UWL..."
+                    value={memberSearchTerm}
+                    onChange={(e) => setMemberSearchTerm(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] px-1 text-slate-400">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMemberIds(members.map(m => m.id))}
+                    className="text-emerald-400 hover:underline cursor-pointer"
+                  >
+                    Chagua Wote
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMemberIds([])}
+                    className="text-slate-400 hover:underline cursor-pointer"
+                  >
+                    Futa Wote
+                  </button>
+                </div>
+
+                <div className="max-h-64 overflow-y-auto space-y-1 p-2 bg-slate-950 rounded-xl border border-slate-800 text-xs">
+                  {members
+                    .filter(m => !memberSearchTerm || m.fullName.toLowerCase().includes(memberSearchTerm.toLowerCase()) || m.memberNo.toLowerCase().includes(memberSearchTerm.toLowerCase()))
+                    .map(m => {
+                      const debt = memberDebtsMap.get(m.id);
+                      return (
+                        <label key={m.id} className="flex items-center justify-between p-1.5 hover:bg-slate-900 rounded-lg cursor-pointer text-slate-300">
+                          <div className="flex items-center gap-2 truncate">
+                            <input
+                              type="checkbox"
+                              checked={selectedMemberIds.includes(m.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) setSelectedMemberIds([...selectedMemberIds, m.id]);
+                                else setSelectedMemberIds(selectedMemberIds.filter(id => id !== m.id));
+                              }}
+                            />
+                            <span className="font-mono text-emerald-400 text-[11px] font-bold">{m.memberNo}</span>
+                            <span className="truncate">{m.fullName}</span>
+                          </div>
+                          {debt && debt.totalDebt > 0 ? (
+                            <span className="text-[10px] font-bold text-amber-400 shrink-0 ml-1">
+                              TZS {debt.totalDebt.toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-emerald-500 shrink-0 ml-1">✓ Safi</span>
+                          )}
+                        </label>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VIEW 2: GATEWAY CONFIG */}
+      {activeSubTab === 'gateway' && (
+        <div className="max-w-2xl bg-slate-900/70 border border-slate-800 rounded-2xl p-6 backdrop-blur-md space-y-6">
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Settings className="w-4 h-4 text-emerald-400" />
+              Mipangilio ya Mtoa Huduma wa SMS (SMS Gateway)
+            </h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Weka taarifa za API za Meseji.co.tz, Beem, au NextSMS ili ujumbe wa kikundi cha UWALEMI uende moja kwa moja kwa simu za wajumbe.
+            </p>
+          </div>
+
+          <form onSubmit={handleSaveGateway} className="space-y-4 text-xs">
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">Mtoa Huduma (Provider):</label>
+              <select
+                value={gatewayConfig.provider}
+                onChange={(e) => setGatewayConfig({ ...gatewayConfig, provider: e.target.value as any })}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+              >
+                <option value="meseji">Meseji API (Meseji.co.tz - Tanzania)</option>
+                <option value="beem">Beem Africa (apisms.beem.africa)</option>
+                <option value="nextsms">NextSMS Tanzania (messaging-service.co.tz)</option>
+                <option value="simulation">Mwigizo wa Kujaribu (Simulation Mode)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">Jina la Mtumaji (Sender ID):</label>
+              <input
+                type="text"
+                value={gatewayConfig.senderId || ''}
+                onChange={(e) => setGatewayConfig({ ...gatewayConfig, senderId: e.target.value })}
+                placeholder="mf. UWALEMI au MESEJI"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">API Key / Token:</label>
+              <input
+                type="password"
+                value={gatewayConfig.apiKey || ''}
+                onChange={(e) => setGatewayConfig({ ...gatewayConfig, apiKey: e.target.value })}
+                placeholder="Weka API Key yako hapa"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {gatewayConfig.provider !== 'meseji' && (
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">API Secret Key:</label>
+                <input
+                  type="password"
+                  value={gatewayConfig.secretKey || ''}
+                  onChange={(e) => setGatewayConfig({ ...gatewayConfig, secretKey: e.target.value })}
+                  placeholder="Weka Secret Key (kama inahitajika)"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            )}
+
+            <div className="space-y-2 pt-2 border-t border-slate-800">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={gatewayConfig.autoSendReceipts}
+                  onChange={(e) => setGatewayConfig({ ...gatewayConfig, autoSendReceipts: e.target.checked })}
+                  className="rounded text-emerald-500"
+                />
+                Tuma SMS ya stakabadhi kiotomatiki mara tu ada au mchango unaporekodiwa
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={gatewayConfig.autoSendMonthlyReminder}
+                  onChange={(e) => setGatewayConfig({ ...gatewayConfig, autoSendMonthlyReminder: e.target.checked })}
+                  className="rounded text-emerald-500"
+                />
+                Tuma vikumbusho vya ada ya kila mwezi kiotomatiki tarehe 25 ya kila mwezi
+              </label>
+            </div>
+
+            <div className="pt-3">
+              <button
+                type="submit"
+                className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
+              >
+                Hifadhi Mipangilio ya SMS
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* VIEW 3: MESSAGE LOGS */}
+      {activeSubTab === 'logs' && (
+        <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 backdrop-blur-md space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <History className="w-4 h-4 text-emerald-400" />
+              Kumbukumbu za Ujumbe Uliotumwa (Message Logs)
+            </h3>
+            <span className="text-xs text-slate-400">Jumla: {messageLogs.length} ujumbe</span>
+          </div>
+
+          {messageLogs.length === 0 ? (
+            <div className="py-12 text-center text-slate-500 text-xs">
+              Bado hakuna kumbukumbu za ujumbe uliotumwa.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                  <tr>
+                    <th className="py-2.5 px-3">Tarehe & Muda</th>
+                    <th className="py-2.5 px-3">Aina</th>
+                    <th className="py-2.5 px-3">Mpokeaji</th>
+                    <th className="py-2.5 px-3">Simu</th>
+                    <th className="py-2.5 px-3">Hali</th>
+                    <th className="py-2.5 px-3">Ujumbe</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {messageLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-800/40">
+                      <td className="py-2.5 px-3 font-mono text-slate-400">
+                        {new Date(log.sentAt).toLocaleString('sw-TZ')}
+                      </td>
+                      <td className="py-2.5 px-3 uppercase text-[10px] font-bold text-emerald-400">
+                        {log.type}
+                      </td>
+                      <td className="py-2.5 px-3 font-semibold text-white">
+                        {log.recipientName}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-slate-400">
+                        {log.recipientPhone}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          log.status === 'delivered' ? 'bg-emerald-500/15 text-emerald-400' :
+                          log.status === 'sent' ? 'bg-blue-500/15 text-blue-400' :
+                          log.status === 'simulated' ? 'bg-amber-500/15 text-amber-400' :
+                          'bg-rose-500/15 text-rose-400'
+                        }`}>
+                          {log.status}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-300 max-w-xs truncate" title={log.message}>
+                        {log.message}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};

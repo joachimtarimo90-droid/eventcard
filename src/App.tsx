@@ -19,6 +19,7 @@ import {
   X,
   Languages,
   ShieldCheck,
+  Shield,
   CreditCard,
   Settings2,
   FileText,
@@ -37,6 +38,8 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { useLanguage } from './context/LanguageContext';
 import { useEventCard } from './context/EventCardContext';
 import { AIChatbotWidget } from './components/AIChatbotWidget';
+import { UwalemiModule } from './components/uwalemi/UwalemiModule';
+import { UwalemiMemberPortal } from './components/uwalemi/UwalemiMemberPortal';
 import LandingPage from './components/LandingPage';
 import Login from './components/Login';
 import CreateEventPage from './components/CreateEventPage';
@@ -82,7 +85,8 @@ type AppTab =
   | 'save-the-date'
   | 'event-reports'
   | 'audit-logs'
-  | 'debug';
+  | 'debug'
+  | 'uwalemi';
 
 export default function App() {
   const { language, setLanguage, t } = useLanguage();
@@ -175,6 +179,7 @@ export default function App() {
   const [portalEventId, setPortalEventId] = useState<string | null>(null);
   const [isScanOnlyPortal, setIsScanOnlyPortal] = useState(false);
   const [scanPortalEventId, setScanPortalEventId] = useState<string | null>(null);
+  const [uwalemiMemberParam, setUwalemiMemberParam] = useState<string | null>(null);
 
   // Parse invite search query on mount
   useEffect(() => {
@@ -182,10 +187,23 @@ export default function App() {
       const searchStr = window.location.search || '';
       const params = new URLSearchParams(searchStr);
 
+      // Check UWALEMI parameters
+      const uwalemiMember = params.get('uwalemiMember') || params.get('uwalemi_member') || params.get('uwalemi');
+      const moduleParam = params.get('module');
+      if (uwalemiMember) {
+        setUwalemiMemberParam(uwalemiMember);
+        setShowLanding(false);
+      }
+
       // Extract raw parameters
       let rawInvite = params.get('invite');
       let rawEventId = params.get('eventId') || params.get('event_id');
       let rawView = params.get('view') || params.get('mode') || params.get('v');
+
+      if (rawView === 'uwalemi' || moduleParam === 'uwalemi') {
+        setActiveTab('uwalemi');
+        setShowLanding(false);
+      }
 
       // Robust fallback extraction for double-encoded or malformed query strings
       // e.g., ?eventId=%3Finvite%3DIP-5188%2C761214&view=venue or ?eventId=?invite=...
@@ -1017,6 +1035,19 @@ export default function App() {
           />
         </div>
       </div>
+    );
+  }
+
+  if (uwalemiMemberParam) {
+    return (
+      <UwalemiMemberPortal 
+        memberNoOrPhone={uwalemiMemberParam} 
+        onClose={() => {
+          setUwalemiMemberParam(null);
+          setActiveTab('uwalemi');
+        }} 
+        standalone={true}
+      />
     );
   }
 
@@ -2281,6 +2312,8 @@ export default function App() {
             />
           </React.Fragment>
         );
+      case 'uwalemi':
+        return <UwalemiModule onBackToMainApp={() => setActiveTab('dashboard')} />;
       default:
         return <div>Tab not found</div>;
     }
@@ -2288,6 +2321,7 @@ export default function App() {
 
   const navItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: t('nav.dashboard') },
+    { id: 'uwalemi', icon: Shield, label: 'UWALEMI (Kikundi)' },
     { id: 'event-details', icon: Calendar, label: t('nav.eventDetails') },
     { id: 'preview', icon: Mail, label: t('nav.preview') },
     { id: 'templates', icon: Settings2, label: t('nav.templates') },
