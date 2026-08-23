@@ -49,6 +49,197 @@ async function executeQuery<T>(label: string, queryFn: () => Promise<T>, retries
   throw new Error(`Database operation '${label}' failed after ${retries} attempts.`);
 }
 
+export async function ensureTablesExist(): Promise<void> {
+  await executeQuery("ensureTablesExist", async () => {
+    console.log("[CloudSQL] Verifying and provisioning database tables if not present...");
+    
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "events" (
+        "id" text PRIMARY KEY,
+        "sender_id" text,
+        "name" text NOT NULL,
+        "date" text,
+        "time" text,
+        "period" text,
+        "event_hall_name" text,
+        "coordinates" text,
+        "host_name" text,
+        "dress_code" text,
+        "contact_1" text,
+        "contact_1_name" text,
+        "contact_2" text,
+        "contact_2_name" text,
+        "contact_3" text,
+        "contact_3_name" text,
+        "maps_link" text,
+        "event_img_url" text,
+        "message_logs" jsonb,
+        "sms_templates" jsonb,
+        "payment_methods" jsonb,
+        "contributions_enabled" boolean DEFAULT false,
+        "fundraising_goal" integer DEFAULT 0,
+        "auto_rsvp_reminders_enabled" boolean DEFAULT false,
+        "contribution_deadline" text,
+        "created_at" timestamp DEFAULT now()
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "guests" (
+        "id" text PRIMARY KEY,
+        "event_id" text REFERENCES "events"("id") ON DELETE CASCADE,
+        "code" text NOT NULL,
+        "name" text NOT NULL,
+        "phone" text NOT NULL,
+        "card_type" text NOT NULL,
+        "sms_status" text DEFAULT 'Sijatuma',
+        "whatsapp_status" text DEFAULT 'Sijatuma',
+        "rsvp_status" text DEFAULT 'Bado',
+        "max_guests" integer DEFAULT 1,
+        "rsvp_guests_count" integer DEFAULT 0,
+        "rsvp_comment" text,
+        "checked_in" boolean DEFAULT false,
+        "checked_in_time" text,
+        "photo_url" text,
+        "card_image_url" text,
+        "sms_count" integer DEFAULT 0,
+        "whatsapp_count" integer DEFAULT 0,
+        "category" text,
+        "pledge_amount" integer DEFAULT 0,
+        "paid_amount" integer DEFAULT 0,
+        "pledge_status" text DEFAULT 'No Pledge',
+        "payments" jsonb,
+        "rsvp_updated_at" text,
+        "rsvp_seen" boolean DEFAULT true,
+        "custom_fields" jsonb,
+        "tags" jsonb
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "save_the_dates" (
+        "id" text PRIMARY KEY,
+        "event_id" text REFERENCES "events"("id") ON DELETE CASCADE,
+        "title" text NOT NULL,
+        "message" text NOT NULL,
+        "image_url" text,
+        "created_at" text
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "save_the_date_recipients" (
+        "id" text PRIMARY KEY,
+        "save_the_date_id" text REFERENCES "save_the_dates"("id") ON DELETE CASCADE,
+        "guest_id" text REFERENCES "guests"("id") ON DELETE CASCADE,
+        "sent_at" text,
+        "status" text DEFAULT 'Pending'
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "template_settings" (
+        "id" text PRIMARY KEY,
+        "image_url" text NOT NULL,
+        "text_color" text DEFAULT '#333333',
+        "font_family" text DEFAULT 'Inter',
+        "guest_name_x" integer DEFAULT 50,
+        "guest_name_y" integer DEFAULT 50,
+        "guest_name_size" integer DEFAULT 24,
+        "guest_name_color" text,
+        "qr_code_x" integer DEFAULT 50,
+        "qr_code_y" integer DEFAULT 70,
+        "qr_code_size" integer DEFAULT 120,
+        "qr_code_color" text,
+        "card_type_x" integer DEFAULT 50,
+        "card_type_y" integer DEFAULT 25,
+        "card_type_size" integer DEFAULT 16,
+        "card_type_color" text,
+        "orientation" text DEFAULT 'portrait'
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "sms_gateway_settings" (
+        "id" text PRIMARY KEY,
+        "provider" text DEFAULT 'simulation',
+        "url" text,
+        "api_key" text,
+        "api_secret" text,
+        "sender_id" text,
+        "sender_id_status" text DEFAULT 'approved',
+        "whatsapp_url" text,
+        "custom_headers" text DEFAULT '{}',
+        "custom_body" text DEFAULT '{\n  "to": "{to}",\n  "message": "{message}"\n}'
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "committee_members" (
+        "id" text PRIMARY KEY,
+        "name" text NOT NULL,
+        "phone" text NOT NULL,
+        "email" text,
+        "position" text DEFAULT 'Committee Member',
+        "permission_level" text DEFAULT 'Summary Access',
+        "token" text
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "committee_roles" (
+        "id" text PRIMARY KEY,
+        "name" text NOT NULL,
+        "permission_level" text NOT NULL,
+        "description" text
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "audit_logs" (
+        "id" text PRIMARY KEY,
+        "timestamp" text NOT NULL,
+        "user" text NOT NULL,
+        "action" text NOT NULL,
+        "details" text NOT NULL,
+        "ip_address" text
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "user_account" (
+        "id" text PRIMARY KEY,
+        "username" text,
+        "phone" text,
+        "email" text,
+        "wallet_balance" integer DEFAULT 0,
+        "transactions" jsonb,
+        "active_event_id" text
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "uwalemi_state" (
+        "id" text PRIMARY KEY,
+        "data" jsonb NOT NULL,
+        "updated_at" timestamp DEFAULT now()
+      );
+    `);
+
+    // Ensure extra columns exist if upgrading from older schemas
+    try {
+      await db.execute(sql`ALTER TABLE "user_account" ADD COLUMN IF NOT EXISTS "active_event_id" text;`);
+      await db.execute(sql`ALTER TABLE "template_settings" ADD COLUMN IF NOT EXISTS "orientation" text DEFAULT 'portrait';`);
+      await db.execute(sql`ALTER TABLE "guests" ADD COLUMN IF NOT EXISTS "custom_fields" jsonb;`);
+      await db.execute(sql`ALTER TABLE "guests" ADD COLUMN IF NOT EXISTS "tags" jsonb;`);
+    } catch (colErr) {
+      console.warn("[CloudSQL] Column migration notice:", colErr);
+    }
+
+    console.log("[CloudSQL] All relational tables and columns verified/created successfully.");
+  });
+}
+
 // 1. One-time Boot Seeder / Backup File Importer
 export async function seedFromBackupFile(): Promise<boolean> {
   return await executeQuery("seedFromBackupFile", async () => {
@@ -315,6 +506,15 @@ export async function seedFromBackupFile(): Promise<boolean> {
       }).onConflictDoNothing();
     }
 
+    // Seed UWALEMI State
+    if (backup.uwalemiState && typeof backup.uwalemiState === "object") {
+      console.log(`[SQL Seeder] Importing UWALEMI State...`);
+      await db.insert(schema.uwalemiStateTable).values({
+        id: "state",
+        data: backup.uwalemiState,
+      }).onConflictDoNothing();
+    }
+
     console.log("[SQL Seeder] SQLite / JSON Database backup has been fully imported into Cloud SQL PostgreSQL.");
     return true;
   });
@@ -334,6 +534,7 @@ export async function fetchFullStateFromDB(): Promise<any> {
     const sqlCommitteeRoles = await db.select().from(schema.committeeRoles);
     const sqlAuditLogs = await db.select().from(schema.auditLogs);
     const sqlUserAcc = await db.select().from(schema.userAccount);
+    const sqlUwalemi = await db.select().from(schema.uwalemiStateTable);
 
     // Reconstruct lists and nested formats
     const eventsList = sqlEvents.map(e => ({
@@ -505,6 +706,10 @@ export async function fetchFullStateFromDB(): Promise<any> {
       activeEventId: "",
     };
 
+    const uwalemiState = (sqlUwalemi && sqlUwalemi.length > 0 && sqlUwalemi[0].data) 
+      ? sqlUwalemi[0].data 
+      : null;
+
     return {
       eventsList,
       eventDetails: eventDetailsObj,
@@ -517,6 +722,7 @@ export async function fetchFullStateFromDB(): Promise<any> {
       saveTheDateRecipients,
       auditLogs,
       userAccount,
+      uwalemiState,
     };
   });
 }
@@ -965,6 +1171,20 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
           walletBalance: typeof u.walletBalance === "number" ? u.walletBalance : 0,
           transactions: u.transactions || null,
           activeEventId: u.activeEventId ? String(u.activeEventId) : null,
+        }
+      });
+    }
+
+    // 3.12. Save UWALEMI Community State to PostgreSQL
+    if (data.uwalemiState && typeof data.uwalemiState === "object") {
+      await db.insert(schema.uwalemiStateTable).values({
+        id: "state",
+        data: data.uwalemiState,
+      }).onConflictDoUpdate({
+        target: schema.uwalemiStateTable.id,
+        set: {
+          data: sql`EXCLUDED.data`,
+          updatedAt: sql`now()`,
         }
       });
     }

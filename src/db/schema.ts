@@ -144,3 +144,9 @@ export const userAccount = pgTable("user_account", {
   transactions: jsonb("transactions"),
   activeEventId: text("active_event_id"),
 });
+
+export const uwalemiStateTable = pgTable("uwalemi_state", {
+  id: text("id").primaryKey(), // "state"
+  data: jsonb("data").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});

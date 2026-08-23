@@ -1,9 +1,8 @@
-import { seedFromBackupFile, fetchFullStateFromDB, syncStateToRelationalDB } from "./db/cloudsql-core.ts";
+import { ensureTablesExist, seedFromBackupFile, fetchFullStateFromDB, syncStateToRelationalDB } from "./db/cloudsql-core.ts";
 import { db } from "./db/index.ts";
 import { sql } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
 
 const DB_PATH = path.join(process.cwd(), "database.json");
 let inMemoryDB: any = null;
@@ -98,49 +97,27 @@ export async function initDB() {
 
   console.log("[CloudSQL Initializer] Preparing Cloud SQL connection parameters...");
   try {
-    // Automatically provision tables inside Supabase if they do not yet exist
-    console.log("[CloudSQL Initializer] Running schema push to create tables on PostgreSQL if needed...");
-    try {
-      execSync("npx drizzle-kit push --config=src/db/drizzle.config.ts --force", { stdio: "inherit" });
-      console.log("[CloudSQL Initializer] Schema pushed successfully.");
-    } catch (migrationErr) {
-      console.log("[CloudSQL Initializer] Note: Optional schema push was skipped or database is already up-to-date. Proceeding smoothly as tables are already fully provisioned.");
-    }
+    // 1. Ensure all PostgreSQL tables and columns exist
+    await ensureTablesExist();
 
-    // Ensure the new active_event_id column exists on user_account table directly
-    try {
-      console.log("[CloudSQL Initializer] Ensuring 'active_event_id' column exists in 'user_account' table...");
-      await db.execute(sql`ALTER TABLE "user_account" ADD COLUMN IF NOT EXISTS "active_event_id" text;`);
-      console.log("[CloudSQL Initializer] Column 'active_event_id' verified/added successfully.");
-    } catch (dbAlterErr) {
-      console.error("[CloudSQL Initializer] Dynamic table verification error:", dbAlterErr);
-    }
-
-    try {
-      console.log("[CloudSQL Initializer] Ensuring 'orientation' column exists in 'template_settings' table...");
-      await db.execute(sql`ALTER TABLE "template_settings" ADD COLUMN IF NOT EXISTS "orientation" text DEFAULT 'portrait';`);
-      console.log("[CloudSQL Initializer] Column 'orientation' verified/added successfully.");
-    } catch (dbAlterErr) {
-      console.error("[CloudSQL Initializer] Dynamic table verification error:", dbAlterErr);
-    }
-
-    // 1. If SQL database is empty, seed it from existing database.json
+    // 2. If SQL database is empty, seed it from existing database.json
     // We wrap this in a timeout-like behavior or ensure it doesn't block forever
     console.log("[CloudSQL Initializer] Seeding from backup if needed...");
     await seedFromBackupFile();
 
-    // 2. Read full state from PostgreSQL
+    // 3. Read full state from PostgreSQL
     console.log("[CloudSQL Initializer] Fetching full state from PostgreSQL...");
     const state = await fetchFullStateFromDB();
     
-    // Load uwalemiState from local disk fallback to avoid blank state on load
-    if (fs.existsSync(DB_PATH)) {
+    // If PostgreSQL doesn't have uwalemiState yet, seed from local database.json and sync to PostgreSQL
+    if (!state.uwalemiState && fs.existsSync(DB_PATH)) {
       try {
         const raw = fs.readFileSync(DB_PATH, "utf-8");
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === "object" && parsed.uwalemiState) {
           state.uwalemiState = parsed.uwalemiState;
-          console.log("[CloudSQL Initializer] Loaded local uwalemiState into inMemoryDB successfully.");
+          console.log("[CloudSQL Initializer] Syncing initial local uwalemiState to PostgreSQL...");
+          await syncStateToRelationalDB(state);
         }
       } catch (err) {}
     }
@@ -201,9 +178,11 @@ export async function readDBLatest() {
     while (attempts > 0) {
       try {
         const state = await fetchFullStateFromDB();
-        const local = getLocalDBFallback();
-        if (local && typeof local === 'object' && local.uwalemiState) {
-          state.uwalemiState = local.uwalemiState;
+        if (!state.uwalemiState) {
+          const local = getLocalDBFallback();
+          if (local && typeof local === 'object' && local.uwalemiState) {
+            state.uwalemiState = local.uwalemiState;
+          }
         }
         sqlConnectionFailed = false; // Reset error flag on successful query
         inMemoryDB = state;
