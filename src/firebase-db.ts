@@ -21,7 +21,7 @@ function hasSQLConfig() {
 }
 
 function getLocalDBFallback() {
-  if (inMemoryDB && typeof inMemoryDB === "object" && Object.keys(inMemoryDB).length > 0) {
+  if (inMemoryDB && typeof inMemoryDB === "object" && Object.keys(inMemoryDB).length > 0 && inMemoryDB.uwalemiState) {
     return inMemoryDB;
   }
 
@@ -132,6 +132,19 @@ export async function initDB() {
     // 2. Read full state from PostgreSQL
     console.log("[CloudSQL Initializer] Fetching full state from PostgreSQL...");
     const state = await fetchFullStateFromDB();
+    
+    // Load uwalemiState from local disk fallback to avoid blank state on load
+    if (fs.existsSync(DB_PATH)) {
+      try {
+        const raw = fs.readFileSync(DB_PATH, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && parsed.uwalemiState) {
+          state.uwalemiState = parsed.uwalemiState;
+          console.log("[CloudSQL Initializer] Loaded local uwalemiState into inMemoryDB successfully.");
+        }
+      } catch (err) {}
+    }
+    
     inMemoryDB = state;
     console.log("[CloudSQL Initializer] Cloud SQL PostgreSQL state fetched and loaded.");
     
