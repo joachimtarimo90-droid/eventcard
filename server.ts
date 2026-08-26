@@ -2853,89 +2853,136 @@ async function startServer() {
         // Dynamic personalization per recipient
         let formattedMsg = rec.customMessage || message;
 
-        // If debt info is passed directly from client, use it; otherwise compute from uwalemiState
-        let debtAmountStr = rec.debtAmount !== undefined ? `TZS ${Number(rec.debtAmount).toLocaleString()}` : '';
-        let startMonthStr = rec.startMonth || '';
-        let endMonthStr = rec.endMonth || '';
-        let unpaidMonthsStr = rec.unpaidMonths || '';
-        let periodSummaryStr = rec.periodSummary || '';
-        let monthsCountStr = rec.monthsCount !== undefined ? String(rec.monthsCount) : '';
+        // If not already personalized, compute/fill tags
+        if (!rec.customMessage || formattedMsg.includes('{')) {
+          let feeDebtVal = rec.feeDebt !== undefined ? Number(rec.feeDebt) : (rec.debtAmount !== undefined ? Number(rec.debtAmount) : 0);
+          let lateFeeVal = rec.lateFeePenalty !== undefined ? Number(rec.lateFeePenalty) : 0;
+          let otherFinesVal = rec.otherFinesDebt !== undefined ? Number(rec.otherFinesDebt) : 0;
+          let totalFinesVal = rec.totalFinesDebt !== undefined ? Number(rec.totalFinesDebt) : (lateFeeVal + otherFinesVal);
+          let totalDebtVal = rec.debtAmount !== undefined ? Number(rec.debtAmount) : (feeDebtVal + totalFinesVal);
+          let startMonthStr = rec.startMonth || '';
+          let endMonthStr = rec.endMonth || '';
+          let unpaidMonthsStr = rec.unpaidMonths || '';
+          let periodSummaryStr = rec.periodSummary || '';
+          let monthsCountVal = rec.monthsCount !== undefined ? Number(rec.monthsCount) : 0;
+          let breakdownStr = '';
 
-        // If not provided in recipient payload, compute from uwalemiState
-        if (!debtAmountStr && (formattedMsg.includes('{debtAmount}') || formattedMsg.includes('{deni}') || formattedMsg.includes('{startMonth}') || formattedMsg.includes('{kuanzia}') || formattedMsg.includes('{unpaidMonths}') || formattedMsg.includes('{periodSummary}'))) {
-          const allMembers = uwalemiState.members || [];
-          const matchedMember = allMembers.find((m: any) => (rec.memberId && m.id === rec.memberId) || (memberNo && m.memberNo === memberNo) || (m.phone && m.phone === phone));
-          
-          if (matchedMember) {
-            const now = new Date();
-            const endY = now.getFullYear();
-            const endM = now.getMonth() + 1;
-            const defFee = Number(uwalemiState.groupSettings?.monthlyFeeDefault) || 10000;
-            const memFee = Number(matchedMember.monthlyFeeAmount) || defFee;
-            const payments = uwalemiState.monthlyPayments || [];
+          // If debt info is missing, compute from uwalemiState
+          if (!rec.debtAmount && (formattedMsg.includes('{') || formattedMsg.includes('Ada'))) {
+            const allMembers = uwalemiState.members || [];
+            const matchedMember = allMembers.find((m: any) => (rec.memberId && m.id === rec.memberId) || (memberNo && m.memberNo === memberNo) || (m.phone && m.phone === phone));
+            
+            if (matchedMember) {
+              const now = new Date();
+              const endY = now.getFullYear();
+              const endM = now.getMonth() + 1;
+              const payments = uwalemiState.monthlyPayments || [];
 
-            const unpaidArr: { monthName: string; m: number; y: number }[] = [];
-            let totalD = 0;
+              const unpaidArr: { monthName: string; m: number; y: number; debt: number }[] = [];
+              let totalFeeDebt = 0;
 
-            for (let y = 2023; y <= endY; y++) {
-              const sM = y === 2023 ? 11 : 1;
-              const eM = y === endY ? endM : 12;
-              for (let m = sM; m <= eM; m++) {
-                const pay = payments.find((p: any) => p.memberId === matchedMember.id && p.year === y && p.month === m);
-                const pAmt = pay ? (Number(pay.paidAmount) || 0) : 0;
-                let expAmt = 15000;
-                if (matchedMember.monthlyFeeAmount && matchedMember.monthlyFeeAmount !== 10000 && matchedMember.monthlyFeeAmount !== 15000 && matchedMember.monthlyFeeAmount !== 20000 && matchedMember.monthlyFeeAmount > 0) {
-                  expAmt = matchedMember.monthlyFeeAmount;
-                } else if (y > 2026 || (y === 2026 && m >= 6)) {
-                  expAmt = 20000;
-                } else {
-                  expAmt = 15000;
-                }
-                const d = Math.max(0, expAmt - pAmt);
-                if (d > 0) {
-                  totalD += d;
-                  unpaidArr.push({ monthName: `${MONTHS_SW_SHORT[m - 1]} ${y}`, m, y });
+              for (let y = 2023; y <= endY; y++) {
+                const sM = y === 2023 ? 11 : 1;
+                const eM = y === endY ? endM : 12;
+                for (let m = sM; m <= eM; m++) {
+                  const pay = payments.find((p: any) => p.memberId === matchedMember.id && p.year === y && p.month === m);
+                  const pAmt = pay ? (Number(pay.paidAmount) || 0) : 0;
+                  let expAmt = 15000;
+                  if (matchedMember.monthlyFeeAmount && matchedMember.monthlyFeeAmount !== 10000 && matchedMember.monthlyFeeAmount !== 15000 && matchedMember.monthlyFeeAmount !== 20000 && matchedMember.monthlyFeeAmount > 0) {
+                    expAmt = matchedMember.monthlyFeeAmount;
+                  } else if (y > 2026 || (y === 2026 && m >= 6)) {
+                    expAmt = 20000;
+                  } else {
+                    expAmt = 15000;
+                  }
+                  const d = Math.max(0, expAmt - pAmt);
+                  if (d > 0) {
+                    totalFeeDebt += d;
+                    unpaidArr.push({ monthName: `${MONTHS_SW_SHORT[m - 1]} ${y}`, m, y, debt: d });
+                  }
                 }
               }
-            }
 
-            debtAmountStr = `TZS ${totalD.toLocaleString()}`;
-            monthsCountStr = String(unpaidArr.length);
-            if (unpaidArr.length === 1) {
-              startMonthStr = `${MONTHS_SW[unpaidArr[0].m - 1]} ${unpaidArr[0].y}`;
-              endMonthStr = startMonthStr;
-              unpaidMonthsStr = unpaidArr[0].monthName;
-              periodSummaryStr = `mwezi wa ${startMonthStr}`;
-            } else if (unpaidArr.length > 1) {
-              startMonthStr = `${MONTHS_SW[unpaidArr[0].m - 1]} ${unpaidArr[0].y}`;
-              endMonthStr = `${MONTHS_SW[unpaidArr[unpaidArr.length - 1].m - 1]} ${unpaidArr[unpaidArr.length - 1].y}`;
-              unpaidMonthsStr = unpaidArr.map(u => u.monthName).join(', ');
-              periodSummaryStr = `kuanzia ${startMonthStr} hadi ${endMonthStr} (miezi ${unpaidArr.length})`;
-            } else {
-              periodSummaryStr = 'Hakuna deni la ada';
-              unpaidMonthsStr = 'Hakuna';
-              debtAmountStr = 'TZS 0';
+              feeDebtVal = totalFeeDebt;
+              monthsCountVal = unpaidArr.length;
+              const penaltyMonths = Math.max(0, unpaidArr.length - 3);
+              lateFeeVal = penaltyMonths * 5000;
+
+              // Meeting fines
+              const meetings = uwalemiState.meetings || [];
+              let meetingFinesDebt = 0;
+              meetings.forEach((mtg: any) => {
+                const att = (mtg.attendees || []).find((a: any) => a.memberId === matchedMember.id);
+                if (att && att.fineAmount && att.fineAmount > 0 && !att.finePaid) {
+                  meetingFinesDebt += Number(att.fineAmount) || 0;
+                }
+              });
+              otherFinesVal = meetingFinesDebt;
+              totalFinesVal = lateFeeVal + otherFinesVal;
+              totalDebtVal = feeDebtVal + totalFinesVal;
+
+              if (unpaidArr.length === 1) {
+                startMonthStr = `${MONTHS_SW[unpaidArr[0].m - 1]} ${unpaidArr[0].y}`;
+                endMonthStr = startMonthStr;
+                unpaidMonthsStr = `${unpaidArr[0].monthName}: TZS ${unpaidArr[0].debt.toLocaleString()}`;
+                periodSummaryStr = `mwezi wa ${startMonthStr}`;
+                breakdownStr = `${unpaidArr[0].monthName}: TZS ${unpaidArr[0].debt.toLocaleString()}`;
+              } else if (unpaidArr.length > 1) {
+                startMonthStr = `${MONTHS_SW[unpaidArr[0].m - 1]} ${unpaidArr[0].y}`;
+                endMonthStr = `${MONTHS_SW[unpaidArr[unpaidArr.length - 1].m - 1]} ${unpaidArr[unpaidArr.length - 1].y}`;
+                unpaidMonthsStr = unpaidArr.map(u => `${u.monthName}: TZS ${u.debt.toLocaleString()}`).join(', ');
+                periodSummaryStr = `kuanzia ${startMonthStr} hadi ${endMonthStr} (miezi ${unpaidArr.length})`;
+                breakdownStr = unpaidArr.map(u => `${u.monthName}: TZS ${u.debt.toLocaleString()}`).join(', ');
+              } else {
+                periodSummaryStr = 'Hakuna deni la ada';
+                unpaidMonthsStr = 'Hakuna';
+                breakdownStr = 'Hakuna';
+              }
             }
           }
-        }
 
-        formattedMsg = formattedMsg
-          .replace(/{name}/g, name)
-          .replace(/{memberNo}/g, memberNo)
-          .replace(/{phone}/g, phone)
-          .replace(/{debtAmount}/g, debtAmountStr || 'TZS 10,000')
-          .replace(/{deni}/g, debtAmountStr || 'TZS 10,000')
-          .replace(/{startMonth}/g, startMonthStr || 'Mwezi huu')
-          .replace(/{kuanzia}/g, startMonthStr || 'Mwezi huu')
-          .replace(/{endMonth}/g, endMonthStr || 'Mwezi huu')
-          .replace(/{hadi}/g, endMonthStr || 'Mwezi huu')
-          .replace(/{unpaidMonths}/g, unpaidMonthsStr || '')
-          .replace(/{miezi}/g, unpaidMonthsStr || '')
-          .replace(/{monthsCount}/g, monthsCountStr || '1')
-          .replace(/{idadi_ya_miezi}/g, `${monthsCountStr || '1'} miezi`)
-          .replace(/{periodSummary}/g, periodSummaryStr || '')
-          .replace(/{lipaNamba}/g, '5566778')
-          .replace(/{lipaNumber}/g, '5566778');
+          const penaltyMonthsCount = Math.max(0, monthsCountVal - 3);
+          let finesSummary = 'Hakuna faini';
+          if (totalFinesVal > 0) {
+            const parts: string[] = [];
+            if (lateFeeVal > 0) {
+              parts.push(`Faini ya kuchelewa ada: TZS ${lateFeeVal.toLocaleString()} (${penaltyMonthsCount} ${penaltyMonthsCount === 1 ? 'mwezi wa ziada' : 'miezi ya ziada'})`);
+            }
+            if (otherFinesVal > 0) {
+              parts.push(`Faini za vikao: TZS ${otherFinesVal.toLocaleString()}`);
+            }
+            finesSummary = parts.join(', ');
+          }
+
+          formattedMsg = formattedMsg
+            .replace(/{name}/g, name)
+            .replace(/{memberNo}/g, memberNo)
+            .replace(/{phone}/g, phone)
+            .replace(/{debtAmount}/g, `TZS ${totalDebtVal.toLocaleString()}`)
+            .replace(/{feeDebt}/g, `TZS ${feeDebtVal.toLocaleString()}`)
+            .replace(/{ada}/g, `TZS ${feeDebtVal.toLocaleString()}`)
+            .replace(/{faini}/g, `TZS ${totalFinesVal.toLocaleString()}`)
+            .replace(/{fainiAda}/g, `TZS ${lateFeeVal.toLocaleString()}`)
+            .replace(/{fainiVikao}/g, `TZS ${otherFinesVal.toLocaleString()}`)
+            .replace(/{fainiSummary}/g, finesSummary)
+            .replace(/{fainiMiezi}/g, `${penaltyMonthsCount} ${penaltyMonthsCount === 1 ? 'mwezi' : 'miezi'}`)
+            .replace(/{deni}/g, `TZS ${totalDebtVal.toLocaleString()}`)
+            .replace(/{jumlaKuu}/g, `TZS ${totalDebtVal.toLocaleString()}`)
+            .replace(/{startMonth}/g, startMonthStr || 'Mwezi huu')
+            .replace(/{kuanzia}/g, startMonthStr || 'Mwezi huu')
+            .replace(/{endMonth}/g, endMonthStr || 'Mwezi huu')
+            .replace(/{hadi}/g, endMonthStr || 'Mwezi huu')
+            .replace(/{unpaidMonths}/g, unpaidMonthsStr || '')
+            .replace(/{miezi}/g, unpaidMonthsStr || '')
+            .replace(/{mchanganuo}/g, breakdownStr || unpaidMonthsStr || '')
+            .replace(/{breakdown}/g, breakdownStr || unpaidMonthsStr || '')
+            .replace(/{monthsCount}/g, String(monthsCountVal || 0))
+            .replace(/{idadi_ya_miezi}/g, `${monthsCountVal || 0} miezi`)
+            .replace(/{periodSummary}/g, periodSummaryStr || '')
+            .replace(/{monthlyFee}/g, `TZS 20,000`)
+            .replace(/{lipaNamba}/g, 'M-Koba au 0758 219 298 Eva Lema')
+            .replace(/{lipaNumber}/g, 'M-Koba au 0758 219 298 Eva Lema');
+        }
 
         let status: 'delivered' | 'sent' | 'simulated' | 'failed' = 'simulated';
 
@@ -3053,7 +3100,7 @@ async function startServer() {
           recipientName: name,
           messageType: messageType || 'broadcast',
           channel: 'sms',
-          content: message.replace(/{name}/g, name).replace(/{memberNo}/g, memberNo),
+          content: formattedMsg,
           status
         });
       }
@@ -5702,47 +5749,6 @@ Tafadhali toa majibu kwenye mfumo wa JSON pekee wenye muundo ufuatao bila maelez
       res.json({ success: true, lastUpdated: db.uwalemiState.lastUpdated });
     } catch (e: any) {
       console.error("[Uwalemi State POST Error]:", e);
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // 3. POST UWALEMI SMS dispatch (dedicated for UWALEMI members)
-  app.post("/api/uwalemi/send-sms", async (req, res) => {
-    try {
-      const { recipients, message, senderId } = req.body;
-      if (!recipients || !Array.isArray(recipients) || recipients.length === 0 || !message) {
-        return res.status(400).json({ error: "Missing recipients or message content" });
-      }
-      
-      const db = await readDBLatest();
-      const results: any[] = [];
-      for (const rec of recipients) {
-        const phone = rec.phone || rec.recipient || "";
-        const logId = `uwl-msg-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        const logEntry = {
-          id: logId,
-          recipientCount: 1,
-          recipientNames: [rec.name || rec.memberName || "Mwanachama"],
-          recipientPhones: [phone],
-          messageType: "general",
-          message: message,
-          channel: "sms",
-          status: "sent",
-          sentAt: new Date().toISOString(),
-          sentBy: "Uongozi wa UWALEMI"
-        };
-
-        if (db.uwalemiState) {
-          db.uwalemiState.messageLogs = [logEntry, ...(db.uwalemiState.messageLogs || [])].slice(0, 100);
-        }
-
-        results.push({ phone, status: "sent", logId });
-      }
-
-      await writeDB(db);
-      res.json({ success: true, sentCount: results.length, results });
-    } catch (e: any) {
-      console.error("[Uwalemi SMS Error]:", e);
       res.status(500).json({ error: e.message });
     }
   });

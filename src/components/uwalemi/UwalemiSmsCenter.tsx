@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { UwalemiState, UwalemiSmsConfig, UwalemiMessageLog, UwalemiMember } from '../../types/uwalemi';
 import { 
   sendUwalemiSms, 
@@ -6,6 +6,7 @@ import {
   calculateAllMembersFeeDebts, 
   calculateMemberFeeDebt,
   formatPersonalizedUwalemiSms,
+  getSwahiliDayAndDate,
   UwalemiMemberFeeDebtInfo 
 } from '../../services/uwalemiService';
 import { 
@@ -29,7 +30,8 @@ import {
   Search,
   Calendar,
   DollarSign,
-  Tag
+  Tag,
+  Scale
 } from 'lucide-react';
 
 interface Props {
@@ -47,12 +49,22 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'compose' | 'gateway' | 'logs'>('compose');
   
+  // Default templates
+  const defaultSmartTemplate = `Habari {name}, kikundi cha UWALEMI kinakukumbusha kulipa ada zako: unadaiwa ada {feeDebt} {periodSummary} ({unpaidMonths}). Faini: {fainiSummary}. Jumla unayopaswa kulipa: {jumlaKuu}. Kamilisha kupitia {lipaNamba}. Lema, Nguvu Moja!`;
+  const defaultFinesOnlyTemplate = `Habari {name} ({memberNo}), Taarifa ya UWALEMI: Unakumbushwa kulipa faini zako: {fainiSummary}. Jumla ya faini unayodaiwa ni {faini}. Tafadhali lipa kupitia {lipaNamba}. Ahsante, Lema, Nguvu Moja!`;
+
   // Compose State
-  const [recipientFilter, setRecipientFilter] = useState<'all' | 'all_debtors' | 'unpaid_month' | 'custom'>('all_debtors');
-  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [recipientFilter, setRecipientFilter] = useState<'all' | 'all_debtors' | 'fines_only' | 'unpaid_month' | 'custom'>(
+    initialTemplate && initialTemplate.toLowerCase().includes('faini')
+      ? (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'fines_only')
+      : (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'all_debtors')
+  );
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>(
+    initialRecipients && initialRecipients.length > 0
+      ? initialRecipients.map(r => r.memberId || '').filter(Boolean)
+      : []
+  );
   const [memberSearchTerm, setMemberSearchTerm] = useState<string>('');
-  
-  const defaultSmartTemplate = `Habari {name}, kikundi cha UWALEMI kinakukumbusha kulipa ada zako za kila mwezi: unadaiwa {debtAmount} {periodSummary} ({unpaidMonths}). Tafadhali kamilisha malipo kupitia M-Koba au 0758 219 298 Eva Lema. Lema, Nguvu Moja!`;
   
   const [messageText, setMessageText] = useState<string>(
     initialTemplate || defaultSmartTemplate
@@ -61,6 +73,27 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   const [isSending, setIsSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null);
   const [previewMemberIndex, setPreviewMemberIndex] = useState<number>(0);
+
+  // Sync props when user triggers SMS from external tabs (like Fines report or Meetings)
+  useEffect(() => {
+    if (initialTemplate) {
+      setMessageText(initialTemplate);
+      if (initialTemplate.toLowerCase().includes('faini')) {
+        if (initialRecipients && initialRecipients.length > 0) {
+          setRecipientFilter('custom');
+          setSelectedMemberIds(initialRecipients.map(r => r.memberId || '').filter(Boolean));
+        } else {
+          setRecipientFilter('fines_only');
+        }
+      } else if (initialRecipients && initialRecipients.length > 0) {
+        setRecipientFilter('custom');
+        setSelectedMemberIds(initialRecipients.map(r => r.memberId || '').filter(Boolean));
+      }
+    } else if (initialRecipients && initialRecipients.length > 0) {
+      setRecipientFilter('custom');
+      setSelectedMemberIds(initialRecipients.map(r => r.memberId || '').filter(Boolean));
+    }
+  }, [initialTemplate, initialRecipients]);
 
   // Gateway Config State
   const [gatewayConfig, setGatewayConfig] = useState<UwalemiSmsConfig>(
@@ -148,6 +181,31 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
           memberNo: d.memberNo,
           memberId: d.memberId,
           debtAmount: d.totalDebt,
+          feeDebt: d.feeDebt,
+          lateFeePenalty: d.lateFeePenalty,
+          otherFinesDebt: d.otherFinesDebt,
+          totalFinesDebt: d.totalFinesDebt,
+          startMonth: d.startMonthName,
+          endMonth: d.endMonthName,
+          unpaidMonths: d.unpaidMonthsText,
+          periodSummary: d.periodSummary,
+          monthsCount: d.unpaidCount
+        }));
+    }
+
+    if (recipientFilter === 'fines_only') {
+      return memberDebts
+        .filter(d => (d.totalFinesDebt || 0) > 0 && d.status === 'active')
+        .map(d => ({
+          name: d.memberName,
+          phone: d.phone,
+          memberNo: d.memberNo,
+          memberId: d.memberId,
+          debtAmount: d.totalDebt,
+          feeDebt: d.feeDebt,
+          lateFeePenalty: d.lateFeePenalty,
+          otherFinesDebt: d.otherFinesDebt,
+          totalFinesDebt: d.totalFinesDebt,
           startMonth: d.startMonthName,
           endMonth: d.endMonthName,
           unpaidMonths: d.unpaidMonthsText,
@@ -167,6 +225,10 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
             memberNo: m.memberNo,
             memberId: m.id,
             debtAmount: debt?.totalDebt,
+            feeDebt: debt?.feeDebt,
+            lateFeePenalty: debt?.lateFeePenalty,
+            otherFinesDebt: debt?.otherFinesDebt,
+            totalFinesDebt: debt?.totalFinesDebt,
             startMonth: debt?.startMonthName,
             endMonth: debt?.endMonthName,
             unpaidMonths: debt?.unpaidMonthsText,
@@ -187,6 +249,10 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
           memberNo: m.memberNo,
           memberId: m.id,
           debtAmount: debt?.totalDebt,
+          feeDebt: debt?.feeDebt,
+          lateFeePenalty: debt?.lateFeePenalty,
+          otherFinesDebt: debt?.otherFinesDebt,
+          totalFinesDebt: debt?.totalFinesDebt,
           startMonth: debt?.startMonthName,
           endMonth: debt?.endMonthName,
           unpaidMonths: debt?.unpaidMonthsText,
@@ -198,16 +264,58 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
 
   const handleApplyTemplate = (type: string) => {
     if (type === 'smart_debt_reminder') {
-      setMessageText(`Habari {name}, kikundi cha UWALEMI kinakukumbusha kulipa ada zako za kila mwezi: unadaiwa {debtAmount} {periodSummary} ({unpaidMonths}). Tafadhali kamilisha malipo kupitia M-Koba au 0758 219 298 Eva Lema. Lema, Nguvu Moja!`);
+      setMessageText(`Habari {name}, kikundi cha UWALEMI kinakukumbusha kulipa ada zako: unadaiwa ada {feeDebt} {periodSummary} ({unpaidMonths}). Faini: {fainiSummary}. Jumla unayopaswa kulipa: {jumlaKuu}. Kamilisha kupitia {lipaNamba}. Lema, Nguvu Moja!`);
+      setMessageType('reminder');
+    } else if (type === 'fines_only_reminder') {
+      setMessageText(`Habari {name} ({memberNo}), Taarifa ya UWALEMI: Unakumbushwa kulipa faini zako: {fainiSummary}. Jumla ya faini unayodaiwa ni {faini}. Tafadhali lipa kupitia {lipaNamba}. Lema, Nguvu Moja!`);
+      setMessageType('reminder');
+    } else if (type === 'late_fee_fine_reminder') {
+      setMessageText(`Habari {name} ({memberNo}), Taarifa ya UWALEMI: Unakumbushwa kuwa una faini ya ucheleweshaji wa ada ya miezi {fainiMiezi} (zaidi ya miezi 3 ya neema) kiasi cha {fainiAda}. Tafadhali kamilisha malipo kupitia {lipaNamba}. Lema, Nguvu Moja!`);
+      setMessageType('reminder');
+    } else if (type === 'meeting_fine_reminder') {
+      setMessageText(`Habari {name} ({memberNo}), Taarifa ya UWALEMI: Unakumbushwa kulipa faini ya kutohudhuria/kuchelewa kikao kiasi cha {fainiVikao}. Tafadhali kamilisha malipo kupitia {lipaNamba}. Lema, Nguvu Moja!`);
       setMessageType('reminder');
     } else if (type === 'single_month_reminder') {
-      setMessageText(`Habari {name}, hii ni taarifa ya kukumbusha ada yako ya kikundi cha UWALEMI ya mwezi huu ({monthlyFee}). Tafadhali kamilisha malipo kupitia M-Koba au 0758 219 298 Eva Lema. Lema, Nguvu Moja!`);
+      setMessageText(`Habari {name}, hii ni taarifa ya kukumbusha ada yako ya kikundi cha UWALEMI ya mwezi huu ({monthlyFee}). Tafadhali kamilisha malipo kupitia {lipaNamba}. Lema, Nguvu Moja!`);
       setMessageType('reminder');
     } else if (type === 'emergency_alert') {
-      setMessageText(`TAARIFA YA MSIBA / DHARURA - UWALEMI\nHabari {name}, kikundi kinatangaza mchango wa dharura wa TZS 20,000 kusaidiana na mwanachama mwenzetu. Mwisho wa kuchanga ni siku 14 kuanzia leo. Lipa kupitia M-Koba au 0758 219 298 Eva Lema. Lema, Nguvu Moja!`);
+      setMessageText(`TAARIFA YA MSIBA / DHARURA - UWALEMI\nHabari {name}, kikundi kinatangaza mchango wa dharura wa TZS 20,000 kusaidiana na mwanachama mwenzetu. Mwisho wa kuchanga ni siku 14 kuanzia leo. Lipa kupitia {lipaNamba}. Lema, Nguvu Moja!`);
       setMessageType('emergency');
+    } else if (type === 'meeting_quick_reminder') {
+      const upcomingMeeting = state.meetings?.find(m => m.status === 'upcoming') || state.meetings?.[0];
+      const { dayName, formattedDate } = getSwahiliDayAndDate(upcomingMeeting?.date);
+      const timeStr = upcomingMeeting?.time || '15:00 - 18:00';
+      const locationStr = upcomingMeeting?.location || 'White House - Korogwe';
+      const titleStr = upcomingMeeting?.title || 'Kikao cha Kawaida cha Mwezi';
+
+      setMessageText(`KUMBUKIZI MUHIMU YA KIKAO - UWALEMI
+Habari {name}, unakumbushwa kuhusu ${titleStr} siku ya ${dayName} tarehe ${formattedDate}, kuanzia saa ${timeStr}, eneo: ${locationStr}.
+
+Tafadhali fika mapema bila kuchelewa ili kuepuka faini ya kuchelewa/utoro.
+
+Lema, Nguvu Moja!`);
+      setMessageType('meeting');
     } else if (type === 'meeting_notice') {
-      setMessageText(`WITO WA KIKAO CHA UWALEMI\nHabari {name}, unataarifiwa kuhudhuria kikao chetu cha kawaida siku ya Jumapili saa 8:00 mchana Ukumbi wa Vatican, Sinza. Fika bila kukosa. Lema, Nguvu Moja!`);
+      const upcomingMeeting = state.meetings?.find(m => m.status === 'upcoming') || state.meetings?.[0];
+      const { dayName, formattedDate } = getSwahiliDayAndDate(upcomingMeeting?.date);
+      const timeStr = upcomingMeeting?.time || '14:00 - 17:00';
+      const locationStr = upcomingMeeting?.location || 'Sinza, Dar es Salaam';
+
+      setMessageText(`Ndugu {name}, unakumbushwa kuwa kutakuwa na kikao cha wanachama siku ya ${dayName} ${formattedDate}, saa ${timeStr}, mahali ${locationStr}.
+
+Kikao hiki ni muhimu, kwani kuna mambo muhimu sana ya kujadili yanayohusu umoja na ustawi wa wanachama. Hivyo, tunasisitiza kila mwanachama kuhudhuria.
+
+Pia, unasisitizwa kulipa ada yako kwa wakati ili kuepuka faini na kuwa nje ya umoja kwa mujibu wa Katiba.
+
+Lipa ada yako kupitia M-Koba au kwa namba 0758219298 – Eva O. Lema.
+
+Aidha, unasisitizwa kufika kwenye kikao kwa wakati bila kuchelewa, ili kuepuka faini.
+
+Tunakuhitaji kwenye kikao. Ushiriki wako ni muhimu sana kwa maendeleo ya umoja wetu.
+
+Karibu na asante kwa ushirikiano wako.
+
+Lema, Nguvu Moja!`);
       setMessageType('meeting');
     } else if (type === 'general_broadcast') {
       setMessageText(`Habari {name}, hii ni taarifa kutoka uongozi wa kikundi cha UWALEMI. Tunaomba ushirikiano wako katika shughuli za kikundi. Lema, Nguvu Moja!`);
@@ -286,8 +394,48 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
     setIsSending(true);
     setSendResult(null);
 
+    const personalizedRecipients = targetRecipients.map(rec => {
+      let debtInfo: UwalemiMemberFeeDebtInfo | undefined;
+      if (rec.memberId && memberDebtsMap.has(rec.memberId)) {
+        debtInfo = memberDebtsMap.get(rec.memberId);
+      } else {
+        debtInfo = memberDebts.find(d => (rec.memberNo && d.memberNo === rec.memberNo) || (rec.name && d.memberName === rec.name) || (rec.phone && d.phone === rec.phone));
+      }
+
+      const effectiveDebtInfo: UwalemiMemberFeeDebtInfo = debtInfo || {
+        memberId: rec.memberId || 'temp',
+        memberNo: rec.memberNo || '',
+        memberName: rec.name || 'Mjumbe',
+        phone: rec.phone || '',
+        role: 'Mjumbe',
+        status: 'active',
+        monthlyFee: 15000,
+        feeDebt: rec.feeDebt ?? rec.debtAmount ?? 0,
+        lateFeePenalty: rec.lateFeePenalty ?? 0,
+        penaltyMonthsCount: Math.max(0, (rec.monthsCount ?? 0) - 3),
+        otherFinesDebt: rec.otherFinesDebt ?? 0,
+        otherFinesPaid: 0,
+        totalFinesDebt: rec.totalFinesDebt ?? ((rec.lateFeePenalty ?? 0) + (rec.otherFinesDebt ?? 0)),
+        totalDebt: rec.debtAmount ?? 0,
+        unpaidCount: rec.monthsCount ?? 0,
+        startMonthName: rec.startMonth || '',
+        endMonthName: rec.endMonth || '',
+        unpaidMonthsList: rec.unpaidMonths ? rec.unpaidMonths.split(', ') : [],
+        unpaidMonthsText: rec.unpaidMonths || '',
+        periodSummary: rec.periodSummary || '',
+        breakdown: []
+      };
+
+      const customMessage = formatPersonalizedUwalemiSms(messageText, effectiveDebtInfo);
+
+      return {
+        ...rec,
+        customMessage
+      };
+    });
+
     const result = await sendUwalemiSms({
-      recipients: targetRecipients,
+      recipients: personalizedRecipients,
       message: messageText,
       messageType
     });
@@ -382,11 +530,48 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  onClick={() => handleApplyTemplate('fines_only_reminder')}
+                  className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] font-bold border border-rose-500/40 cursor-pointer flex items-center gap-1 shadow-sm"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                  🚨 Faini Zote Pekee (Vikao + Ucheleweshaji)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyTemplate('meeting_fine_reminder')}
+                  className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-[11px] font-semibold border border-rose-500/30 cursor-pointer flex items-center gap-1"
+                >
+                  <Scale className="w-3 h-3 text-rose-400" />
+                  🏛️ Faini ya Kikao Pekee
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyTemplate('late_fee_fine_reminder')}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-[11px] font-semibold border border-amber-500/30 cursor-pointer"
+                >
+                  ⚠️ Faini ya Ada (&gt;Miezi 3)
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleApplyTemplate('smart_debt_reminder')}
                   className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-[11px] font-bold border border-emerald-500/30 cursor-pointer flex items-center gap-1"
                 >
                   <Sparkles className="w-3 h-3 text-amber-400" />
-                  ⚡ Ukumbusho wa Madeni Yote (Kuanzia Mwezi & Kiasi)
+                  ⚡ Ada + Faini (Smart Reminder)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyTemplate('meeting_quick_reminder')}
+                  className="px-2.5 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-[11px] font-bold border border-blue-500/40 cursor-pointer flex items-center gap-1 shadow-sm"
+                >
+                  ⏰ Kumbukizi ya Kikao
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyTemplate('meeting_notice')}
+                  className="px-2.5 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-[11px] font-semibold border border-blue-500/30 cursor-pointer flex items-center gap-1"
+                >
+                  📜 Wito Rasmi wa Kikao
                 </button>
                 <button
                   type="button"
@@ -394,13 +579,6 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
                   className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-slate-700 cursor-pointer"
                 >
                   💳 Ada ya Mwezi Huu Pekee
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleApplyTemplate('meeting_notice')}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-slate-700 cursor-pointer"
-                >
-                  📅 Wito wa Kikao
                 </button>
                 <button
                   type="button"
@@ -437,17 +615,65 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => insertTag('{debtAmount}')}
-                  title="Kiasi cha Deni Analodaiwa (mf. TZS 40,000)"
+                  onClick={() => insertTag('{feeDebt}')}
+                  title="Deni la Ada Pekee (mf. TZS 45,000)"
                   className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10.5px] font-mono border border-amber-500/40 cursor-pointer font-bold"
                 >
-                  {"{debtAmount}"}
+                  {"{feeDebt}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{faini}')}
+                  title="Jumla ya Faini Yote (Ucheleweshaji + Vikao)"
+                  className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10.5px] font-mono border border-rose-500/40 cursor-pointer font-bold"
+                >
+                  {"{faini}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{fainiAda}')}
+                  title="Faini ya Ucheleweshaji Ada (5,000/mwezi baada ya mwezi 3)"
+                  className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10.5px] font-mono border border-rose-500/40 cursor-pointer font-bold"
+                >
+                  {"{fainiAda}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{fainiVikao}')}
+                  title="Faini za Kutohudhuria Vikao"
+                  className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10.5px] font-mono border border-rose-500/40 cursor-pointer"
+                >
+                  {"{fainiVikao}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{fainiSummary}')}
+                  title="Muhtasari wa Faini (Ada na Vikao)"
+                  className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10.5px] font-mono border border-rose-500/40 cursor-pointer"
+                >
+                  {"{fainiSummary}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{fainiMiezi}')}
+                  title="Idadi ya Miezi ya Faini ya Ada"
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10.5px] font-mono border border-slate-700 cursor-pointer"
+                >
+                  {"{fainiMiezi}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{jumlaKuu}')}
+                  title="Jumla Kuu (Ada + Faini Zote)"
+                  className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[10.5px] font-mono border border-emerald-500/40 cursor-pointer font-bold"
+                >
+                  {"{jumlaKuu}"}
                 </button>
                 <button
                   type="button"
                   onClick={() => insertTag('{startMonth}')}
                   title="Mwezi Anaoanzia Kudaiwa (mf. Novemba 2023)"
-                  className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10.5px] font-mono border border-amber-500/40 cursor-pointer font-bold"
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10.5px] font-mono border border-slate-700 cursor-pointer"
                 >
                   {"{startMonth}"}
                 </button>
@@ -627,8 +853,14 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
                 <span className="font-bold text-amber-400">{debtorsCount} wajumbe</span>
               </div>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Jumla ya Madeni:</span>
-                <span className="font-bold text-rose-400">TZS {totalDebtsAmount.toLocaleString()}</span>
+                <span className="text-slate-400">Wenye Faini (Ada/Vikao):</span>
+                <span className="font-bold text-rose-400">
+                  {memberDebts.filter(d => (d.totalFinesDebt || 0) > 0 && d.status === 'active').length} wajumbe
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">Jumla ya Madeni & Faini:</span>
+                <span className="font-bold text-emerald-400">TZS {totalDebtsAmount.toLocaleString()}</span>
               </div>
             </div>
 
@@ -645,13 +877,41 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
                 />
                 <div>
                   <span className="font-bold text-white flex items-center gap-1.5">
-                    ⚡ Wenye Madeni Yote ya Ada
+                    ⚡ Wenye Madeni Yote ya Ada & Faini
                     <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono">
                       {debtorsCount}
                     </span>
                   </span>
                   <span className="text-[11px] text-slate-400 block mt-0.5">
-                    Huchuja wote wanaodaiwa ada kuanzia mwezi walioanza kudaiwa.
+                    Huchuja wote wanaodaiwa ada kuanzia mwezi walioanza kudaiwa pamoja na faini zao.
+                  </span>
+                </div>
+              </label>
+
+              <label className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                recipientFilter === 'fines_only' ? 'bg-rose-500/10 border-rose-500/40' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+              }`}>
+                <input
+                  type="radio"
+                  name="recFilter"
+                  checked={recipientFilter === 'fines_only'}
+                  onChange={() => {
+                    setRecipientFilter('fines_only');
+                    if (messageText === defaultSmartTemplate) {
+                      setMessageText(defaultFinesOnlyTemplate);
+                    }
+                  }}
+                  className="text-rose-500 mt-0.5"
+                />
+                <div>
+                  <span className="font-bold text-rose-300 flex items-center gap-1.5">
+                    🚨 Wenye Faini Pekee (Ucheleweshaji & Vikao)
+                    <span className="px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 text-[10px] font-mono">
+                      {memberDebts.filter(d => (d.totalFinesDebt || 0) > 0 && d.status === 'active').length}
+                    </span>
+                  </span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">
+                    Huchuja wote wenye faini za kuchelewa ada (&gt;miezi 3) au faini za vikao ili kuwatumia ukumbusho wa faini pekee.
                   </span>
                 </div>
               </label>

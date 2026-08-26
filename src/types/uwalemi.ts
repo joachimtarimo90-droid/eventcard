@@ -14,6 +14,7 @@ export interface UwalemiMember {
   phone: string;
   email?: string;
   residence?: string;
+  locationGroup?: 'Dar es Salaam' | 'Mkoani';
   joinDate: string;
   role: UwalemiMemberRole;
   status: UwalemiMemberStatus;
@@ -98,6 +99,27 @@ export interface UwalemiMeetingAttendee {
   status: 'present' | 'absent' | 'apology';
   fineAmount?: number;
   finePaid?: boolean;
+  fineReason?: string;
+}
+
+export interface UwalemiFinePayment {
+  id: string;
+  receiptNo: string;
+  memberId: string;
+  memberNo: string;
+  memberName: string;
+  memberPhone?: string;
+  fineType: 'kikao' | 'ada_late_fee' | 'nyingine';
+  fineTitle: string; // e.g. "Faini ya Kutohudhuria Kikao Na. 3" au "Faini ya Kuchelewa Ada (>Miezi 3)"
+  meetingId?: string;
+  meetingTitle?: string;
+  amount: number;
+  paymentDate: string;
+  paymentMethod: string; // M-Koba / M-Pesa, CRDB Bank, Taslimu, nk.
+  referenceNo?: string;
+  receivedBy?: string;
+  notes?: string;
+  createdAt?: string;
 }
 
 export interface UwalemiMeeting {
@@ -164,6 +186,7 @@ export interface UwalemiState {
   emergencyFunds: UwalemiEmergencyFund[];
   expenses: UwalemiExpense[];
   meetings: UwalemiMeeting[];
+  finePayments?: UwalemiFinePayment[];
   messageLogs: UwalemiMessageLog[];
   lastUpdated?: string;
 }

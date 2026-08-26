@@ -7,7 +7,12 @@ import {
   UwalemiMeeting, 
   UwalemiMonthlyPayment 
 } from '../types/uwalemi';
-import { sortMembersByLeadership, getDefaultFeeForMonth } from './uwalemiService';
+import { 
+  sortMembersByLeadership, 
+  getDefaultFeeForMonth, 
+  calculateMemberFeeDebt, 
+  calculateLateFeePenalty 
+} from './uwalemiService';
 
 const MONTH_NAMES_SW = [
   'Januari', 'Februari', 'Machi', 'Aprili', 'Mei', 'Juni',
@@ -862,23 +867,25 @@ export const generateFinancialReportPDF = (
     '#',
     'Namba',
     'Jina Kamili la Mjumbe',
-    'KIINGILIO (TZS)',
-    'ADA MWEZI (TZS)',
-    'FAINI (TZS)',
-    'DHARURA (TZS)',
-    'JUMLA KUU (TZS)',
-    'DENI LA ADA',
-    'HALI YA ADA'
+    'KIINGILIO',
+    'ADA MWEZI',
+    'FAINI ADA',
+    'FAINI VIKAO',
+    'DHARURA',
+    'JUMLA KUU',
+    'DENI & FAINI',
+    'HALI'
   ]] : [[
     '#',
     'Namba',
     'Jina Kamili la Mjumbe',
-    'ADA MWEZI (TZS)',
-    'FAINI (TZS)',
-    'DHARURA (TZS)',
-    'JUMLA KUU (TZS)',
-    'DENI LA ADA',
-    'HALI YA ADA'
+    'ADA MWEZI',
+    'FAINI ADA',
+    'FAINI VIKAO',
+    'DHARURA',
+    'JUMLA KUU',
+    'DENI & FAINI',
+    'HALI'
   ]];
 
   const defaultMonthlyFee = Number(state.groupSettings?.monthlyFeeDefault) || 0;
@@ -895,9 +902,13 @@ export const generateFinancialReportPDF = (
     const feePaid = recs.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
     const feeDebt = Math.max(0, feeExpected - feePaid);
 
-    // 3. Fines in Period
-    let finesPaid = 0;
-    let finesDebt = 0;
+    // Calculate late fee penalty for arrears > 3 months (5,000 TZS per month)
+    const memberDebtInfo = calculateMemberFeeDebt(m, state);
+    const lateFeePenalty = memberDebtInfo.lateFeePenalty || 0;
+
+    // 3. Meeting Fines in Period
+    let meetingFinesPaid = 0;
+    let meetingFinesDebt = 0;
     (state.meetings || []).forEach(mtg => {
       const iso = normalizeDateToISO(mtg.date);
       const mYear = iso ? Number(iso.substring(0, 4)) : 0;
@@ -905,8 +916,8 @@ export const generateFinancialReportPDF = (
       if (isPeriodMatch(periodFilter, mYear, mMonth, mtg.date)) {
         const att = (mtg.attendees || []).find(a => a.memberId === m.id);
         if (att && att.fineAmount && att.fineAmount > 0) {
-          if (att.finePaid) finesPaid += Number(att.fineAmount) || 0;
-          else finesDebt += Number(att.fineAmount) || 0;
+          if (att.finePaid) meetingFinesPaid += Number(att.fineAmount) || 0;
+          else meetingFinesDebt += Number(att.fineAmount) || 0;
         }
       }
     });
@@ -926,9 +937,10 @@ export const generateFinancialReportPDF = (
       });
     });
 
+    const totalFinesDebt = lateFeePenalty + meetingFinesDebt;
     // Grand total paid across all streams including Kiingilio (when active in 2023)
-    const grandTotalPaid = regPaid + feePaid + finesPaid + emergencyPaid;
-    const totalDebt = regDebt + feeDebt + finesDebt;
+    const grandTotalPaid = regPaid + feePaid + meetingFinesPaid + emergencyPaid;
+    const totalDebt = regDebt + feeDebt + totalFinesDebt;
     const statusText = totalDebt === 0 ? 'AMELIPA' : (feePaid > 0 || regPaid > 0) ? 'PUNGUFU' : 'ANA DENI';
 
     if (includeRegFee) {
@@ -938,7 +950,8 @@ export const generateFinancialReportPDF = (
         getMemberDisplayName(m),
         regPaid > 0 ? formatTZS(regPaid) : '0.00',
         formatTZS(feePaid),
-        formatTZS(finesPaid),
+        lateFeePenalty > 0 ? formatTZS(lateFeePenalty) : '0.00',
+        formatTZS(meetingFinesPaid),
         formatTZS(emergencyPaid),
         formatTZS(grandTotalPaid),
         formatTZS(totalDebt),
@@ -950,7 +963,8 @@ export const generateFinancialReportPDF = (
         m.memberNo,
         getMemberDisplayName(m),
         formatTZS(feePaid),
-        formatTZS(finesPaid),
+        lateFeePenalty > 0 ? formatTZS(lateFeePenalty) : '0.00',
+        formatTZS(meetingFinesPaid),
         formatTZS(emergencyPaid),
         formatTZS(grandTotalPaid),
         formatTZS(totalDebt),
@@ -959,37 +973,39 @@ export const generateFinancialReportPDF = (
     }
   });
 
-  const statusColIdx = includeRegFee ? 9 : 8;
+  const statusColIdx = includeRegFee ? 10 : 9;
 
   autoTable(doc, {
     startY: currentY,
     head: headRows,
     body: memberRows,
     theme: 'grid',
-    styles: { textColor: [0, 0, 0] },
-    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold', halign: 'center' },
-    bodyStyles: { textColor: [0, 0, 0], fontSize: 7.5, halign: 'right' },
+    styles: { textColor: [0, 0, 0], cellPadding: 1, overflow: 'linebreak' },
+    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 6.5, fontStyle: 'bold', halign: 'center', cellPadding: 1 },
+    bodyStyles: { textColor: [0, 0, 0], fontSize: 6, halign: 'right', cellPadding: 1 },
     columnStyles: includeRegFee ? {
-      0: { cellWidth: 8, halign: 'center', textColor: [0, 0, 0] },
-      1: { cellWidth: 18, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
-      2: { cellWidth: 48, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
-      3: { cellWidth: 26, halign: 'right', textColor: [0, 0, 0] },
-      4: { cellWidth: 28, halign: 'right', textColor: [0, 0, 0] },
-      5: { cellWidth: 20, halign: 'right', textColor: [0, 0, 0] },
-      6: { cellWidth: 20, halign: 'right', textColor: [0, 0, 0] },
-      7: { cellWidth: 28, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
-      8: { cellWidth: 26, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
-      9: { cellWidth: 22, halign: 'center', fontStyle: 'bold' }
+      0: { cellWidth: 6, halign: 'center', textColor: [0, 0, 0] },
+      1: { cellWidth: 12, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
+      2: { cellWidth: 30, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
+      3: { cellWidth: 15, halign: 'right', textColor: [0, 0, 0] },
+      4: { cellWidth: 16, halign: 'right', textColor: [0, 0, 0] },
+      5: { cellWidth: 15, halign: 'right', textColor: [225, 29, 72] },
+      6: { cellWidth: 15, halign: 'right', textColor: [0, 0, 0] },
+      7: { cellWidth: 15, halign: 'right', textColor: [0, 0, 0] },
+      8: { cellWidth: 19, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
+      9: { cellWidth: 20, halign: 'right', fontStyle: 'bold', textColor: [225, 29, 72] },
+      10: { cellWidth: 16, halign: 'center', fontStyle: 'bold' }
     } : {
-      0: { cellWidth: 8, halign: 'center', textColor: [0, 0, 0] },
-      1: { cellWidth: 20, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
-      2: { cellWidth: 54, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
-      3: { cellWidth: 32, halign: 'right', textColor: [0, 0, 0] },
-      4: { cellWidth: 22, halign: 'right', textColor: [0, 0, 0] },
-      5: { cellWidth: 22, halign: 'right', textColor: [0, 0, 0] },
-      6: { cellWidth: 30, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
-      7: { cellWidth: 28, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
-      8: { cellWidth: 24, halign: 'center', fontStyle: 'bold' }
+      0: { cellWidth: 6, halign: 'center', textColor: [0, 0, 0] },
+      1: { cellWidth: 13, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
+      2: { cellWidth: 35, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
+      3: { cellWidth: 18, halign: 'right', textColor: [0, 0, 0] },
+      4: { cellWidth: 16, halign: 'right', textColor: [225, 29, 72] },
+      5: { cellWidth: 16, halign: 'right', textColor: [0, 0, 0] },
+      6: { cellWidth: 16, halign: 'right', textColor: [0, 0, 0] },
+      7: { cellWidth: 21, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
+      8: { cellWidth: 22, halign: 'right', fontStyle: 'bold', textColor: [225, 29, 72] },
+      9: { cellWidth: 16, halign: 'center', fontStyle: 'bold' }
     },
     didParseCell: (data) => {
       if (data.column.index === statusColIdx) {
@@ -1150,24 +1166,26 @@ export const generateMembersLedgerPDF = (
     'Namba',
     'Jina Kamili la Mjumbe',
     'Simu',
-    'KIINGILIO (TZS)',
-    'ADA MWEZI (TZS)',
-    'FAINI (TZS)',
-    'DHARURA (TZS)',
-    'JUMLA KUU (TZS)',
-    'DENI LA ADA',
-    'HALI YA ADA'
+    'KIINGILIO',
+    'ADA MWEZI',
+    'FAINI ADA',
+    'FAINI VIKAO',
+    'DHARURA',
+    'JUMLA KUU',
+    'DENI & FAINI',
+    'HALI'
   ]] : [[
     '#',
     'Namba',
     'Jina Kamili la Mjumbe',
     'Simu',
-    'ADA MWEZI (TZS)',
-    'FAINI (TZS)',
-    'DHARURA (TZS)',
-    'JUMLA KUU (TZS)',
-    'DENI LA ADA',
-    'HALI YA ADA'
+    'ADA MWEZI',
+    'FAINI ADA',
+    'FAINI VIKAO',
+    'DHARURA',
+    'JUMLA KUU',
+    'DENI & FAINI',
+    'HALI'
   ]];
 
   let grandTotalPaidAll = 0;
@@ -1184,9 +1202,13 @@ export const generateMembersLedgerPDF = (
     const feePaid = recs.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
     const feeDebt = Math.max(0, feeExpected - feePaid);
 
-    // 3. Fines in Period
-    let finesPaid = 0;
-    let finesDebt = 0;
+    // Calculate late fee penalty for arrears > 3 months
+    const memberDebtInfo = calculateMemberFeeDebt(m, state);
+    const lateFeePenalty = memberDebtInfo.lateFeePenalty || 0;
+
+    // 3. Meeting Fines in Period
+    let meetingFinesPaid = 0;
+    let meetingFinesDebt = 0;
     meetings.forEach(mtg => {
       const iso = normalizeDateToISO(mtg.date);
       const mYear = iso ? Number(iso.substring(0, 4)) : 0;
@@ -1194,8 +1216,8 @@ export const generateMembersLedgerPDF = (
       if (isPeriodMatch(periodFilter, mYear, mMonth, mtg.date)) {
         const att = (mtg.attendees || []).find(a => a.memberId === m.id);
         if (att && att.fineAmount && att.fineAmount > 0) {
-          if (att.finePaid) finesPaid += Number(att.fineAmount) || 0;
-          else finesDebt += Number(att.fineAmount) || 0;
+          if (att.finePaid) meetingFinesPaid += Number(att.fineAmount) || 0;
+          else meetingFinesDebt += Number(att.fineAmount) || 0;
         }
       }
     });
@@ -1215,9 +1237,10 @@ export const generateMembersLedgerPDF = (
       });
     });
 
+    const totalFinesDebt = lateFeePenalty + meetingFinesDebt;
     // Grand total paid across all streams including Kiingilio (when active in 2023)
-    const grandTotalPaid = regPaid + feePaid + finesPaid + emergencyPaid;
-    const totalDebt = regDebt + feeDebt + finesDebt;
+    const grandTotalPaid = regPaid + feePaid + meetingFinesPaid + emergencyPaid;
+    const totalDebt = regDebt + feeDebt + totalFinesDebt;
 
     grandTotalPaidAll += grandTotalPaid;
     grandTotalDebtAll += totalDebt;
@@ -1232,7 +1255,8 @@ export const generateMembersLedgerPDF = (
         m.phone,
         regPaid > 0 ? formatTZS(regPaid) : '0.00',
         formatTZS(feePaid),
-        formatTZS(finesPaid),
+        lateFeePenalty > 0 ? formatTZS(lateFeePenalty) : '0.00',
+        formatTZS(meetingFinesPaid),
         formatTZS(emergencyPaid),
         formatTZS(grandTotalPaid),
         formatTZS(totalDebt),
@@ -1245,7 +1269,8 @@ export const generateMembersLedgerPDF = (
         getMemberDisplayName(m),
         m.phone,
         formatTZS(feePaid),
-        formatTZS(finesPaid),
+        lateFeePenalty > 0 ? formatTZS(lateFeePenalty) : '0.00',
+        formatTZS(meetingFinesPaid),
         formatTZS(emergencyPaid),
         formatTZS(grandTotalPaid),
         formatTZS(totalDebt),
@@ -1254,7 +1279,7 @@ export const generateMembersLedgerPDF = (
     }
   });
 
-  const statusColIdx = includeRegFee ? 10 : 9;
+  const statusColIdx = includeRegFee ? 11 : 10;
 
   autoTable(doc, {
     startY: currentY,
@@ -1262,31 +1287,33 @@ export const generateMembersLedgerPDF = (
     body: rows,
     theme: 'grid',
     styles: { textColor: [0, 0, 0] },
-    headStyles: { fillColor: [5, 150, 105], textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold', halign: 'center' },
-    bodyStyles: { textColor: [0, 0, 0], fontSize: 7.5, halign: 'right' },
+    headStyles: { fillColor: [5, 150, 105], textColor: [255, 255, 255], fontSize: 7.5, fontStyle: 'bold', halign: 'center' },
+    bodyStyles: { textColor: [0, 0, 0], fontSize: 6.5, halign: 'right' },
     columnStyles: includeRegFee ? {
-      0: { cellWidth: 8, halign: 'center', textColor: [0, 0, 0] },
+      0: { cellWidth: 6, halign: 'center', textColor: [0, 0, 0] },
+      1: { cellWidth: 14, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
+      2: { cellWidth: 34, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
+      3: { cellWidth: 20, halign: 'left', textColor: [0, 0, 0] },
+      4: { cellWidth: 18, halign: 'right', textColor: [0, 0, 0] },
+      5: { cellWidth: 18, halign: 'right', textColor: [0, 0, 0] },
+      6: { cellWidth: 16, halign: 'right', textColor: [225, 29, 72] },
+      7: { cellWidth: 16, halign: 'right', textColor: [0, 0, 0] },
+      8: { cellWidth: 16, halign: 'right', textColor: [0, 0, 0] },
+      9: { cellWidth: 20, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
+      10: { cellWidth: 20, halign: 'right', fontStyle: 'bold', textColor: [225, 29, 72] },
+      11: { cellWidth: 16, halign: 'center', fontStyle: 'bold' }
+    } : {
+      0: { cellWidth: 6, halign: 'center', textColor: [0, 0, 0] },
       1: { cellWidth: 15, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
-      2: { cellWidth: 42, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
+      2: { cellWidth: 40, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
       3: { cellWidth: 22, halign: 'left', textColor: [0, 0, 0] },
-      4: { cellWidth: 24, halign: 'right', textColor: [0, 0, 0] },
-      5: { cellWidth: 24, halign: 'right', textColor: [0, 0, 0] },
+      4: { cellWidth: 20, halign: 'right', textColor: [0, 0, 0] },
+      5: { cellWidth: 18, halign: 'right', textColor: [225, 29, 72] },
       6: { cellWidth: 18, halign: 'right', textColor: [0, 0, 0] },
       7: { cellWidth: 18, halign: 'right', textColor: [0, 0, 0] },
-      8: { cellWidth: 26, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
-      9: { cellWidth: 24, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
-      10: { cellWidth: 20, halign: 'center', fontStyle: 'bold' }
-    } : {
-      0: { cellWidth: 8, halign: 'center', textColor: [0, 0, 0] },
-      1: { cellWidth: 16, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
-      2: { cellWidth: 48, fontStyle: 'bold', halign: 'left', textColor: [0, 0, 0] },
-      3: { cellWidth: 24, halign: 'left', textColor: [0, 0, 0] },
-      4: { cellWidth: 28, halign: 'right', textColor: [0, 0, 0] },
-      5: { cellWidth: 20, halign: 'right', textColor: [0, 0, 0] },
-      6: { cellWidth: 20, halign: 'right', textColor: [0, 0, 0] },
-      7: { cellWidth: 28, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
-      8: { cellWidth: 26, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
-      9: { cellWidth: 22, halign: 'center', fontStyle: 'bold' }
+      8: { cellWidth: 22, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
+      9: { cellWidth: 22, halign: 'right', fontStyle: 'bold', textColor: [225, 29, 72] },
+      10: { cellWidth: 18, halign: 'center', fontStyle: 'bold' }
     },
     didParseCell: (data) => {
       if (data.column.index === statusColIdx) {
@@ -1528,7 +1555,287 @@ export const generateEmergencyFundReportPDF = (
 };
 
 /**
- * 4. RISITI RASMI YA MALIPO YA MWANACHAMA (Official Payment Receipt PDF)
+ * 4. RIPOTI MAALUM YA FAINI NA ADHABU ZA WANACHAMA (Official Fines & Penalties PDF Report)
+ */
+export const generateFinesReportPDF = (
+  state: UwalemiState,
+  periodFilter: ReportPeriodFilter
+): jsPDF => {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const members = sortMembersByLeadership(state.members || []);
+  const meetings = state.meetings || [];
+
+  const periodLabel = periodFilter.periodLabel || 'Kipindi Chote';
+  let currentY = drawOfficialHeader(
+    doc,
+    state,
+    'RIPOTI MAALUM YA FAINI NA ADHABU ZA WANACHAMA',
+    `Kipindi: ${periodLabel} • Kanuni ya Faini ya Ada: TZS 5,000 kila mwezi unaozidi miezi 3 ya deni`
+  );
+
+  // 1. Gather all fines metrics
+  let totalMembersWithFines = 0;
+  let totalLateFeePenalty = 0;
+  let totalMeetingFinesPaid = 0;
+  let totalMeetingFinesDebt = 0;
+
+  const memberRowsData: any[] = [];
+  const detailedMeetingFines: any[] = [];
+
+  members.forEach(m => {
+    // Late fee penalty
+    const debtInfo = calculateMemberFeeDebt(m, state);
+    const lateFee = debtInfo.lateFeePenalty || 0;
+    const unpaidMonthsCount = debtInfo.unpaidCount || 0;
+    const penaltyMonths = Math.max(0, unpaidMonthsCount - 3);
+
+    // Meeting fines in period
+    let meetingPaid = 0;
+    let meetingUnpaid = 0;
+
+    meetings.forEach(mtg => {
+      const iso = normalizeDateToISO(mtg.date);
+      const mYear = iso ? Number(iso.substring(0, 4)) : 0;
+      const mMonth = iso ? Number(iso.substring(5, 7)) : 0;
+      if (isPeriodMatch(periodFilter, mYear, mMonth, mtg.date)) {
+        const att = (mtg.attendees || []).find(a => a.memberId === m.id);
+        if (att && att.fineAmount && att.fineAmount > 0) {
+          const fAmt = Number(att.fineAmount) || 0;
+          if (att.finePaid) {
+            meetingPaid += fAmt;
+          } else {
+            meetingUnpaid += fAmt;
+          }
+          detailedMeetingFines.push({
+            date: mtg.date,
+            title: mtg.title || 'Mkutano wa UWALEMI',
+            memberNo: m.memberNo,
+            memberName: getMemberDisplayName(m),
+            amount: fAmt,
+            paid: !!att.finePaid,
+            reason: att.fineReason || (att.status === 'absent' ? 'Kutohudhuria Kikao' : 'Kuchelewa Kikao')
+          });
+        }
+      }
+    });
+
+    const totalMemberFineDebt = lateFee + meetingUnpaid;
+    const totalMemberFines = lateFee + meetingUnpaid + meetingPaid;
+
+    if (totalMemberFines > 0) {
+      totalMembersWithFines++;
+    }
+
+    totalLateFeePenalty += lateFee;
+    totalMeetingFinesPaid += meetingPaid;
+    totalMeetingFinesDebt += meetingUnpaid;
+
+    let feeDebtNote = 'Hakuna';
+    if (unpaidMonthsCount > 0) {
+      feeDebtNote = `${unpaidMonthsCount} mwezi (${penaltyMonths > 0 ? `${penaltyMonths} faini` : 'msamaha <=3M'})`;
+      if (unpaidMonthsCount > 1) {
+        feeDebtNote = `${unpaidMonthsCount} miezi (${penaltyMonths > 0 ? `${penaltyMonths} ya faini` : 'msamaha <=3M'})`;
+      }
+    }
+
+    let statusText = 'Hakuna Faini';
+    if (totalMemberFineDebt > 0) {
+      statusText = 'Inadaiwa';
+    } else if (meetingPaid > 0) {
+      statusText = 'Imelipwa';
+    }
+
+    memberRowsData.push({
+      member: m,
+      unpaidMonthsCount,
+      penaltyMonths,
+      feeDebtNote,
+      lateFee,
+      meetingUnpaid,
+      meetingPaid,
+      totalMemberFineDebt,
+      totalMemberFines,
+      statusText
+    });
+  });
+
+  const grandTotalFines = totalLateFeePenalty + totalMeetingFinesDebt + totalMeetingFinesPaid;
+  const grandTotalFinesPending = totalLateFeePenalty + totalMeetingFinesDebt;
+
+  // Render Summary KPI autoTable
+  autoTable(doc, {
+    startY: currentY,
+    head: [['MUHTASARI WA FAINI & ADHABU', 'IDADI / KIASI (TZS)', 'MAELEZO YA KANUNI']],
+    body: [
+      ['Wanachama Wenye Faini', `${totalMembersWithFines} kati ya ${members.length}`, 'Wenye faini ya kuchelewa ada au faini za vikao'],
+      ['Jumla ya Faini za Ada (>Miezi 3)', formatTZS(totalLateFeePenalty), 'TZS 5,000 kwa kila mwezi unaozidi miezi 3 ya deni'],
+      ['Faini za Vikao Zisizolipwa (Deni)', formatTZS(totalMeetingFinesDebt), 'Faini za kutofika/kuchelewa vikao ambazo hazijalipwa'],
+      ['Faini za Vikao Zilizolipwa', formatTZS(totalMeetingFinesPaid), 'Makusanyo ya faini za vikao yaliyokamilika'],
+      ['JUMLA YA FAINI ZINAZODAIWA', formatTZS(grandTotalFinesPending), 'Faini za ada zisizolipwa + faini za vikao zisizolipwa'],
+      ['JUMLA KUU YA FAINI ZOTE', formatTZS(grandTotalFines), 'Jumla ya faini zote zilizotozwa katika kipindi']
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+    bodyStyles: { fontSize: 7.5 },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 70 },
+      1: { fontStyle: 'bold', halign: 'right', cellWidth: 55, textColor: [225, 29, 72] },
+      2: { cellWidth: 145, textColor: [71, 85, 105] }
+    },
+    didParseCell: (data) => {
+      if (data.row.index === 4) {
+        data.cell.styles.fillColor = [254, 242, 242];
+        data.cell.styles.textColor = [185, 28, 28];
+        data.cell.styles.fontStyle = 'bold';
+      }
+      if (data.row.index === 5) {
+        data.cell.styles.fillColor = [241, 245, 249];
+        data.cell.styles.textColor = [15, 23, 42];
+        data.cell.styles.fontStyle = 'bold';
+      }
+    }
+  });
+
+  // @ts-ignore
+  currentY = doc.lastAutoTable.finalY + 8;
+
+  // Main Members Fines Table
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(0, 0, 0);
+  doc.text('1. ORODHA YA WANACHAMA NA MCHANGANUO WA FAINI ZAO:', 14, currentY);
+  currentY += 3;
+
+  const tableRows = memberRowsData.map((d, idx) => [
+    idx + 1,
+    d.member.memberNo,
+    getMemberDisplayName(d.member),
+    d.member.phone || '-',
+    d.feeDebtNote,
+    d.lateFee > 0 ? formatTZS(d.lateFee) : '0.00',
+    d.meetingUnpaid > 0 ? formatTZS(d.meetingUnpaid) : '0.00',
+    d.meetingPaid > 0 ? formatTZS(d.meetingPaid) : '0.00',
+    formatTZS(d.totalMemberFineDebt),
+    d.statusText
+  ]);
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [[
+      '#',
+      'Namba',
+      'Jina Kamili la Mjumbe',
+      'Simu',
+      'Deni la Ada (Miezi)',
+      'Faini Ada (>3M)',
+      'Faini Vikao (Deni)',
+      'Faini Vikao (Paid)',
+      'Jumla ya Faini',
+      'Hali'
+    ]],
+    body: tableRows,
+    theme: 'grid',
+    headStyles: { fillColor: [185, 28, 28], textColor: [255, 255, 255], fontSize: 7.5, fontStyle: 'bold', halign: 'center' },
+    bodyStyles: { textColor: [0, 0, 0], fontSize: 7, halign: 'right' },
+    columnStyles: {
+      0: { cellWidth: 7, halign: 'center' },
+      1: { cellWidth: 16, fontStyle: 'bold', halign: 'left' },
+      2: { cellWidth: 50, fontStyle: 'bold', halign: 'left' },
+      3: { cellWidth: 26, halign: 'left' },
+      4: { cellWidth: 42, halign: 'left' },
+      5: { cellWidth: 28, halign: 'right', textColor: [185, 28, 28] },
+      6: { cellWidth: 28, halign: 'right', textColor: [185, 28, 28] },
+      7: { cellWidth: 26, halign: 'right', textColor: [4, 120, 87] },
+      8: { cellWidth: 28, halign: 'right', fontStyle: 'bold', textColor: [185, 28, 28] },
+      9: { cellWidth: 19, halign: 'center', fontStyle: 'bold' }
+    },
+    didParseCell: (data) => {
+      if (data.column.index === 9 && data.section === 'body') {
+        const txt = String(data.cell.raw);
+        if (txt === 'Inadaiwa') {
+          data.cell.styles.textColor = [185, 28, 28];
+          data.cell.styles.fillColor = [254, 242, 242];
+        } else if (txt === 'Imelipwa') {
+          data.cell.styles.textColor = [4, 120, 87];
+          data.cell.styles.fillColor = [236, 253, 245];
+        } else {
+          data.cell.styles.textColor = [100, 116, 139];
+        }
+      }
+    }
+  });
+
+  // @ts-ignore
+  currentY = doc.lastAutoTable.finalY + 8;
+
+  // Table 2: Detailed Meeting Fines (if any exist)
+  if (detailedMeetingFines.length > 0) {
+    if (currentY + 40 > 185) {
+      doc.addPage();
+      currentY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`2. KUMBUKUMBU ZA FAINI ZA VIKAO VYA UWALEMI (${detailedMeetingFines.length}):`, 14, currentY);
+    currentY += 3;
+
+    const mtgRows = detailedMeetingFines.map((f, i) => [
+      i + 1,
+      f.date,
+      f.title,
+      f.memberNo,
+      f.memberName,
+      f.reason,
+      formatTZS(f.amount),
+      f.paid ? 'Imelipwa' : 'Haijalipwa'
+    ]);
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [['#', 'Tarehe', 'Kikao', 'Namba', 'Jina la Mjumbe', 'Sababu ya Faini', 'Kiasi', 'Hali']],
+      body: mtgRows,
+      theme: 'grid',
+      headStyles: { fillColor: [71, 85, 105], textColor: [255, 255, 255], fontSize: 7.5, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 7 },
+      columnStyles: {
+        0: { cellWidth: 7, halign: 'center' },
+        1: { cellWidth: 20 },
+        2: { cellWidth: 50 },
+        3: { cellWidth: 16, fontStyle: 'bold' },
+        4: { cellWidth: 50, fontStyle: 'bold' },
+        5: { cellWidth: 60 },
+        6: { cellWidth: 25, halign: 'right', fontStyle: 'bold' },
+        7: { cellWidth: 22, halign: 'center', fontStyle: 'bold' }
+      },
+      didParseCell: (data) => {
+        if (data.column.index === 7 && data.section === 'body') {
+          if (String(data.cell.raw) === 'Imelipwa') {
+            data.cell.styles.textColor = [4, 120, 87];
+          } else {
+            data.cell.styles.textColor = [185, 28, 28];
+          }
+        }
+      }
+    });
+
+    // @ts-ignore
+    currentY = doc.lastAutoTable.finalY + 8;
+  }
+
+  // Draw Signatures
+  if (currentY + 30 > 185) {
+    doc.addPage();
+    currentY = 20;
+  }
+  drawSignatures(doc, currentY, state.members || []);
+
+  return doc;
+};
+
+/**
+ * 5. RISITI RASMI YA MALIPO YA MWANACHAMA (Official Payment Receipt PDF)
  */
 export const generatePaymentReceiptPDF = (receiptData: {
   receiptNo: string;

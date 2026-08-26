@@ -24,9 +24,13 @@ import {
   AlertCircle,
   RefreshCw,
   X,
-  Check
+  Check,
+  Receipt,
+  Scale
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { UwalemiFinePaymentModal } from './UwalemiFinePaymentModal';
+import { calculateMemberFeeDebt } from '../../services/uwalemiService';
 
 interface Props {
   state: UwalemiState;
@@ -46,6 +50,13 @@ export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsF
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [viewingStatementMember, setViewingStatementMember] = useState<UwalemiMember | null>(null);
   const [viewingCardMember, setViewingCardMember] = useState<UwalemiMember | null>(null);
+
+  // Fine Payment Modal
+  const [isFinePaymentModalOpen, setIsFinePaymentModalOpen] = useState(false);
+  const [fineModalMemberId, setFineModalMemberId] = useState<string | undefined>(undefined);
+  const [fineModalMeetingId, setFineModalMeetingId] = useState<string | undefined>(undefined);
+  const [fineModalType, setFineModalType] = useState<'kikao' | 'ada_late_fee' | 'nyingine'>('kikao');
+  const [fineModalAmount, setFineModalAmount] = useState<number | undefined>(undefined);
 
   // Custom Confirmation Dialog States
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -1569,6 +1580,132 @@ export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsF
                   );
                 })()}
               </div>
+
+              {/* Faini na Adhabu */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-bold text-slate-200">3. Kumbukumbu za Faini & Risiti za Malipo</h4>
+                  <button
+                    onClick={() => {
+                      setFineModalMemberId(viewingStatementMember.id);
+                      setFineModalMeetingId(undefined);
+                      setFineModalType('kikao');
+                      setFineModalAmount(5000);
+                      setIsFinePaymentModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold cursor-pointer transition-all shadow-sm"
+                  >
+                    <Receipt className="w-3 h-3" />
+                    + Rekodi Malipo ya Faini
+                  </button>
+                </div>
+
+                {(() => {
+                  const mDebt = calculateMemberFeeDebt(viewingStatementMember, state);
+                  const memberMeetings = (state.meetings || []).flatMap(m => {
+                    const att = (m.attendees || []).find(a => a.memberId === viewingStatementMember.id || a.memberNo === viewingStatementMember.memberNo);
+                    if (att && ((att.fineAmount && att.fineAmount > 0) || att.status === 'absent')) {
+                      return [{
+                        meeting: m,
+                        att,
+                        amount: att.fineAmount || 5000,
+                        paid: att.finePaid ?? false,
+                        reason: att.fineReason || 'Kutohudhuria kikao'
+                      }];
+                    }
+                    return [];
+                  });
+
+                  const finePayments = (state.finePayments || []).filter(p => p.memberId === viewingStatementMember.id || p.memberNo === viewingStatementMember.memberNo);
+
+                  return (
+                    <div className="space-y-3">
+                      {/* Summary Cards */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                          <div className="text-[10px] text-slate-400">Deni la Faini ya Ada (&gt;3M)</div>
+                          <div className={`text-sm font-bold ${mDebt.lateFeePenalty > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+                            TZS {mDebt.lateFeePenalty.toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                          <div className="text-[10px] text-slate-400">Deni la Faini za Vikao</div>
+                          <div className="text-sm font-bold text-rose-400">
+                            TZS {memberMeetings.filter(m => !m.paid).reduce((s, m) => s + m.amount, 0).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Meeting fines breakdown */}
+                      {memberMeetings.length > 0 && (
+                        <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-900 text-slate-400 text-[10px]">
+                              <tr>
+                                <th className="p-2">Kikao</th>
+                                <th className="p-2">Tarehe</th>
+                                <th className="p-2">Sababu</th>
+                                <th className="p-2 text-right">Kiasi</th>
+                                <th className="p-2 text-center">Hali</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                              {memberMeetings.map((m, idx) => (
+                                <tr key={idx}>
+                                  <td className="p-2 font-semibold text-white">{m.meeting.title}</td>
+                                  <td className="p-2 text-slate-400">{m.meeting.date}</td>
+                                  <td className="p-2 text-slate-300">{m.reason}</td>
+                                  <td className="p-2 text-right text-rose-400 font-bold">TZS {m.amount.toLocaleString()}</td>
+                                  <td className="p-2 text-center">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                      m.paid ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                                    }`}>
+                                      {m.paid ? 'Imelipwa' : 'Deni'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {/* Fine Payment Receipts history */}
+                      {finePayments.length > 0 && (
+                        <div>
+                          <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1">
+                            Risiti za Malipo ya Faini Yaliyorekodiwa:
+                          </div>
+                          <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-slate-900 text-slate-400 text-[10px]">
+                                <tr>
+                                  <th className="p-2">Risiti #</th>
+                                  <th className="p-2">Tarehe</th>
+                                  <th className="p-2">Aina</th>
+                                  <th className="p-2 text-right">Kiasi</th>
+                                  <th className="p-2">Njia</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                                {finePayments.map(fp => (
+                                  <tr key={fp.id}>
+                                    <td className="p-2 font-mono text-emerald-400">{fp.receiptNo}</td>
+                                    <td className="p-2 text-slate-400">{fp.paymentDate}</td>
+                                    <td className="p-2">{fp.fineType === 'kikao' ? 'Faini ya Kikao' : fp.fineType === 'ada_late_fee' ? 'Faini ya Ada' : 'Faini Nyingine'}</td>
+                                    <td className="p-2 text-right font-bold text-emerald-400">TZS {fp.paidAmount.toLocaleString()}</td>
+                                    <td className="p-2 text-slate-400">{fp.paymentMethod}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
 
             <div className="flex justify-end pt-3 border-t border-slate-800">
@@ -1745,6 +1882,24 @@ export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsF
           </div>
         </div>
       )}
+
+      {/* Fine Payment & Receipt Modal */}
+      <UwalemiFinePaymentModal
+        isOpen={isFinePaymentModalOpen}
+        onClose={() => setIsFinePaymentModalOpen(false)}
+        state={state}
+        onSaveState={onSaveState}
+        initialMemberId={fineModalMemberId}
+        initialMeetingId={fineModalMeetingId}
+        initialFineType={fineModalType}
+        initialAmount={fineModalAmount}
+        onOpenSmsWithTemplate={onOpenSmsForMember ? (recipients, template) => {
+          if (recipients.length > 0) {
+            const mem = members.find(m => m.memberNo === recipients[0].memberNo || m.phone === recipients[0].phone);
+            if (mem) onOpenSmsForMember(mem);
+          }
+        } : undefined}
+      />
     </div>
   );
 };

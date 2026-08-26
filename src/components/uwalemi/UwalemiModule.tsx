@@ -279,6 +279,7 @@ export const UwalemiModule: React.FC<Props> = ({ onBackToMainApp }) => {
             {activeTab === 'reports' && (
               <UwalemiReports
                 state={state}
+                onSaveState={handleSaveState}
                 onOpenSmsWithTemplate={handleOpenSmsWithTemplate}
               />
             )}

@@ -30,6 +30,29 @@ export function sortMembersByLeadership(members: UwalemiMember[]): UwalemiMember
   });
 }
 
+export function getMemberLocationGroup(member: { residence?: string; locationGroup?: 'Dar es Salaam' | 'Mkoani' }): 'Dar es Salaam' | 'Mkoani' {
+  if (member.locationGroup === 'Mkoani' || member.locationGroup === 'Dar es Salaam') {
+    return member.locationGroup;
+  }
+  const res = (member.residence || '').toLowerCase().trim();
+  if (!res) return 'Dar es Salaam';
+
+  const mkoaniKeywords = [
+    'mkoan', 'arusha', 'moshi', 'mwanza', 'dodoma', 'tanga', 'morogoro', 'mbeya',
+    'kilimanjaro', 'iringa', 'tabora', 'kigoma', 'singida', 'mara', 'musoma',
+    'shinyanga', 'ruvuma', 'songea', 'kagera', 'bukoba', 'mtwara', 'lindi',
+    'geita', 'katavi', 'mpanda', 'njombe', 'songwe', 'vwawa', 'pemba', 'unguja',
+    'zanzibar', 'manyara', 'babati', 'simiyu', 'bariadi', 'rombo', 'hai', 'siha',
+    'same', 'mwanga', 'korogwe', 'lushoto', 'muheza', 'handeni', 'pangani', 'bagamoyo',
+    'chalinze', 'kibaha', 'pwani', 'rufiji', 'kisarawe', 'mafia', 'upcountry'
+  ];
+
+  if (mkoaniKeywords.some(kw => res.includes(kw))) {
+    return 'Mkoani';
+  }
+  return 'Dar es Salaam';
+}
+
 export const INITIAL_UWALEMI_SETTINGS: UwalemiGroupSettings = {
   groupName: 'UWALEMI',
   slogan: 'Lema, Nguvu Moja.',
@@ -79,6 +102,7 @@ export const INITIAL_UWALEMI_STATE: UwalemiState & { initialized: boolean } = {
   emergencyFunds: [],
   expenses: [],
   meetings: [],
+  finePayments: [],
   messageLogs: [],
   lastUpdated: new Date().toISOString()
 };
@@ -95,6 +119,9 @@ export async function fetchUwalemiState(): Promise<UwalemiState> {
   }
 
   const sanitizeState = (s: UwalemiState): UwalemiState => {
+    if (!s.finePayments) {
+      s.finePayments = [];
+    }
     if (s.groupSettings) {
       if (!s.groupSettings.slogan || s.groupSettings.slogan.includes('Shida na Raha')) {
         s.groupSettings.slogan = 'Lema, Nguvu Moja.';
@@ -166,8 +193,14 @@ export interface UwalemiMemberFeeDebtInfo {
   role: string;
   status: string;
   monthlyFee: number;
-  totalDebt: number;
-  unpaidCount: number;
+  feeDebt: number; // Pure monthly fee debt
+  lateFeePenalty: number; // 5,000 TZS per month exceeding 3 months of arrears
+  penaltyMonthsCount: number; // Number of months exceeding 3
+  otherFinesDebt: number; // Meeting or other group fines
+  otherFinesPaid: number;
+  totalFinesDebt: number; // lateFeePenalty + otherFinesDebt
+  totalDebt: number; // feeDebt + totalFinesDebt
+  unpaidCount: number; // total unpaid monthly fees
   startYear?: number;
   startMonth?: number;
   startMonthName: string;
@@ -203,7 +236,52 @@ export function getDefaultFeeForMonth(year: number, month: number, memberFeeAmou
 }
 
 /**
- * Calculates the exact fee debt for a specific member from the group's inception (Nov 2023) up to the current active month.
+ * Calculates late fee penalty for monthly fee debt.
+ * Rule: If unpaid months <= 3, penalty is 0 (grace period).
+ * If unpaid months > 3, penalty is (unpaid months - 3) * 5,000 TZS.
+ */
+export function calculateLateFeePenalty(unpaidMonthsCount: number): { penalty: number; penaltyMonths: number } {
+  if (unpaidMonthsCount <= 3) {
+    return { penalty: 0, penaltyMonths: 0 };
+  }
+  const penaltyMonths = unpaidMonthsCount - 3;
+  return { penalty: penaltyMonths * 5000, penaltyMonths };
+}
+
+/**
+ * Calculates other fines (e.g. meeting absence fines) for a specific member.
+ */
+export function calculateMemberOtherFines(
+  memberId: string,
+  state: UwalemiState
+): { finesPaid: number; finesDebt: number; finesList: { meetingTitle: string; date: string; amount: number; paid: boolean }[] } {
+  let finesPaid = 0;
+  let finesDebt = 0;
+  const finesList: { meetingTitle: string; date: string; amount: number; paid: boolean }[] = [];
+
+  (state.meetings || []).forEach(mtg => {
+    const att = (mtg.attendees || []).find(a => a.memberId === memberId);
+    if (att && att.fineAmount && att.fineAmount > 0) {
+      const amt = Number(att.fineAmount) || 0;
+      if (att.finePaid) {
+        finesPaid += amt;
+      } else {
+        finesDebt += amt;
+      }
+      finesList.push({
+        meetingTitle: mtg.title || 'Kikao',
+        date: mtg.date,
+        amount: amt,
+        paid: !!att.finePaid
+      });
+    }
+  });
+
+  return { finesPaid, finesDebt, finesList };
+}
+
+/**
+ * Calculates the exact fee debt and penalties for a specific member from the group's inception (Nov 2023) up to the current active month.
  */
 export function calculateMemberFeeDebt(
   member: UwalemiMember,
@@ -228,7 +306,7 @@ export function calculateMemberFeeDebt(
     debt: number;
   }[] = [];
 
-  let totalDebt = 0;
+  let feeDebt = 0;
 
   for (let y = groupStartYear; y <= endYear; y++) {
     const startM = y === groupStartYear ? groupStartMonth : 1;
@@ -241,7 +319,7 @@ export function calculateMemberFeeDebt(
       const debt = Math.max(0, expectedAmount - paidAmount);
 
       if (debt > 0) {
-        totalDebt += debt;
+        feeDebt += debt;
         unpaidItems.push({
           year: y,
           month: m,
@@ -255,6 +333,11 @@ export function calculateMemberFeeDebt(
   }
 
   const unpaidCount = unpaidItems.length;
+  const { penalty: lateFeePenalty, penaltyMonths: penaltyMonthsCount } = calculateLateFeePenalty(unpaidCount);
+  const { finesPaid: otherFinesPaid, finesDebt: otherFinesDebt } = calculateMemberOtherFines(member.id, state);
+  const totalFinesDebt = lateFeePenalty + otherFinesDebt;
+  const totalDebt = feeDebt + totalFinesDebt;
+
   let startMonthName = '';
   let endMonthName = '';
   let periodSummary = 'Hakuna deni la ada';
@@ -283,6 +366,12 @@ export function calculateMemberFeeDebt(
     role: member.role || 'Mjumbe',
     status: member.status || 'active',
     monthlyFee: getDefaultFeeForMonth(endYear, endMonth, member.monthlyFeeAmount),
+    feeDebt,
+    lateFeePenalty,
+    penaltyMonthsCount,
+    otherFinesDebt,
+    otherFinesPaid,
+    totalFinesDebt,
     totalDebt,
     unpaidCount,
     startYear: unpaidItems[0]?.year,
@@ -312,6 +401,30 @@ export function calculateAllMembersFeeDebts(
     .map(m => calculateMemberFeeDebt(m, state, targetYear, targetMonth));
 }
 
+export function getSwahiliDayAndDate(dateStr?: string): { dayName: string; formattedDate: string } {
+  if (!dateStr) return { dayName: 'Jumapili', formattedDate: '' };
+  try {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      const d = new Date(year, month, day);
+      const swahiliDays = ['Jumapili', 'Jumatatu', 'Jumanne', 'Jumatano', 'Alhamisi', 'Ijumaa', 'Jumamosi'];
+      const swahiliMonths = [
+        'Januari', 'Februari', 'Machi', 'Aprili', 'Mei', 'Juni',
+        'Julai', 'Agosti', 'Septemba', 'Oktoba', 'Novemba', 'Desemba'
+      ];
+      const dayName = !isNaN(d.getDay()) ? swahiliDays[d.getDay()] : 'Jumapili';
+      const formattedDate = `${day} ${swahiliMonths[month]} ${year}`;
+      return { dayName, formattedDate };
+    }
+    return { dayName: 'Jumapili', formattedDate: dateStr };
+  } catch {
+    return { dayName: 'Jumapili', formattedDate: dateStr || '' };
+  }
+}
+
 /**
  * Replaces dynamic variables in a template message for a specific member.
  */
@@ -319,18 +432,46 @@ export function formatPersonalizedUwalemiSms(
   template: string,
   debtInfo: UwalemiMemberFeeDebtInfo
 ): string {
-  const formattedDebt = `TZS ${debtInfo.totalDebt.toLocaleString()}`;
+  const formattedFeeDebt = `TZS ${(debtInfo.feeDebt ?? debtInfo.totalDebt).toLocaleString()}`;
+  const formattedLatePenalty = `TZS ${(debtInfo.lateFeePenalty ?? 0).toLocaleString()}`;
+  const formattedOtherFines = `TZS ${(debtInfo.otherFinesDebt ?? 0).toLocaleString()}`;
+  const formattedTotalFines = `TZS ${(debtInfo.totalFinesDebt ?? 0).toLocaleString()}`;
+  const formattedTotalDebt = `TZS ${debtInfo.totalDebt.toLocaleString()}`;
+  const penaltyMonths = debtInfo.penaltyMonthsCount ?? 0;
+
   const breakdownText = debtInfo.breakdown && debtInfo.breakdown.length > 0
     ? debtInfo.breakdown.map(item => `${item.monthName}: TZS ${item.debt.toLocaleString()}`).join(', ')
     : debtInfo.unpaidMonthsText;
+
+  let finesSummaryText = '';
+  if (debtInfo.totalFinesDebt > 0) {
+    const parts: string[] = [];
+    if (debtInfo.lateFeePenalty > 0) {
+      parts.push(`Faini ya kuchelewa ada: TZS ${debtInfo.lateFeePenalty.toLocaleString()} (${penaltyMonths} ${penaltyMonths === 1 ? 'mwezi wa ziada' : 'miezi ya ziada'})`);
+    }
+    if (debtInfo.otherFinesDebt > 0) {
+      parts.push(`Faini za vikao: TZS ${debtInfo.otherFinesDebt.toLocaleString()}`);
+    }
+    finesSummaryText = parts.join(', ');
+  } else {
+    finesSummaryText = 'Hakuna faini';
+  }
 
   return template
     .replace(/{name}/g, debtInfo.memberName)
     .replace(/{memberNo}/g, debtInfo.memberNo)
     .replace(/{phone}/g, debtInfo.phone)
     .replace(/{role}/g, debtInfo.role)
-    .replace(/{debtAmount}/g, formattedDebt)
-    .replace(/{deni}/g, formattedDebt)
+    .replace(/{debtAmount}/g, formattedTotalDebt)
+    .replace(/{feeDebt}/g, formattedFeeDebt)
+    .replace(/{ada}/g, formattedFeeDebt)
+    .replace(/{faini}/g, formattedTotalFines)
+    .replace(/{fainiAda}/g, formattedLatePenalty)
+    .replace(/{fainiVikao}/g, formattedOtherFines)
+    .replace(/{fainiSummary}/g, finesSummaryText)
+    .replace(/{fainiMiezi}/g, `${penaltyMonths} ${penaltyMonths === 1 ? 'mwezi' : 'miezi'}`)
+    .replace(/{deni}/g, formattedTotalDebt)
+    .replace(/{jumlaKuu}/g, formattedTotalDebt)
     .replace(/{startMonth}/g, debtInfo.startMonthName || 'Mwezi huu')
     .replace(/{kuanzia}/g, debtInfo.startMonthName || 'Mwezi huu')
     .replace(/{endMonth}/g, debtInfo.endMonthName || 'Mwezi huu')
@@ -354,11 +495,16 @@ export async function sendUwalemiSms(payload: {
     memberNo?: string;
     memberId?: string;
     debtAmount?: number;
+    feeDebt?: number;
+    lateFeePenalty?: number;
+    otherFinesDebt?: number;
+    totalFinesDebt?: number;
     startMonth?: string;
     endMonth?: string;
     unpaidMonths?: string;
     periodSummary?: string;
     monthsCount?: number;
+    customMessage?: string;
   }[];
   message: string;
   messageType: 'receipt' | 'reminder' | 'emergency' | 'meeting' | 'broadcast';
