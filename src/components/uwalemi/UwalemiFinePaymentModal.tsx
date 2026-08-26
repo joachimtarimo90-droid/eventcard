@@ -66,7 +66,7 @@ export const UwalemiFinePaymentModal: React.FC<Props> = ({
   const [selectedMeetingId, setSelectedMeetingId] = useState<string>(
     initialMeetingId || ''
   );
-  const [amount, setAmount] = useState<number>(initialAmount || 5000);
+  const [amount, setAmount] = useState<number>(initialAmount || 10000);
   const [paymentDate, setPaymentDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
@@ -131,7 +131,7 @@ export const UwalemiFinePaymentModal: React.FC<Props> = ({
         const currentTarget = unpaidMeetingFines.find(u => u.meeting.id === selectedMeetingId) || first;
         setAmount(currentTarget.fineAmount);
       } else {
-        setAmount(state.groupSettings?.meetingFineDefault || 5000);
+        setAmount(state.groupSettings?.meetingFineDefault || 10000);
       }
     } else if (fineType === 'ada_late_fee') {
       if (memberDebtInfo && memberDebtInfo.lateFeePenalty > 0) {

@@ -59,7 +59,8 @@ export const INITIAL_UWALEMI_SETTINGS: UwalemiGroupSettings = {
   registrationFeeDefault: 0,
   monthlyFeeDefault: 0,
   emergencyFeeDefault: 0,
-  meetingFineDefault: 0,
+  meetingFineDefault: 10000,
+  meetingFineLateDefault: 2000,
   paymentMethods: [
     {
       id: 'pm-1',
@@ -126,7 +127,32 @@ export async function fetchUwalemiState(): Promise<UwalemiState> {
       if (!s.groupSettings.slogan || s.groupSettings.slogan.includes('Shida na Raha')) {
         s.groupSettings.slogan = 'Lema, Nguvu Moja.';
       }
+      if (!s.groupSettings.meetingFineDefault || s.groupSettings.meetingFineDefault === 5000 || s.groupSettings.meetingFineDefault === 0) {
+        s.groupSettings.meetingFineDefault = 10000;
+      }
+      if (!s.groupSettings.meetingFineLateDefault || s.groupSettings.meetingFineLateDefault === 0) {
+        s.groupSettings.meetingFineLateDefault = 2000;
+      }
+    } else {
+      s.groupSettings = { ...INITIAL_UWALEMI_SETTINGS };
     }
+
+    // Automatically upgrade any existing meeting records that were recorded with old default 5,000 TZS
+    if (Array.isArray(s.meetings)) {
+      s.meetings = s.meetings.map(m => ({
+        ...m,
+        attendees: (m.attendees || []).map(a => {
+          if (a.status === 'absent' && (!a.fineAmount || a.fineAmount === 5000 || a.fineAmount === 0)) {
+            return { ...a, fineAmount: 10000 };
+          }
+          if (a.status === 'late' && (!a.fineAmount || a.fineAmount === 5000 || a.fineAmount === 0)) {
+            return { ...a, fineAmount: 2000 };
+          }
+          return a;
+        })
+      }));
+    }
+
     // Do NOT override member fee amounts or registration fees automatically.
     // Preserve manual entries exactly as set by the user.
     return s;
@@ -259,21 +285,40 @@ export function calculateMemberOtherFines(
   let finesDebt = 0;
   const finesList: { meetingTitle: string; date: string; amount: number; paid: boolean }[] = [];
 
+  const member = (state.members || []).find(m => m.id === memberId || m.memberNo === memberId);
+  const targetMemberId = member?.id || memberId;
+  const targetMemberNo = member?.memberNo || memberId;
+
+  const defaultAbsentFine = state.groupSettings?.meetingFineDefault || 10000;
+  const defaultLateFine = state.groupSettings?.meetingFineLateDefault || 2000;
+
   (state.meetings || []).forEach(mtg => {
-    const att = (mtg.attendees || []).find(a => a.memberId === memberId);
-    if (att && att.fineAmount && att.fineAmount > 0) {
-      const amt = Number(att.fineAmount) || 0;
-      if (att.finePaid) {
-        finesPaid += amt;
-      } else {
-        finesDebt += amt;
+    const att = (mtg.attendees || []).find(a =>
+      (a.memberId && a.memberId === targetMemberId) ||
+      (a.memberNo && a.memberNo === targetMemberNo) ||
+      (a.memberId && a.memberId === targetMemberNo)
+    );
+
+    if (att) {
+      let amt = Number(att.fineAmount) || 0;
+      if (amt === 0) {
+        if (att.status === 'absent') amt = defaultAbsentFine;
+        else if (att.status === 'late') amt = defaultLateFine;
       }
-      finesList.push({
-        meetingTitle: mtg.title || 'Kikao',
-        date: mtg.date,
-        amount: amt,
-        paid: !!att.finePaid
-      });
+
+      if (amt > 0) {
+        if (att.finePaid) {
+          finesPaid += amt;
+        } else {
+          finesDebt += amt;
+        }
+        finesList.push({
+          meetingTitle: mtg.title || 'Kikao',
+          date: mtg.date,
+          amount: amt,
+          paid: !!att.finePaid
+        });
+      }
     }
   });
 

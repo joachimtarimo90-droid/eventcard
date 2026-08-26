@@ -96,7 +96,7 @@ export interface UwalemiMeetingAttendee {
   memberId: string;
   memberNo: string;
   memberName: string;
-  status: 'present' | 'absent' | 'apology';
+  status: 'present' | 'absent' | 'apology' | 'late';
   fineAmount?: number;
   finePaid?: boolean;
   fineReason?: string;
@@ -162,6 +162,7 @@ export interface UwalemiGroupSettings {
   monthlyFeeDefault: number;
   emergencyFeeDefault: number;
   meetingFineDefault: number;
+  meetingFineLateDefault?: number;
   paymentMethods: UwalemiPaymentMethod[];
   smsConfig: UwalemiSmsConfig;
   constitutionSummary?: string;

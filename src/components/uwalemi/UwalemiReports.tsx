@@ -1516,7 +1516,7 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
                                     setFinePaymentModalMemberId(d.member.id);
                                     setFinePaymentModalMeetingId(undefined);
                                     setFinePaymentModalType(d.meetingUnpaid > 0 ? 'kikao' : d.lateFee > 0 ? 'ada_late_fee' : 'kikao');
-                                    setFinePaymentModalAmount(d.totalMemberFineDebt > 0 ? d.totalMemberFineDebt : 5000);
+                                    setFinePaymentModalAmount(d.totalMemberFineDebt > 0 ? d.totalMemberFineDebt : 10000);
                                     setIsFinePaymentModalOpen(true);
                                   }}
                                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-200 hover:text-white text-[11px] font-semibold transition-all cursor-pointer border border-slate-700 hover:border-rose-500"

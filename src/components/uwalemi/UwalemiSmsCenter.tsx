@@ -56,7 +56,7 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   const defaultFinesOnlyTemplate = `Habari {name} ({memberNo}), Taarifa ya UWALEMI: Unakumbushwa kulipa faini zako: {fainiSummary}. Jumla ya faini unayodaiwa ni {faini}. Tafadhali lipa kupitia {lipaNamba}. Ahsante, Lema, Nguvu Moja!`;
 
   // Compose State
-  const [recipientFilter, setRecipientFilter] = useState<'all' | 'all_debtors' | 'fines_only' | 'unpaid_month' | 'custom'>(
+  const [recipientFilter, setRecipientFilter] = useState<'all' | 'all_debtors' | 'fines_only' | 'meeting_fines_only' | 'late_fee_fines_only' | 'unpaid_month' | 'custom'>(
     initialTemplate && initialTemplate.toLowerCase().includes('faini')
       ? (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'fines_only')
       : (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'all_debtors')
@@ -207,6 +207,48 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
     if (recipientFilter === 'fines_only') {
       return memberDebts
         .filter(d => (d.totalFinesDebt || 0) > 0 && d.status === 'active')
+        .map(d => ({
+          name: d.memberName,
+          phone: d.phone,
+          memberNo: d.memberNo,
+          memberId: d.memberId,
+          debtAmount: d.totalDebt,
+          feeDebt: d.feeDebt,
+          lateFeePenalty: d.lateFeePenalty,
+          otherFinesDebt: d.otherFinesDebt,
+          totalFinesDebt: d.totalFinesDebt,
+          startMonth: d.startMonthName,
+          endMonth: d.endMonthName,
+          unpaidMonths: d.unpaidMonthsText,
+          periodSummary: d.periodSummary,
+          monthsCount: d.unpaidCount
+        }));
+    }
+
+    if (recipientFilter === 'meeting_fines_only') {
+      return memberDebts
+        .filter(d => (d.otherFinesDebt || 0) > 0 && d.status === 'active')
+        .map(d => ({
+          name: d.memberName,
+          phone: d.phone,
+          memberNo: d.memberNo,
+          memberId: d.memberId,
+          debtAmount: d.totalDebt,
+          feeDebt: d.feeDebt,
+          lateFeePenalty: d.lateFeePenalty,
+          otherFinesDebt: d.otherFinesDebt,
+          totalFinesDebt: d.totalFinesDebt,
+          startMonth: d.startMonthName,
+          endMonth: d.endMonthName,
+          unpaidMonths: d.unpaidMonthsText,
+          periodSummary: d.periodSummary,
+          monthsCount: d.unpaidCount
+        }));
+    }
+
+    if (recipientFilter === 'late_fee_fines_only') {
+      return memberDebts
+        .filter(d => (d.lateFeePenalty || 0) > 0 && d.status === 'active')
         .map(d => ({
           name: d.memberName,
           phone: d.phone,
@@ -802,15 +844,25 @@ Lema, Nguvu Moja!`);
                 {previewDebtInfo.totalDebt > 0 ? (
                   <>
                     <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 font-bold border border-amber-500/30">
-                      Deni: TZS {previewDebtInfo.totalDebt.toLocaleString()}
+                      Ada: TZS {(previewDebtInfo.feeDebt ?? previewDebtInfo.totalDebt).toLocaleString()}
                     </span>
-                    <span className="px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30">
-                      Kuanzia: {previewDebtInfo.startMonthName} ({previewDebtInfo.unpaidCount} miezi)
+                    {(previewDebtInfo.lateFeePenalty || 0) > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 font-bold border border-rose-500/30">
+                        Faini Ada: TZS {previewDebtInfo.lateFeePenalty.toLocaleString()}
+                      </span>
+                    )}
+                    {(previewDebtInfo.otherFinesDebt || 0) > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 font-bold border border-indigo-500/30">
+                        Faini Vikao: TZS {previewDebtInfo.otherFinesDebt.toLocaleString()}
+                      </span>
+                    )}
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 font-bold border border-emerald-500/30">
+                      Jumla Kuu: TZS {previewDebtInfo.totalDebt.toLocaleString()}
                     </span>
                   </>
                 ) : (
                   <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 font-bold border border-emerald-500/30">
-                    ✓ Hana deni la ada
+                    ✓ Hana deni
                   </span>
                 )}
               </div>
@@ -904,7 +956,10 @@ Lema, Nguvu Moja!`);
                   type="radio"
                   name="recFilter"
                   checked={recipientFilter === 'all_debtors'}
-                  onChange={() => setRecipientFilter('all_debtors')}
+                  onChange={() => {
+                    setRecipientFilter('all_debtors');
+                    handleApplyTemplate('smart_debt_reminder');
+                  }}
                   className="text-emerald-500 mt-0.5"
                 />
                 <div>
@@ -929,21 +984,71 @@ Lema, Nguvu Moja!`);
                   checked={recipientFilter === 'fines_only'}
                   onChange={() => {
                     setRecipientFilter('fines_only');
-                    if (messageText === defaultSmartTemplate) {
-                      setMessageText(defaultFinesOnlyTemplate);
-                    }
+                    handleApplyTemplate('fines_only_reminder');
                   }}
                   className="text-rose-500 mt-0.5"
                 />
                 <div>
                   <span className="font-bold text-rose-300 flex items-center gap-1.5">
-                    🚨 Wenye Faini Pekee (Ucheleweshaji & Vikao)
+                    🚨 Wenye Faini Zote (Vikao + Ucheleweshaji Ada)
                     <span className="px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 text-[10px] font-mono">
                       {memberDebts.filter(d => (d.totalFinesDebt || 0) > 0 && d.status === 'active').length}
                     </span>
                   </span>
                   <span className="text-[11px] text-slate-400 block mt-0.5">
-                    Huchuja wote wenye faini za kuchelewa ada (&gt;miezi 3) au faini za vikao ili kuwatumia ukumbusho wa faini pekee.
+                    Huchuja wote wenye faini za aina yoyote (faini za vikao au ucheleweshaji wa ada).
+                  </span>
+                </div>
+              </label>
+
+              <label className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                recipientFilter === 'meeting_fines_only' ? 'bg-indigo-500/10 border-indigo-500/40' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+              }`}>
+                <input
+                  type="radio"
+                  name="recFilter"
+                  checked={recipientFilter === 'meeting_fines_only'}
+                  onChange={() => {
+                    setRecipientFilter('meeting_fines_only');
+                    handleApplyTemplate('meeting_fine_reminder');
+                  }}
+                  className="text-indigo-500 mt-0.5"
+                />
+                <div>
+                  <span className="font-bold text-indigo-300 flex items-center gap-1.5">
+                    🏛️ Faini za Vikao Pekee (Utoro / Kuchelewa)
+                    <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-mono">
+                      {memberDebts.filter(d => (d.otherFinesDebt || 0) > 0 && d.status === 'active').length}
+                    </span>
+                  </span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">
+                    Huchuja wajumbe wanaodaiwa faini za kutokuhudhuria au kuchelewa vikao pekee.
+                  </span>
+                </div>
+              </label>
+
+              <label className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                recipientFilter === 'late_fee_fines_only' ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+              }`}>
+                <input
+                  type="radio"
+                  name="recFilter"
+                  checked={recipientFilter === 'late_fee_fines_only'}
+                  onChange={() => {
+                    setRecipientFilter('late_fee_fines_only');
+                    handleApplyTemplate('late_fee_fine_reminder');
+                  }}
+                  className="text-amber-500 mt-0.5"
+                />
+                <div>
+                  <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                    ⚠️ Faini za Ucheleweshaji Ada Pekee (&gt;Miezi 3)
+                    <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono">
+                      {memberDebts.filter(d => (d.lateFeePenalty || 0) > 0 && d.status === 'active').length}
+                    </span>
+                  </span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">
+                    Huchuja wajumbe wanaodaiwa faini ya kuchelewesha ada (wanaolundika zaidi ya miezi 3).
                   </span>
                 </div>
               </label>
@@ -955,7 +1060,10 @@ Lema, Nguvu Moja!`);
                   type="radio"
                   name="recFilter"
                   checked={recipientFilter === 'unpaid_month'}
-                  onChange={() => setRecipientFilter('unpaid_month')}
+                  onChange={() => {
+                    setRecipientFilter('unpaid_month');
+                    handleApplyTemplate('single_month_reminder');
+                  }}
                   className="text-emerald-500 mt-0.5"
                 />
                 <div>

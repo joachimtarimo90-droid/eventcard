@@ -54,7 +54,7 @@ export const UwalemiMeetings: React.FC<Props> = ({ state, onSaveState, onOpenSms
   const [attendanceSearch, setAttendanceSearch] = useState<string>('');
 
   // Broadcast Messaging Center in Meetings
-  const [broadcastTarget, setBroadcastTarget] = useState<'all' | 'dar' | 'mkoani' | 'single' | 'selected' | 'absent' | 'unconfirmed' | 'leaders'>('all');
+  const [broadcastTarget, setBroadcastTarget] = useState<'all' | 'dar' | 'mkoani' | 'single' | 'selected' | 'absent' | 'late' | 'unconfirmed' | 'leaders'>('all');
   const [selectedSingleMemberId, setSelectedSingleMemberId] = useState<string>('');
   const [selectedCustomMemberIds, setSelectedCustomMemberIds] = useState<string[]>([]);
   const [memberFilterSearch, setMemberFilterSearch] = useState<string>('');
@@ -201,7 +201,7 @@ Ndugu {name}, yafuatayo ni maazimio makuu yaliyofikiwa katika ${selectedMeeting.
     }
 
     if (type === 'fine_absentee') {
-      const fineAmt = (state.groupSettings.meetingFineDefault || 5000).toLocaleString();
+      const fineAmt = (state.groupSettings.meetingFineDefault || 10000).toLocaleString();
       return `TAARIFA YA FAINI YA KIKAO - UWALEMI
 Habari {name} ({memberNo}), unataarifiwa kuwa kwa kutohudhuria ${selectedMeeting.title} ya tarehe ${formattedDate} bila kutoa udhuru rasmi, umetozwa faini ya TZS ${fineAmt} kwa mujibu wa Katiba ya UWALEMI.
 
@@ -255,6 +255,7 @@ Lema, Nguvu Moja!`;
   // Compute attendance stats
   const attendees = selectedMeeting?.attendees || [];
   const presentCount = attendees.filter(a => a.status === 'present').length;
+  const lateCount = attendees.filter(a => a.status === 'late').length;
   const apologyCount = attendees.filter(a => a.status === 'apology').length;
   const absentCount = attendees.filter(a => a.status === 'absent').length;
 
@@ -272,15 +273,17 @@ Lema, Nguvu Moja!`;
   });
 
   const darPresentCount = darAttendees.filter(a => a.status === 'present').length;
+  const darLateCount = darAttendees.filter(a => a.status === 'late').length;
   const darApologyCount = darAttendees.filter(a => a.status === 'apology').length;
   const darAbsentCount = darAttendees.filter(a => a.status === 'absent').length;
 
   const mkoaniPresentCount = mkoaniAttendees.filter(a => a.status === 'present').length;
+  const mkoaniLateCount = mkoaniAttendees.filter(a => a.status === 'late').length;
   const mkoaniApologyCount = mkoaniAttendees.filter(a => a.status === 'apology').length;
   const mkoaniAbsentCount = mkoaniAttendees.filter(a => a.status === 'absent').length;
 
   // Quick Batch Attendance Handler for Groups
-  const handleMarkGroupAttendance = async (group: 'Dar es Salaam' | 'Mkoani', status: 'present' | 'apology' | 'absent') => {
+  const handleMarkGroupAttendance = async (group: 'Dar es Salaam' | 'Mkoani', status: 'present' | 'apology' | 'absent' | 'late') => {
     if (!selectedMeeting) return;
     const targetGroupMembers = group === 'Dar es Salaam' ? darMembers : mkoaniMembers;
     const targetIds = targetGroupMembers.map(m => m.id);
@@ -288,12 +291,18 @@ Lema, Nguvu Moja!`;
     const updatedAttendees = members.map(mem => {
       const existing = (selectedMeeting.attendees || []).find(a => a.memberId === mem.id);
       if (targetIds.includes(mem.id)) {
+        let fineAmt = 0;
+        if (status === 'absent') {
+          fineAmt = state.groupSettings.meetingFineDefault || 10000;
+        } else if (status === 'late') {
+          fineAmt = state.groupSettings.meetingFineLateDefault || 2000;
+        }
         return {
           memberId: mem.id,
           memberNo: mem.memberNo,
           memberName: mem.fullName,
           status,
-          fineAmount: status === 'absent' ? (state.groupSettings.meetingFineDefault || 5000) : 0,
+          fineAmount: fineAmt,
           finePaid: false
         };
       }
@@ -580,17 +589,21 @@ Lema, Nguvu Moja!`;
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 pt-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
                 <div className="p-3 bg-slate-900 rounded-lg text-center border border-slate-800">
-                  <span className="text-xs text-slate-400 block">Waliohudhuria</span>
+                  <span className="text-[11px] text-slate-400 block">Waliohudhuria</span>
                   <span className="text-lg font-bold text-emerald-400 mt-0.5 block">{presentCount}</span>
                 </div>
                 <div className="p-3 bg-slate-900 rounded-lg text-center border border-slate-800">
-                  <span className="text-xs text-slate-400 block">Udhuru</span>
+                  <span className="text-[11px] text-slate-400 block">Kuchelewa (2k)</span>
+                  <span className="text-lg font-bold text-indigo-400 mt-0.5 block">{lateCount}</span>
+                </div>
+                <div className="p-3 bg-slate-900 rounded-lg text-center border border-slate-800">
+                  <span className="text-[11px] text-slate-400 block">Udhuru</span>
                   <span className="text-lg font-bold text-amber-400 mt-0.5 block">{apologyCount}</span>
                 </div>
                 <div className="p-3 bg-slate-900 rounded-lg text-center border border-slate-800">
-                  <span className="text-xs text-slate-400 block">Wasiohudhuria</span>
+                  <span className="text-[11px] text-slate-400 block">Watoro (10k)</span>
                   <span className="text-lg font-bold text-rose-400 mt-0.5 block">{absentCount}</span>
                 </div>
               </div>
@@ -769,15 +782,21 @@ Lema, Nguvu Moja!`;
           };
           const locGroup = getMemberLocationGroup(m);
 
-          const updateStatus = (newStatus: 'present' | 'absent' | 'apology') => {
+          const updateStatus = (newStatus: 'present' | 'absent' | 'apology' | 'late') => {
             const updatedAttendees = members.map(mem => {
               if (mem.id === m.id) {
+                let fineAmt = 0;
+                if (newStatus === 'absent') {
+                  fineAmt = state.groupSettings.meetingFineDefault || 10000;
+                } else if (newStatus === 'late') {
+                  fineAmt = state.groupSettings.meetingFineLateDefault || 2000;
+                }
                 return {
                   memberId: mem.id,
                   memberNo: mem.memberNo,
                   memberName: mem.fullName,
                   status: newStatus,
-                  fineAmount: newStatus === 'absent' ? (state.groupSettings.meetingFineDefault || 5000) : 0,
+                  fineAmount: fineAmt,
                   finePaid: false
                 };
               }
@@ -796,12 +815,13 @@ Lema, Nguvu Moja!`;
             const updatedAttendees = members.map(mem => {
               const existing = (selectedMeeting.attendees || []).find(a => a.memberId === mem.id);
               if (mem.id === m.id) {
+                const defaultFine = att.status === 'late' ? (state.groupSettings.meetingFineLateDefault || 2000) : (state.groupSettings.meetingFineDefault || 10000);
                 return {
                   memberId: mem.id,
                   memberNo: mem.memberNo,
                   memberName: mem.fullName,
                   status: att.status,
-                  fineAmount: att.fineAmount || (state.groupSettings.meetingFineDefault || 5000),
+                  fineAmount: att.fineAmount || defaultFine,
                   finePaid: !att.finePaid
                 };
               }
@@ -867,7 +887,7 @@ Lema, Nguvu Moja!`;
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <button
                     onClick={() => updateStatus('present')}
                     className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
@@ -877,6 +897,16 @@ Lema, Nguvu Moja!`;
                     }`}
                   >
                     ✓ Ahudhuria
+                  </button>
+                  <button
+                    onClick={() => updateStatus('late')}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+                      att.status === 'late'
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    ⏱ Kuchelewa
                   </button>
                   <button
                     onClick={() => updateStatus('apology')}
@@ -901,10 +931,10 @@ Lema, Nguvu Moja!`;
                 </div>
               </div>
 
-              {(att.status === 'absent' || (att.fineAmount && att.fineAmount > 0)) && (
+              {(att.status === 'absent' || att.status === 'late' || (att.fineAmount && att.fineAmount > 0)) && (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-900 text-[11px]">
                   <span className="text-rose-400 font-medium">
-                    Faini ya Utoro/Kuchelewa: <strong>TZS {(att.fineAmount || (state.groupSettings.meetingFineDefault || 5000)).toLocaleString()}</strong>
+                    Faini ya {att.status === 'late' ? 'Kuchelewa' : 'Utoro'}: <strong>TZS {(att.fineAmount || (att.status === 'late' ? (state.groupSettings.meetingFineLateDefault || 2000) : (state.groupSettings.meetingFineDefault || 10000))).toLocaleString()}</strong>
                   </span>
                   <div className="flex items-center gap-1.5">
                     <button
@@ -924,7 +954,7 @@ Lema, Nguvu Moja!`;
                           onClick={() => {
                             setFineModalMemberId(m.id);
                             setFineModalMeetingId(selectedMeeting.id);
-                            setFineModalAmount(att.fineAmount || (state.groupSettings.meetingFineDefault || 5000));
+                            setFineModalAmount(att.fineAmount || (att.status === 'late' ? (state.groupSettings.meetingFineLateDefault || 2000) : (state.groupSettings.meetingFineDefault || 10000)));
                             setIsFinePaymentModalOpen(true);
                           }}
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] shadow-sm transition-all cursor-pointer"
@@ -936,8 +966,8 @@ Lema, Nguvu Moja!`;
                         {onOpenSmsWithTemplate && (
                           <button
                             onClick={() => {
-                              const amount = (att.fineAmount || (state.groupSettings.meetingFineDefault || 5000)).toLocaleString();
-                              const text = `Habari ${m.fullName} (${m.memberNo}), Taarifa ya UWALEMI: Unakumbushwa kulipa faini ya kutohudhuria/kuchelewa ${selectedMeeting.title} ya tarehe ${selectedMeeting.date} kiasi cha TZS ${amount}. Tafadhali lipa kupitia M-Koba au 0758 219 298 Eva Lema. Lema, Nguvu Moja!`;
+                              const amount = (att.fineAmount || (att.status === 'late' ? (state.groupSettings.meetingFineLateDefault || 2000) : (state.groupSettings.meetingFineDefault || 10000))).toLocaleString();
+                              const text = `Habari ${m.fullName} (${m.memberNo}), Taarifa ya UWALEMI: Unakumbushwa kulipa faini ya ${att.status === 'late' ? 'kuchelewa' : 'kutohudhuria'} ${selectedMeeting.title} ya tarehe ${selectedMeeting.date} kiasi cha TZS ${amount}. Tafadhali lipa kupitia M-Koba au 0758 219 298 Eva Lema. Lema, Nguvu Moja!`;
                               onOpenSmsWithTemplate([{
                                 name: m.fullName,
                                 phone: m.phone || '',
@@ -957,8 +987,8 @@ Lema, Nguvu Moja!`;
                             onClick={() => {
                               const cleanPhone = (m.phone || '').replace(/[^0-9]/g, '');
                               const fullPhone = cleanPhone.startsWith('0') ? '255' + cleanPhone.substring(1) : cleanPhone;
-                              const amount = (att.fineAmount || (state.groupSettings.meetingFineDefault || 5000)).toLocaleString();
-                              const text = `Habari ${m.fullName} (${m.memberNo}), Taarifa ya UWALEMI: Unakumbushwa kulipa faini ya kutohudhuria/kuchelewa ${selectedMeeting.title} ya tarehe ${selectedMeeting.date} kiasi cha TZS ${amount}. Tafadhali lipa kupitia M-Koba au 0758 219 298 Eva Lema. Lema, Nguvu Moja!`;
+                              const amount = (att.fineAmount || (att.status === 'late' ? (state.groupSettings.meetingFineLateDefault || 2000) : (state.groupSettings.meetingFineDefault || 10000))).toLocaleString();
+                              const text = `Habari ${m.fullName} (${m.memberNo}), Taarifa ya UWALEMI: Unakumbushwa kulipa faini ya ${att.status === 'late' ? 'kuchelewa' : 'kutohudhuria'} ${selectedMeeting.title} ya tarehe ${selectedMeeting.date} kiasi cha TZS ${amount}. Tafadhali lipa kupitia M-Koba au 0758 219 298 Eva Lema. Lema, Nguvu Moja!`;
                               window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(text)}`, '_blank');
                             }}
                             className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/60 text-emerald-300 hover:bg-emerald-600 hover:text-white font-semibold text-[11px] transition-all cursor-pointer border border-emerald-800/50"
@@ -1260,6 +1290,9 @@ Lema, Nguvu Moja!`;
         } else if (broadcastTarget === 'absent') {
           const absentIds = attendees.filter(a => a.status === 'absent').map(a => a.memberId);
           currentRecipients = members.filter(m => absentIds.includes(m.id));
+        } else if (broadcastTarget === 'late') {
+          const lateIds = attendees.filter(a => a.status === 'late').map(a => a.memberId);
+          currentRecipients = members.filter(m => lateIds.includes(m.id));
         } else if (broadcastTarget === 'unconfirmed') {
           const apologyIds = attendees.filter(a => a.status === 'apology').map(a => a.memberId);
           currentRecipients = members.filter(m => apologyIds.includes(m.id));
@@ -1443,6 +1476,18 @@ Lema, Nguvu Moja!`;
                     }`}
                   >
                     ❌ Watoro ({attendees.filter(a => a.status === 'absent').length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBroadcastTarget('late')}
+                    className={`py-1.5 px-2 rounded-lg font-semibold transition-all cursor-pointer text-center ${
+                      broadcastTarget === 'late'
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    ⏱ Kuchelewa ({attendees.filter(a => a.status === 'late').length})
                   </button>
 
                   <button

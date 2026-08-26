@@ -20,7 +20,8 @@ import {
   Users,
   Shield,
   Phone,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Receipt
 } from 'lucide-react';
 
 interface Props {
@@ -224,6 +225,69 @@ export const UwalemiSettings: React.FC<Props> = ({ state, onSaveState }) => {
                 placeholder="Maelezo au madhumuni ya kikundi..."
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white resize-none"
               />
+            </div>
+          </div>
+        </div>
+
+        {/* Section 1.5: Viwango vya Faini na Ada */}
+        <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 backdrop-blur-md space-y-4" id="viwango-vya-faini-section">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-rose-400" />
+                Viwango Rasmi vya Faini za Vikao & Ucheleweshaji
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Viwango vya faini vinavyotumika moja kwa moja wakati wa kuchukua mahudhurio ya vikao na ukokotoaji wa madeni.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div className="p-4 bg-slate-950 border border-rose-900/40 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-slate-200 font-bold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                  Faini ya Utoro / Kutohudhuria Kikao (TZS) *
+                </label>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800">
+                  Rasmi: TZS 10,000
+                </span>
+              </div>
+              <input
+                type="number"
+                min={0}
+                step={500}
+                value={settings.meetingFineDefault || 10000}
+                onChange={(e) => setSettings({ ...settings, meetingFineDefault: Number(e.target.value) || 10000 })}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono font-bold text-sm focus:border-rose-500 focus:outline-none"
+              />
+              <p className="text-[11px] text-slate-400">
+                Hutozwa kwa kila mwanachama anayekosa kikao bila kutoa udhuru rasmi kwa mujibu wa kanuni za UWALEMI.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-950 border border-indigo-900/40 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-slate-200 font-bold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                  Faini ya Kuchelewa Kikao (TZS) *
+                </label>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
+                  Rasmi: TZS 2,000
+                </span>
+              </div>
+              <input
+                type="number"
+                min={0}
+                step={500}
+                value={settings.meetingFineLateDefault || 2000}
+                onChange={(e) => setSettings({ ...settings, meetingFineLateDefault: Number(e.target.value) || 2000 })}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono font-bold text-sm focus:border-indigo-500 focus:outline-none"
+              />
+              <p className="text-[11px] text-slate-400">
+                Hutozwa kwa mwanachama anayeingia kikaoni baada ya muda uliopangwa (kuchelewa).
+              </p>
             </div>
           </div>
         </div>

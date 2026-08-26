@@ -2801,7 +2801,30 @@ async function startServer() {
     try {
       const db = await readDBLatest();
       if (db.uwalemiState && typeof db.uwalemiState === 'object') {
-        return res.json(db.uwalemiState);
+        const uState = db.uwalemiState;
+        if (uState.groupSettings) {
+          if (!uState.groupSettings.meetingFineDefault || uState.groupSettings.meetingFineDefault === 5000 || uState.groupSettings.meetingFineDefault === 0) {
+            uState.groupSettings.meetingFineDefault = 10000;
+          }
+          if (!uState.groupSettings.meetingFineLateDefault || uState.groupSettings.meetingFineLateDefault === 0) {
+            uState.groupSettings.meetingFineLateDefault = 2000;
+          }
+        }
+        if (Array.isArray(uState.meetings)) {
+          uState.meetings.forEach((m: any) => {
+            if (Array.isArray(m.attendees)) {
+              m.attendees.forEach((a: any) => {
+                if (a.status === 'absent' && (!a.fineAmount || a.fineAmount === 5000 || a.fineAmount === 0)) {
+                  a.fineAmount = 10000;
+                }
+                if (a.status === 'late' && (!a.fineAmount || a.fineAmount === 5000 || a.fineAmount === 0)) {
+                  a.fineAmount = 2000;
+                }
+              });
+            }
+          });
+        }
+        return res.json(uState);
       }
       // If not initialized, return default structure without writing
       return res.json({ initialized: false });
@@ -2818,6 +2841,28 @@ async function startServer() {
         return res.status(400).json({ error: "Invalid UWALEMI state payload" });
       }
       const db = await readDBLatest();
+      if (state.groupSettings) {
+        if (!state.groupSettings.meetingFineDefault || state.groupSettings.meetingFineDefault === 5000 || state.groupSettings.meetingFineDefault === 0) {
+          state.groupSettings.meetingFineDefault = 10000;
+        }
+        if (!state.groupSettings.meetingFineLateDefault || state.groupSettings.meetingFineLateDefault === 0) {
+          state.groupSettings.meetingFineLateDefault = 2000;
+        }
+      }
+      if (Array.isArray(state.meetings)) {
+        state.meetings.forEach((m: any) => {
+          if (Array.isArray(m.attendees)) {
+            m.attendees.forEach((a: any) => {
+              if (a.status === 'absent' && (!a.fineAmount || a.fineAmount === 5000 || a.fineAmount === 0)) {
+                a.fineAmount = 10000;
+              }
+              if (a.status === 'late' && (!a.fineAmount || a.fineAmount === 5000 || a.fineAmount === 0)) {
+                a.fineAmount = 2000;
+              }
+            });
+          }
+        });
+      }
       db.uwalemiState = state;
       await writeDB(db);
       return res.json({ success: true, message: "UWALEMI state saved successfully" });
@@ -5970,44 +6015,6 @@ Tafadhali toa majibu kwenye mfumo wa JSON pekee wenye muundo ufuatao bila maelez
         totalGuests: guests.length
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // ==========================================
-  // UWALEMI STANDALONE MODULE API ENDPOINTS
-  // ==========================================
-  
-  // 1. GET UWALEMI state
-  app.get("/api/uwalemi/state", async (req, res) => {
-    try {
-      const db = await readDBLatest();
-      if (!db.uwalemiState || typeof db.uwalemiState !== "object") {
-        return res.json({ initialized: false });
-      }
-      res.json(db.uwalemiState);
-    } catch (e: any) {
-      console.error("[Uwalemi State GET Error]:", e);
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // 2. POST UWALEMI state
-  app.post("/api/uwalemi/state", async (req, res) => {
-    try {
-      const db = await readDBLatest();
-      const incomingState = req.body;
-      if (!incomingState || typeof incomingState !== "object") {
-        return res.status(400).json({ error: "Invalid state payload" });
-      }
-      db.uwalemiState = {
-        ...incomingState,
-        lastUpdated: new Date().toISOString()
-      };
-      await writeDB(db);
-      res.json({ success: true, lastUpdated: db.uwalemiState.lastUpdated });
-    } catch (e: any) {
-      console.error("[Uwalemi State POST Error]:", e);
       res.status(500).json({ error: e.message });
     }
   });

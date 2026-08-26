@@ -1590,7 +1590,7 @@ export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsF
                       setFineModalMemberId(viewingStatementMember.id);
                       setFineModalMeetingId(undefined);
                       setFineModalType('kikao');
-                      setFineModalAmount(5000);
+                      setFineModalAmount(10000);
                       setIsFinePaymentModalOpen(true);
                     }}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold cursor-pointer transition-all shadow-sm"
@@ -1604,13 +1604,13 @@ export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsF
                   const mDebt = calculateMemberFeeDebt(viewingStatementMember, state);
                   const memberMeetings = (state.meetings || []).flatMap(m => {
                     const att = (m.attendees || []).find(a => a.memberId === viewingStatementMember.id || a.memberNo === viewingStatementMember.memberNo);
-                    if (att && ((att.fineAmount && att.fineAmount > 0) || att.status === 'absent')) {
+                    if (att && ((att.fineAmount && att.fineAmount > 0) || att.status === 'absent' || att.status === 'late')) {
                       return [{
                         meeting: m,
                         att,
-                        amount: att.fineAmount || 5000,
+                        amount: att.fineAmount || (att.status === 'late' ? (state.groupSettings?.meetingFineLateDefault || 2000) : (state.groupSettings?.meetingFineDefault || 10000)),
                         paid: att.finePaid ?? false,
-                        reason: att.fineReason || 'Kutohudhuria kikao'
+                        reason: att.fineReason || (att.status === 'late' ? 'Kuchelewa kikao' : 'Kutohudhuria kikao')
                       }];
                     }
                     return [];
