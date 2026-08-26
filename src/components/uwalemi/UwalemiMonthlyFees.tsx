@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { generatePaymentReceiptPDF } from '../../services/uwalemiPdfGenerator';
-import { sortMembersByLeadership, getDefaultFeeForMonth } from '../../services/uwalemiService';
+import { sortMembersByLeadership, getDefaultFeeForMonth, triggerAutoReceiptSms } from '../../services/uwalemiService';
 
 interface Props {
   state: UwalemiState;
@@ -236,6 +236,20 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
     await onSaveState(updatedState);
     setIsRecordModalOpen(false);
     setViewingReceipt(newPayment);
+
+    // Tuma Stakabadhi ya SMS Kiotomatiki (kama imewashwa kwenye Mipangilio ya SMS)
+    if (state.groupSettings?.smsConfig?.autoSendReceipts && paid > 0) {
+      triggerAutoReceiptSms({
+        state,
+        member,
+        paymentType: 'ada',
+        amount: paid,
+        purpose: `Ada ya mwezi wa ${monthNamesSw[Number(paymentForm.month) - 1]} ${paymentForm.year}`,
+        receiptNo,
+        paymentDate: paymentForm.paymentDate,
+        paymentMethod: paymentForm.paymentMethod
+      }).catch(err => console.warn('[Auto Receipt SMS Error]:', err));
+    }
   };
 
   const handleQuickMarkPaid = async (member: UwalemiMember) => {
@@ -265,6 +279,20 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
     updatedPayments.push(newPayment);
 
     await onSaveState({ ...state, monthlyPayments: updatedPayments });
+
+    // Tuma Stakabadhi ya SMS Kiotomatiki
+    if (state.groupSettings?.smsConfig?.autoSendReceipts && expected > 0) {
+      triggerAutoReceiptSms({
+        state,
+        member,
+        paymentType: 'ada',
+        amount: expected,
+        purpose: `Ada ya mwezi wa ${monthNamesSw[selectedMonth - 1]} ${selectedYear}`,
+        receiptNo,
+        paymentDate: newPayment.paymentDate,
+        paymentMethod: newPayment.paymentMethod
+      }).catch(err => console.warn('[Auto Receipt SMS Error]:', err));
+    }
   };
 
   // Toggle single cell in Matrix Mode

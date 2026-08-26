@@ -19,7 +19,7 @@ import {
   Award
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { sortMembersByLeadership } from '../../services/uwalemiService';
+import { sortMembersByLeadership, triggerAutoReceiptSms } from '../../services/uwalemiService';
 
 interface Props {
   state: UwalemiState;
@@ -170,6 +170,20 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
 
     await onSaveState({ ...state, emergencyFunds: updatedFunds });
     setIsRecordPaymentModalOpen(false);
+
+    // Tuma Stakabadhi ya SMS Kiotomatiki (kama imewashwa)
+    if (state.groupSettings?.smsConfig?.autoSendReceipts && Number(paymentForm.amount) > 0) {
+      triggerAutoReceiptSms({
+        state,
+        member,
+        paymentType: 'emergency',
+        amount: Number(paymentForm.amount),
+        purpose: `Mchango wa ${selectedFund.title}`,
+        receiptNo,
+        paymentDate: paymentForm.paymentDate,
+        paymentMethod: paymentForm.paymentMethod
+      }).catch(err => console.warn('[Auto Receipt SMS Error]:', err));
+    }
   };
 
   const handleDisburseFund = async (e: React.FormEvent) => {

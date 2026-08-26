@@ -524,3 +524,100 @@ export async function sendUwalemiSms(payload: {
     return { success: false, deliveredCount: 0, message: e.message || 'Hitilafu ya mtandao' };
   }
 }
+
+/**
+ * Utumaji wa stakabadhi kiotomatiki mara tu ada au mchango unaporekodiwa.
+ * Hukagua kama autoSendReceipts imewashwa kwenye Mipangilio ya SMS.
+ */
+export async function triggerAutoReceiptSms(params: {
+  state: UwalemiState;
+  member: { id?: string; memberNo?: string; fullName?: string; phone?: string };
+  paymentType: 'ada' | 'emergency' | 'fine';
+  amount: number;
+  purpose: string;
+  receiptNo: string;
+  paymentDate?: string;
+  paymentMethod?: string;
+}): Promise<{ triggered: boolean; success: boolean; message: string }> {
+  const autoSend = params.state.groupSettings?.smsConfig?.autoSendReceipts;
+  if (!autoSend) {
+    return { triggered: false, success: false, message: 'Utumaji wa stakabadhi kiotomatiki umezimwa kwenye mipangilio.' };
+  }
+
+  const phone = (params.member.phone || '').trim();
+  if (!phone) {
+    return { triggered: false, success: false, message: `Mwanachama ${params.member.fullName || ''} hana namba ya simu ya kutumiwa stakabadhi.` };
+  }
+
+  const dateStr = params.paymentDate || new Date().toISOString().split('T')[0];
+  const methodStr = params.paymentMethod || 'M-Pesa / M-Koba';
+  
+  const customMessage = `STAKABADHI YA MALIPO - UWALEMI
+Habari ${params.member.fullName || 'Mwanachama'}, tumepokea malipo yako ya TZS ${params.amount.toLocaleString()} ya ${params.purpose}.
+Risiti: ${params.receiptNo}
+Tarehe: ${dateStr}
+Njia: ${methodStr}
+
+Asante kwa kutimiza wajibu wako kwa UWALEMI.
+Lema, Nguvu Moja!`;
+
+  const result = await sendUwalemiSms({
+    recipients: [{
+      name: params.member.fullName || 'Mwanachama',
+      phone,
+      memberNo: params.member.memberNo,
+      memberId: params.member.id,
+      customMessage
+    }],
+    message: customMessage,
+    messageType: 'receipt'
+  });
+
+  return {
+    triggered: true,
+    success: result.success,
+    message: result.message
+  };
+}
+
+/**
+ * Kuita mfumo wa kutuma vikumbusho vya ada ya kila mwezi (kama tarehe 25 au kuanzisha mwenyewe kwa jaribio).
+ */
+export async function triggerMonthlyAutoRemindersApi(forceNow = false): Promise<{
+  success: boolean;
+  triggered: boolean;
+  deliveredCount: number;
+  recipientsCount: number;
+  message: string;
+  list?: string[];
+  lastMonthlyReminderYearMonth?: string;
+  lastMonthlyReminderDate?: string;
+}> {
+  try {
+    const res = await fetch('/api/uwalemi/trigger-monthly-reminders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ forceNow })
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    const err = await res.json();
+    return {
+      success: false,
+      triggered: false,
+      deliveredCount: 0,
+      recipientsCount: 0,
+      message: err.error || 'Imeshindwa kuanzisha vikumbusho vya ada'
+    };
+  } catch (e: any) {
+    return {
+      success: false,
+      triggered: false,
+      deliveredCount: 0,
+      recipientsCount: 0,
+      message: e.message || 'Hitilafu ya mtandao'
+    };
+  }
+}
+

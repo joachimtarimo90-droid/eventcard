@@ -7,7 +7,8 @@ import {
 } from '../../types/uwalemi';
 import { 
   calculateMemberFeeDebt, 
-  sortMembersByLeadership 
+  sortMembersByLeadership,
+  triggerAutoReceiptSms
 } from '../../services/uwalemiService';
 import { 
   generatePaymentReceiptPDF, 
@@ -231,6 +232,20 @@ export const UwalemiFinePaymentModal: React.FC<Props> = ({
 
     if (success) {
       setCompletedPayment(newPayment);
+
+      // Tuma SMS ya Stakabadhi Kiotomatiki (kama imewashwa)
+      if (state.groupSettings?.smsConfig?.autoSendReceipts && newPayment.amount > 0 && selectedMember) {
+        triggerAutoReceiptSms({
+          state,
+          member: selectedMember,
+          paymentType: 'fine',
+          amount: newPayment.amount,
+          purpose: `Faini (${newPayment.fineTitle})`,
+          receiptNo: newPayment.receiptNo,
+          paymentDate: newPayment.paymentDate,
+          paymentMethod: newPayment.paymentMethod
+        }).catch(err => console.warn('[Auto Receipt SMS Error]:', err));
+      }
     } else {
       alert('Hitilafu ilitokea wakati wa kuhifadhi. Tafadhali jaribu tena.');
     }

@@ -188,6 +188,8 @@ export interface UwalemiState {
   meetings: UwalemiMeeting[];
   finePayments?: UwalemiFinePayment[];
   messageLogs: UwalemiMessageLog[];
+  lastMonthlyReminderYearMonth?: string;
+  lastMonthlyReminderDate?: string;
   lastUpdated?: string;
 }
 

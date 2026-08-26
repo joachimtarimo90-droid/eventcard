@@ -3127,6 +3127,265 @@ async function startServer() {
     }
   });
 
+  // Automated Monthly Reminders Service (Tarehe 25 ya Kila Mwezi)
+  async function processUwalemiMonthlyAutoReminders(forceNow = false) {
+    try {
+      const db = await readDBLatest();
+      const uwalemiState = db.uwalemiState;
+      if (!uwalemiState || !Array.isArray(uwalemiState.members) || uwalemiState.members.length === 0) {
+        return { success: false, triggered: false, deliveredCount: 0, recipientsCount: 0, message: "Hakuna taarifa za wanachama wa UWALEMI." };
+      }
+
+      const smsConfig = uwalemiState.groupSettings?.smsConfig || { provider: 'simulation', senderId: 'UWALEMI', autoSendMonthlyReminder: true };
+      
+      if (!forceNow && !smsConfig.autoSendMonthlyReminder) {
+        return { success: true, triggered: false, deliveredCount: 0, recipientsCount: 0, message: "Kipengele cha kutuma vikumbusho kiotomatiki hakijawashwa." };
+      }
+
+      // Tanzania / East Africa Time (UTC + 3)
+      const nowEAT = new Date(Date.now() + 3 * 3600 * 1000);
+      const currentYear = nowEAT.getUTCFullYear();
+      const currentMonth = nowEAT.getUTCMonth() + 1; // 1 - 12
+      const currentDay = nowEAT.getUTCDate();
+      const currentYearMonthKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+
+      // Check if it's the 25th (unless forceNow is requested)
+      if (!forceNow && currentDay !== 25) {
+        return { 
+          success: true, 
+          triggered: false, 
+          deliveredCount: 0, 
+          recipientsCount: 0, 
+          message: `Leo ni tarehe ${currentDay}. Vikumbusho vya kiotomatiki vinatumwa kila tarehe 25 ya mwezi.` 
+        };
+      }
+
+      // Check idempotency: avoid sending duplicate monthly reminders in the same month
+      if (!forceNow && uwalemiState.lastMonthlyReminderYearMonth === currentYearMonthKey) {
+        return { 
+          success: true, 
+          triggered: false, 
+          deliveredCount: 0, 
+          recipientsCount: 0, 
+          message: `Vikumbusho vya mwezi huu (${currentYearMonthKey}) vilikwishatumwa tarehe ${uwalemiState.lastMonthlyReminderDate || '25'}.` 
+        };
+      }
+
+      const MONTHS_SW = ['Januari', 'Februari', 'Machi', 'Aprili', 'Mei', 'Juni', 'Julai', 'Agosti', 'Septemba', 'Oktoba', 'Novemba', 'Desemba'];
+      const monthName = MONTHS_SW[currentMonth - 1] || `Mwezi ${currentMonth}`;
+      const defaultFee = uwalemiState.groupSettings?.monthlyFeeDefault || 20000;
+
+      // Find active members who haven't paid or have unpaid balance for the current month
+      const activeMembers = uwalemiState.members.filter((m: any) => m.status === 'active');
+      const unpaidMembers: Array<{ member: any; expected: number; paid: number; balance: number }> = [];
+
+      for (const member of activeMembers) {
+        const expectedFee = typeof member.monthlyFeeAmount === 'number' && member.monthlyFeeAmount > 0 
+          ? member.monthlyFeeAmount 
+          : defaultFee;
+        
+        const payment = (uwalemiState.monthlyPayments || []).find((p: any) => 
+          (p.memberId === member.id || p.memberNo === member.memberNo) && 
+          p.year === currentYear && 
+          p.month === currentMonth
+        );
+
+        const paid = payment ? (Number(payment.paidAmount) || 0) : 0;
+        const balance = expectedFee - paid;
+
+        if (balance > 0) {
+          unpaidMembers.push({ member, expected: expectedFee, paid, balance });
+        }
+      }
+
+      if (unpaidMembers.length === 0) {
+        uwalemiState.lastMonthlyReminderYearMonth = currentYearMonthKey;
+        uwalemiState.lastMonthlyReminderDate = nowEAT.toISOString();
+        db.uwalemiState = uwalemiState;
+        await writeDB(db);
+        return {
+          success: true,
+          triggered: true,
+          deliveredCount: 0,
+          recipientsCount: 0,
+          message: `Wanachama wote (${activeMembers.length}) wameshalipa ada ya mwezi wa ${monthName} ${currentYear}. Hakuna aliyebaki na deni.`,
+          list: []
+        };
+      }
+
+      const logs: any[] = [];
+      let deliveredCount = 0;
+      const remindedNames: string[] = [];
+
+      for (const item of unpaidMembers) {
+        const phone = String(item.member.phone || '').trim();
+        const name = item.member.fullName || 'Mjumbe';
+        if (!phone) continue;
+
+        remindedNames.push(`${name} (${item.member.memberNo || ''})`);
+
+        const formattedMsg = `KIKUMBUSHO CHA ADA YA MWEZI - UWALEMI
+Habari ${name}, unakumbushwa kulipa ada yako ya mwezi wa ${monthName} ${currentYear} (TZS ${item.balance.toLocaleString()}) kabla ya tarehe 30 ili kuepuka usumbufu na tozo ya ucheleweshaji.
+
+Lipa kupitia: M-Koba au 0758 219 298 - Eva O. Lema.
+Lema, Nguvu Moja!`;
+
+        let status: 'delivered' | 'sent' | 'simulated' | 'failed' = 'simulated';
+
+        if (smsConfig.provider === 'meseji' && smsConfig.apiKey) {
+          try {
+            let cleanPhone = phone.replace(/[^0-9]/g, '');
+            if (cleanPhone.startsWith('0')) cleanPhone = '255' + cleanPhone.substring(1);
+            if (cleanPhone.startsWith('7') || cleanPhone.startsWith('6')) cleanPhone = '255' + cleanPhone;
+
+            const mesejiUrl = smsConfig.baseUrl || "https://meseji.co.tz/api/v1/sms/send";
+            const res = await fetch(mesejiUrl, {
+              method: "POST",
+              headers: {
+                "x-api-key": smsConfig.apiKey.trim(),
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+              },
+              body: JSON.stringify({
+                contacts: cleanPhone,
+                message: formattedMsg,
+                sender_id: (smsConfig.senderId || 'MESEJI').trim()
+              })
+            });
+
+            if (res.ok) {
+              status = 'delivered';
+              deliveredCount++;
+            } else {
+              status = 'failed';
+            }
+          } catch (e) {
+            status = 'failed';
+          }
+        } else if (smsConfig.provider === 'beem' && smsConfig.apiKey && smsConfig.secretKey) {
+          try {
+            let cleanPhone = phone.replace(/[^0-9]/g, '');
+            if (cleanPhone.startsWith('0')) cleanPhone = '255' + cleanPhone.substring(1);
+            if (cleanPhone.startsWith('7') || cleanPhone.startsWith('6')) cleanPhone = '255' + cleanPhone;
+
+            const beemPayload = {
+              source_addr: smsConfig.senderId || 'UWALEMI',
+              schedule_time: '',
+              encoding: 0,
+              message: formattedMsg,
+              recipients: [{ recipient_id: 1, dest_addr: cleanPhone }]
+            };
+
+            const beemAuth = Buffer.from(`${smsConfig.apiKey}:${smsConfig.secretKey}`).toString('base64');
+            const res = await fetch("https://apisms.beem.africa/v1/send", {
+              method: "POST",
+              headers: {
+                "Authorization": `Basic ${beemAuth}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify(beemPayload)
+            });
+
+            if (res.ok) {
+              status = 'delivered';
+              deliveredCount++;
+            } else {
+              status = 'failed';
+            }
+          } catch (e) {
+            status = 'failed';
+          }
+        } else if (smsConfig.provider === 'nextsms' && smsConfig.apiKey && smsConfig.secretKey) {
+          try {
+            let cleanPhone = phone.replace(/[^0-9]/g, '');
+            if (cleanPhone.startsWith('0')) cleanPhone = '255' + cleanPhone.substring(1);
+            if (cleanPhone.startsWith('7') || cleanPhone.startsWith('6')) cleanPhone = '255' + cleanPhone;
+
+            const nextAuth = Buffer.from(`${smsConfig.apiKey}:${smsConfig.secretKey}`).toString('base64');
+            const res = await fetch("https://messaging-service.co.tz/api/sms/v1/text/single", {
+              method: "POST",
+              headers: {
+                "Authorization": `Basic ${nextAuth}`,
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+              },
+              body: JSON.stringify({
+                from: smsConfig.senderId || 'UWALEMI',
+                to: cleanPhone,
+                text: formattedMsg
+              })
+            });
+
+            if (res.ok) {
+              status = 'delivered';
+              deliveredCount++;
+            } else {
+              status = 'failed';
+            }
+          } catch (e) {
+            status = 'failed';
+          }
+        } else {
+          status = 'simulated';
+          deliveredCount++;
+        }
+
+        logs.push({
+          id: `log-remind-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          timestamp: new Date().toISOString(),
+          recipientPhone: phone,
+          recipientName: name,
+          messageType: 'reminder',
+          channel: 'sms',
+          content: formattedMsg,
+          status
+        });
+      }
+
+      if (!uwalemiState.messageLogs) uwalemiState.messageLogs = [];
+      uwalemiState.messageLogs.unshift(...logs);
+      if (uwalemiState.messageLogs.length > 250) {
+        uwalemiState.messageLogs = uwalemiState.messageLogs.slice(0, 250);
+      }
+
+      uwalemiState.lastMonthlyReminderYearMonth = currentYearMonthKey;
+      uwalemiState.lastMonthlyReminderDate = nowEAT.toISOString();
+      db.uwalemiState = uwalemiState;
+      await writeDB(db);
+
+      console.log(`[UWALEMI Auto Reminder] Dispatched ${deliveredCount} reminders for ${monthName} ${currentYear}`);
+
+      return {
+        success: true,
+        triggered: true,
+        deliveredCount,
+        recipientsCount: unpaidMembers.length,
+        message: smsConfig.provider === 'simulation'
+          ? `Vikumbusho vya mwezi wa ${monthName} vimetumwa kwa wanachama ${deliveredCount} (Hali ya Majaribio/Simulation).`
+          : `Vikumbusho vya mwezi wa ${monthName} vimetumwa kwa mafanikio kwa wanachama ${deliveredCount} kati ya ${unpaidMembers.length} kupitia ${smsConfig.provider.toUpperCase()}.`,
+        list: remindedNames,
+        lastMonthlyReminderYearMonth: currentYearMonthKey,
+        lastMonthlyReminderDate: uwalemiState.lastMonthlyReminderDate
+      };
+    } catch (e: any) {
+      console.error("[UWALEMI Monthly Auto Reminder Error]:", e);
+      return { success: false, triggered: false, deliveredCount: 0, recipientsCount: 0, message: e.message || "Hitilafu imetokea" };
+    }
+  }
+
+  // Trigger Monthly Auto Reminders Endpoint
+  app.post("/api/uwalemi/trigger-monthly-reminders", async (req, res) => {
+    try {
+      const forceNow = req.body?.forceNow === true;
+      const result = await processUwalemiMonthlyAutoReminders(forceNow);
+      return res.json(result);
+    } catch (error: any) {
+      console.error("[UWALEMI Trigger Reminders Error]:", error);
+      res.status(500).json({ error: error.message || "Failed to trigger monthly reminders" });
+    }
+  });
+
+
   app.get("/api/uwalemi/member/:id", async (req, res) => {
     try {
       const searchId = String(req.params.id || '').trim().toLowerCase();
@@ -5772,6 +6031,14 @@ Tafadhali toa majibu kwenye mfumo wa JSON pekee wenye muundo ufuatao bila maelez
     console.log(`Express server running on http://localhost:${PORT}`);
     // Start or resume background queue processing
     processQueueJobs().catch(err => console.error("Error starting queue on boot:", err));
+
+    // Start UWALEMI automated monthly reminders cron (checks every 30 minutes)
+    setTimeout(() => {
+      processUwalemiMonthlyAutoReminders(false).catch(e => console.warn("[UWALEMI Boot Reminder Check]:", e.message));
+    }, 15000);
+    setInterval(() => {
+      processUwalemiMonthlyAutoReminders(false).catch(e => console.warn("[UWALEMI Periodic Reminder Check]:", e.message));
+    }, 30 * 60 * 1000);
   });
 }
 

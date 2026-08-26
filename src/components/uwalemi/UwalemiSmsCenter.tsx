@@ -7,6 +7,7 @@ import {
   calculateMemberFeeDebt,
   formatPersonalizedUwalemiSms,
   getSwahiliDayAndDate,
+  triggerMonthlyAutoRemindersApi,
   UwalemiMemberFeeDebtInfo 
 } from '../../services/uwalemiService';
 import { 
@@ -26,6 +27,7 @@ import {
   History,
   Sparkles,
   AlertTriangle,
+  AlertCircle,
   Check,
   Search,
   Calendar,
@@ -107,6 +109,15 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
       autoSendMonthlyReminder: true
     }
   );
+
+  const [isTestingReminders, setIsTestingReminders] = useState(false);
+  const [reminderTestResult, setReminderTestResult] = useState<{
+    message: string;
+    success: boolean;
+    deliveredCount: number;
+    recipientsCount: number;
+    list?: string[];
+  } | null>(null);
 
   const members = useMemo(() => sortMembersByLeadership(state.members || []), [state.members]);
   const messageLogs = state.messageLogs || [];
@@ -456,6 +467,27 @@ Lema, Nguvu Moja!`);
     const updatedState = { ...state, groupSettings: updatedSettings };
     await onSaveState(updatedState);
     alert('Mipangilio ya SMS Gateway ya UWALEMI imehifadhiwa kwa mafanikio!');
+  };
+
+  const handleTriggerTestReminders = async () => {
+    if (!confirm('Je, unataka kutuma/kujaribu vikumbusho vya ada ya mwezi huu sasa kwa wanachama wote ambao hawajalipa mwezi huu?')) {
+      return;
+    }
+    setIsTestingReminders(true);
+    setReminderTestResult(null);
+    try {
+      const res = await triggerMonthlyAutoRemindersApi(true); // forceNow = true
+      setReminderTestResult(res);
+    } catch (e: any) {
+      setReminderTestResult({
+        success: false,
+        deliveredCount: 0,
+        recipientsCount: 0,
+        message: e.message || 'Hitilafu imetokea wakati wa kuanzisha vikumbusho'
+      });
+    } finally {
+      setIsTestingReminders(false);
+    }
   };
 
   const debtorsCount = memberDebts.filter(d => d.totalDebt > 0 && d.status === 'active').length;
@@ -1046,8 +1078,29 @@ Lema, Nguvu Moja!`);
               Mipangilio ya Mtoa Huduma wa SMS (SMS Gateway)
             </h3>
             <p className="text-xs text-slate-400 mt-1">
-              Weka taarifa za API za Meseji.co.tz, Beem, au NextSMS ili ujumbe wa kikundi cha UWALEMI uende moja kwa moja kwa simu za wajumbe.
+              Weka taarifa za API za Meseji.co.tz, Beem Africa, au NextSMS ili ujumbe wa kikundi cha UWALEMI uende moja kwa moja kwa simu za wajumbe kupitia mtandao wa simu.
             </p>
+          </div>
+
+          {/* Status Banner */}
+          <div className={`p-4 rounded-xl border flex items-start gap-3 ${
+            gatewayConfig.provider !== 'simulation' && gatewayConfig.apiKey
+              ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
+              : 'bg-amber-950/40 border-amber-800/60 text-amber-300'
+          }`}>
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <div className="font-bold flex items-center gap-2">
+                Hali ya Sasa: {gatewayConfig.provider !== 'simulation' && gatewayConfig.apiKey
+                  ? `Imeunganishwa na ${gatewayConfig.provider.toUpperCase()} (SMS Halisi Zitatumwa)`
+                  : 'Hali ya Majaribio (Simulation Mode)'}
+              </div>
+              <p className="text-slate-300 leading-relaxed">
+                {gatewayConfig.provider !== 'simulation' && gatewayConfig.apiKey
+                  ? `Ujumbe na stakabadhi za kiotomatiki zitatumwa moja kwa moja kwenye simu za wajumbe kwa kutumia jina la "${gatewayConfig.senderId || 'UWALEMI'}".`
+                  : 'Kwa sasa mfumo unarekodi stakabadhi na jumbe zote kwenye tab ya "Kumbukumbu za Ujumbe (Logs)" bila kukata salio. Ili ujumbe ufike halisi kwenye simu ya mwanachama, chagua Mtoa Huduma (Meseji, Beem, au NextSMS) na uweke API Key & Secret.'}
+              </p>
+            </div>
           </div>
 
           <form onSubmit={handleSaveGateway} className="space-y-4 text-xs">
@@ -1100,26 +1153,74 @@ Lema, Nguvu Moja!`);
               </div>
             )}
 
-            <div className="space-y-2 pt-2 border-t border-slate-800">
-              <label className="flex items-center gap-2 cursor-pointer text-slate-300">
+            <div className="space-y-3 pt-3 border-t border-slate-800">
+              <label className="flex items-start gap-3 cursor-pointer text-slate-300">
                 <input
                   type="checkbox"
                   checked={gatewayConfig.autoSendReceipts}
                   onChange={(e) => setGatewayConfig({ ...gatewayConfig, autoSendReceipts: e.target.checked })}
-                  className="rounded text-emerald-500"
+                  className="rounded text-emerald-500 mt-0.5"
                 />
-                Tuma SMS ya stakabadhi kiotomatiki mara tu ada au mchango unaporekodiwa
+                <div>
+                  <div className="font-medium text-slate-200">Tuma SMS ya stakabadhi kiotomatiki mara tu ada au mchango unaporekodiwa</div>
+                  <p className="text-[11px] text-slate-400">Mjumbe atapokea SMS ya stakabadhi yenye namba ya risiti mara tu unapobofya Hifadhi Malipo.</p>
+                </div>
               </label>
 
-              <label className="flex items-center gap-2 cursor-pointer text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={gatewayConfig.autoSendMonthlyReminder}
-                  onChange={(e) => setGatewayConfig({ ...gatewayConfig, autoSendMonthlyReminder: e.target.checked })}
-                  className="rounded text-emerald-500"
-                />
-                Tuma vikumbusho vya ada ya kila mwezi kiotomatiki tarehe 25 ya kila mwezi
-              </label>
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
+                <label className="flex items-start gap-3 cursor-pointer text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={gatewayConfig.autoSendMonthlyReminder}
+                    onChange={(e) => setGatewayConfig({ ...gatewayConfig, autoSendMonthlyReminder: e.target.checked })}
+                    className="rounded text-emerald-500 mt-0.5"
+                  />
+                  <div>
+                    <div className="font-medium text-slate-200">Tuma vikumbusho vya ada ya kila mwezi kiotomatiki tarehe 25 ya kila mwezi</div>
+                    <p className="text-[11px] text-slate-400">
+                      Mfumo utawakagua wanachama wote hai ambao hawajalipa ada ya mwezi husika kila tarehe 25 saa 3:00 asubuhi na kuwatumia ujumbe wa kikumbusho cha kirafiki.
+                    </p>
+                  </div>
+                </label>
+
+                {/* Status and manual test trigger */}
+                <div className="pt-2 border-t border-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[11px]">
+                  <div className="text-slate-400 flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>
+                      {state.lastMonthlyReminderYearMonth
+                        ? `Mwezi wa mwisho kutumwa: ${state.lastMonthlyReminderYearMonth} (${state.lastMonthlyReminderDate ? new Date(state.lastMonthlyReminderDate).toLocaleDateString('sw-TZ') : 'Tarehe 25'})`
+                        : 'Bado hakuna vikumbusho vya kiotomatiki vilivyotoka mwezi huu.'}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleTriggerTestReminders}
+                    disabled={isTestingReminders}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600/80 hover:bg-indigo-500 text-white font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isTestingReminders ? 'animate-spin' : ''}`} />
+                    {isTestingReminders ? 'Inatuma vikumbusho...' : 'Jaribu Kutuma Sasa (Test Run)'}
+                  </button>
+                </div>
+
+                {reminderTestResult && (
+                  <div className={`p-3 rounded-lg border text-xs ${
+                    reminderTestResult.success 
+                      ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300' 
+                      : 'bg-rose-950/60 border-rose-800 text-rose-300'
+                  }`}>
+                    <div className="font-semibold">{reminderTestResult.message}</div>
+                    {reminderTestResult.list && reminderTestResult.list.length > 0 && (
+                      <div className="mt-1 text-[11px] text-slate-300">
+                        Waliopelekewa: {reminderTestResult.list.slice(0, 5).join(', ')}
+                        {reminderTestResult.list.length > 5 ? ` na wengine ${reminderTestResult.list.length - 5}` : ''}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="pt-3">
