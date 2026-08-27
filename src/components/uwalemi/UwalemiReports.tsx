@@ -170,6 +170,19 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
   // Meeting Fines Period Calculation
   let totalMeetingFinesPeriodCollected = 0;
   let totalMeetingFinesPeriodUnpaid = 0;
+  const meetingFinesDetailedList: {
+    id: string;
+    date: string;
+    title: string;
+    memberNo: string;
+    memberName: string;
+    reason: string;
+    amount: number;
+    paid: boolean;
+  }[] = [];
+
+  const defaultAbsentFine = state.groupSettings?.meetingFineDefault || 10000;
+  const defaultLateFine = state.groupSettings?.meetingFineLateDefault || 2000;
 
   (state.meetings || []).forEach(mtg => {
     const iso = normalizeDateToISO(mtg.date);
@@ -177,17 +190,43 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
     const mMonth = iso ? Number(iso.substring(5, 7)) : 0;
     if (isPeriodMatch(currentPeriodFilter, mYear, mMonth, mtg.date)) {
       (mtg.attendees || []).forEach(att => {
-        const fine = Number(att.fineAmount) || 0;
+        let fine = Number(att.fineAmount) || 0;
+        if (fine === 0) {
+          if (att.status === 'absent') fine = defaultAbsentFine;
+          else if (att.status === 'late') fine = defaultLateFine;
+        }
         if (fine > 0) {
           if (att.finePaid) {
             totalMeetingFinesPeriodCollected += fine;
           } else {
             totalMeetingFinesPeriodUnpaid += fine;
           }
+          const mMember = members.find(m => m.id === att.memberId || m.memberNo === att.memberNo);
+          meetingFinesDetailedList.push({
+            id: `${mtg.id}-${att.memberId || att.memberNo}`,
+            date: mtg.date,
+            title: mtg.title || 'Mkutano wa UWALEMI',
+            memberNo: mMember?.memberNo || att.memberNo || '',
+            memberName: mMember ? mMember.fullName : (att.memberName || 'Mjumbe'),
+            reason: att.fineReason || (att.status === 'absent' ? 'Kutohudhuria Kikao (Utoro)' : 'Kuchelewa Kikao'),
+            amount: fine,
+            paid: !!att.finePaid
+          });
         }
       });
     }
   });
+
+  // Late Fee Penalty Period Calculation (> 3 months overdue)
+  let totalLateFeePenaltyPeriod = 0;
+  members.forEach(m => {
+    const debtInfo = calculateMemberFeeDebt(m, state);
+    totalLateFeePenaltyPeriod += (debtInfo.lateFeePenalty || 0);
+  });
+
+  const totalAllFinesPeriodGrand = totalLateFeePenaltyPeriod + totalMeetingFinesPeriodCollected + totalMeetingFinesPeriodUnpaid;
+  const totalAllFinesPeriodCollected = totalMeetingFinesPeriodCollected;
+  const totalAllFinesPeriodPending = totalLateFeePenaltyPeriod + totalMeetingFinesPeriodUnpaid;
 
   let emergencyCollectedInPeriod = 0;
   emergencyFunds.forEach(ef => {
@@ -824,7 +863,7 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
         {reportType === 'financial' && (
           <div className="space-y-6">
             {/* Top Summary Stats */}
-            <div className={`grid grid-cols-1 sm:grid-cols-2 ${includeRegFee ? 'lg:grid-cols-6' : 'lg:grid-cols-5'} gap-3`}>
+            <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3`}>
               <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800">
                 <span className="text-[10px] text-slate-400 uppercase font-semibold block">Ada za Mwezi</span>
                 <span className="text-base font-black text-emerald-400">{formatTZS(totalMonthlyCollected)}</span>
@@ -847,6 +886,20 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
                 <span className="text-[10px] text-slate-400 uppercase font-semibold block">Faini za Vikao</span>
                 <span className="text-base font-black text-purple-400">{formatTZS(totalMeetingFinesPeriodCollected)}</span>
                 <span className="text-[10px] text-amber-500 block mt-0.5">Deni: {formatTZS(totalMeetingFinesPeriodUnpaid)}</span>
+              </div>
+
+              <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Faini za Ada (&gt;Miezi 3)</span>
+                <span className="text-base font-black text-amber-400">{formatTZS(totalLateFeePenaltyPeriod)}</span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">Deni la &gt; miezi 3</span>
+              </div>
+
+              <div className="bg-slate-950/80 p-3.5 rounded-xl border border-rose-500/30 bg-rose-950/10">
+                <span className="text-[10px] text-rose-300 uppercase font-semibold block">Jumla Kuu Faini Zote</span>
+                <span className="text-base font-black text-rose-400">{formatTZS(totalAllFinesPeriodGrand)}</span>
+                <span className="text-[10px] text-slate-400 block mt-0.5">
+                  Lipo: <span className="text-emerald-400 font-bold">{formatTZS(totalAllFinesPeriodCollected)}</span> | Deni: <span className="text-amber-400 font-bold">{formatTZS(totalAllFinesPeriodPending)}</span>
+                </span>
               </div>
 
               <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800">
@@ -915,6 +968,59 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
               </div>
             </div>
 
+            {/* Meeting Fines Detailed List in Financial Report */}
+            <div className="mt-6">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center justify-between">
+                <span>Orodha na Mchanganuo wa Faini za Vikao (Utoro & Kuchelewa):</span>
+                <span className="text-[11px] text-purple-400 font-normal lowercase">
+                  ({meetingFinesDetailedList.length} faini, Jumla Imelipwa: {formatTZS(totalMeetingFinesPeriodCollected)}, Deni: {formatTZS(totalMeetingFinesPeriodUnpaid)})
+                </span>
+              </h4>
+              <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-900 text-slate-400 font-semibold border-b border-slate-800">
+                    <tr>
+                      <th className="p-3">#</th>
+                      <th className="p-3">Tarehe</th>
+                      <th className="p-3">Kikao / Mkutano</th>
+                      <th className="p-3">Mjumbe</th>
+                      <th className="p-3">Sababu / Aina ya Faini</th>
+                      <th className="p-3 text-right">Kiasi</th>
+                      <th className="p-3 text-center">Hali ya Malipo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {meetingFinesDetailedList.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-4 text-center text-slate-500">
+                          Hakuna faini za vikao zilizotozwa katika kipindi hiki.
+                        </td>
+                      </tr>
+                    ) : (
+                      meetingFinesDetailedList.map((f, idx) => (
+                        <tr key={f.id || idx} className="hover:bg-slate-900/40">
+                          <td className="p-3 text-slate-500">{idx + 1}</td>
+                          <td className="p-3 text-slate-300">{f.date}</td>
+                          <td className="p-3 font-semibold text-white">{f.title}</td>
+                          <td className="p-3 text-slate-300">
+                            <span className="font-mono font-bold text-emerald-400 mr-1.5">{f.memberNo}</span>
+                            {f.memberName}
+                          </td>
+                          <td className="p-3 text-slate-400">{f.reason}</td>
+                          <td className="p-3 text-right font-bold text-purple-300">{formatTZS(f.amount)}</td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${f.paid ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}`}>
+                              {f.paid ? 'IMELIPWA' : 'HAIJALIPWA'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* Members Breakdown Table in Financial Report */}
             <div className="mt-6">
               <div className="flex items-center justify-between mb-3">
@@ -933,7 +1039,8 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
                       <th className="p-3">Wadhifa</th>
                       {includeRegFee && <th className="p-3 text-center">Usajili</th>}
                       <th className="p-3 text-right">Ada Mwezi</th>
-                      <th className="p-3 text-right">Faini</th>
+                      <th className="p-3 text-right">Faini Ada</th>
+                      <th className="p-3 text-right">Faini Vikao</th>
                       <th className="p-3 text-right">Dharura</th>
                       <th className="p-3 text-right text-emerald-400">Jumla Aliyotoa</th>
                       <th className="p-3 text-right text-rose-400">Jumla ya Deni</th>
@@ -963,15 +1070,24 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
                       // 3. Fines
                       let finesPaid = 0;
                       let finesDebt = 0;
+                      const defaultAbsentFine = state.groupSettings?.meetingFineDefault || 10000;
+                      const defaultLateFine = state.groupSettings?.meetingFineLateDefault || 2000;
                       (state.meetings || []).forEach(mtg => {
                         const iso = normalizeDateToISO(mtg.date);
                         const mYear = iso ? Number(iso.substring(0, 4)) : 0;
                         const mMonth = iso ? Number(iso.substring(5, 7)) : 0;
                         if (isPeriodMatch(currentPeriodFilter, mYear, mMonth, mtg.date)) {
-                          const att = (mtg.attendees || []).find(a => a.memberId === m.id);
-                          if (att && att.fineAmount && att.fineAmount > 0) {
-                            if (att.finePaid) finesPaid += Number(att.fineAmount) || 0;
-                            else finesDebt += Number(att.fineAmount) || 0;
+                          const att = (mtg.attendees || []).find(a => a.memberId === m.id || a.memberNo === m.memberNo);
+                          if (att) {
+                            let fAmt = Number(att.fineAmount) || 0;
+                            if (fAmt === 0) {
+                              if (att.status === 'absent') fAmt = defaultAbsentFine;
+                              else if (att.status === 'late') fAmt = defaultLateFine;
+                            }
+                            if (fAmt > 0) {
+                              if (att.finePaid) finesPaid += fAmt;
+                              else finesDebt += fAmt;
+                            }
                           }
                         }
                       });
@@ -1022,10 +1138,17 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
                             </div>
                           </td>
                           <td className="p-3 text-right font-mono text-slate-300">
-                            <div>{formatTZS(finesPaid)}</div>
-                            {lateFeePenalty > 0 && (
-                              <div className="text-[9px] text-rose-400 font-bold">
-                                +{formatTZS(lateFeePenalty)} faini ada
+                            {lateFeePenalty > 0 ? (
+                              <span className="font-bold text-amber-400">{formatTZS(lateFeePenalty)}</span>
+                            ) : (
+                              <span className="text-slate-600">-</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right font-mono text-slate-300">
+                            <div className="font-bold text-purple-300">{formatTZS(finesPaid)}</div>
+                            {finesDebt > 0 && (
+                              <div className="text-[9px] text-amber-400 font-bold">
+                                Deni: {formatTZS(finesDebt)}
                               </div>
                             )}
                           </td>
@@ -1228,16 +1351,25 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
             let meetingPaid = 0;
             let meetingUnpaid = 0;
 
+            const defaultAbsentFine = state.groupSettings?.meetingFineDefault || 10000;
+            const defaultLateFine = state.groupSettings?.meetingFineLateDefault || 2000;
+
             (state.meetings || []).forEach(mtg => {
               const iso = normalizeDateToISO(mtg.date);
               const mYear = iso ? Number(iso.substring(0, 4)) : 0;
               const mMonth = iso ? Number(iso.substring(5, 7)) : 0;
               if (isPeriodMatch(currentPeriodFilter, mYear, mMonth, mtg.date)) {
-                const att = (mtg.attendees || []).find(a => a.memberId === m.id);
-                if (att && att.fineAmount && att.fineAmount > 0) {
-                  const fAmt = Number(att.fineAmount) || 0;
-                  if (att.finePaid) meetingPaid += fAmt;
-                  else meetingUnpaid += fAmt;
+                const att = (mtg.attendees || []).find(a => a.memberId === m.id || a.memberNo === m.memberNo);
+                if (att) {
+                  let fAmt = Number(att.fineAmount) || 0;
+                  if (fAmt === 0) {
+                    if (att.status === 'absent') fAmt = defaultAbsentFine;
+                    else if (att.status === 'late') fAmt = defaultLateFine;
+                  }
+                  if (fAmt > 0) {
+                    if (att.finePaid) meetingPaid += fAmt;
+                    else meetingUnpaid += fAmt;
+                  }
                 }
               }
             });
@@ -1320,15 +1452,26 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
           return (
             <div className="space-y-6 animate-fadeIn">
               {/* Top KPI Cards for Fines */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <div className="bg-slate-950/80 p-4 rounded-xl border border-emerald-500/30">
+                  <div className="flex items-center justify-between text-emerald-400 mb-1">
+                    <span className="text-[11px] font-semibold">Faini Zilizokusanywa (Zilizolipwa)</span>
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                  <span className="text-xl font-black text-emerald-400">{formatTZS(totalMeetingFinesPaid)}</span>
+                  <span className="text-[10px] text-slate-400 block mt-1">
+                    Pesa ya faini zilizokwisha ingia hazina
+                  </span>
+                </div>
+
                 <div className="bg-slate-950/80 p-4 rounded-xl border border-rose-500/30">
                   <div className="flex items-center justify-between text-rose-400 mb-1">
-                    <span className="text-[11px] font-semibold">Jumla ya Faini Zinazodaiwa</span>
+                    <span className="text-[11px] font-semibold">Faini Zinazodaiwa (Bado)</span>
                     <AlertTriangle className="w-4 h-4" />
                   </div>
                   <span className="text-xl font-black text-rose-400">{formatTZS(grandTotalFinesPending)}</span>
                   <span className="text-[10px] text-slate-400 block mt-1">
-                    Wenye madeni ya faini: {recipientsWithFines.length} wanachama
+                    Wenye madeni: {recipientsWithFines.length} wanachama
                   </span>
                 </div>
 
@@ -1344,24 +1487,24 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
                 </div>
 
                 <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
-                  <div className="flex items-center justify-between text-rose-300 mb-1">
-                    <span className="text-[11px] font-semibold">Faini za Vikao (Madeni)</span>
+                  <div className="flex items-center justify-between text-purple-300 mb-1">
+                    <span className="text-[11px] font-semibold">Faini za Vikao (Jumla)</span>
                     <FileText className="w-4 h-4" />
                   </div>
-                  <span className="text-xl font-black text-rose-300">{formatTZS(totalMeetingFinesDebt)}</span>
+                  <span className="text-xl font-black text-purple-300">{formatTZS(totalMeetingFinesDebt + totalMeetingFinesPaid)}</span>
                   <span className="text-[10px] text-slate-400 block mt-1">
-                    Zilizolipwa: {formatTZS(totalMeetingFinesPaid)}
+                    Zilizolipwa: {formatTZS(totalMeetingFinesPaid)} | Deni: {formatTZS(totalMeetingFinesDebt)}
                   </span>
                 </div>
 
-                <div className="bg-slate-950/80 p-4 rounded-xl border border-emerald-500/30">
-                  <div className="flex items-center justify-between text-emerald-400 mb-1">
+                <div className="bg-slate-950/80 p-4 rounded-xl border border-cyan-500/30">
+                  <div className="flex items-center justify-between text-cyan-400 mb-1">
                     <span className="text-[11px] font-semibold">Jumla Kuu ya Faini Zote</span>
-                    <CheckCircle2 className="w-4 h-4" />
+                    <Receipt className="w-4 h-4" />
                   </div>
-                  <span className="text-xl font-black text-emerald-400">{formatTZS(grandTotalFines)}</span>
+                  <span className="text-xl font-black text-cyan-400">{formatTZS(grandTotalFines)}</span>
                   <span className="text-[10px] text-slate-400 block mt-1">
-                    Wenye faini jumla: {membersWithFinesCount} wanachama
+                    Wanachama: {membersWithFinesCount} wenye faini
                   </span>
                 </div>
               </div>

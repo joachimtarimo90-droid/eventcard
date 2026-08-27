@@ -257,7 +257,7 @@ export const UwalemiSettings: React.FC<Props> = ({ state, onSaveState }) => {
               <input
                 type="number"
                 min={0}
-                step={500}
+                step="any"
                 value={settings.meetingFineDefault || 10000}
                 onChange={(e) => setSettings({ ...settings, meetingFineDefault: Number(e.target.value) || 10000 })}
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono font-bold text-sm focus:border-rose-500 focus:outline-none"
@@ -280,7 +280,7 @@ export const UwalemiSettings: React.FC<Props> = ({ state, onSaveState }) => {
               <input
                 type="number"
                 min={0}
-                step={500}
+                step="any"
                 value={settings.meetingFineLateDefault || 2000}
                 onChange={(e) => setSettings({ ...settings, meetingFineLateDefault: Number(e.target.value) || 2000 })}
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono font-bold text-sm focus:border-indigo-500 focus:outline-none"

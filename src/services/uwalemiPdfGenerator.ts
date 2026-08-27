@@ -11,7 +11,8 @@ import {
   sortMembersByLeadership, 
   getDefaultFeeForMonth, 
   calculateMemberFeeDebt, 
-  calculateLateFeePenalty 
+  calculateLateFeePenalty,
+  calculateMemberOtherFines 
 } from './uwalemiService';
 
 const MONTH_NAMES_SW = [
@@ -687,6 +688,9 @@ export const generateFinancialReportPDF = (
   let totalMeetingFinesUnpaid = 0;
   let fineTransactionsCount = 0;
 
+  const defaultAbsentFine = state.groupSettings?.meetingFineDefault || 10000;
+  const defaultLateFine = state.groupSettings?.meetingFineLateDefault || 2000;
+
   (state.meetings || []).forEach(mtg => {
     const iso = normalizeDateToISO(mtg.date);
     const mYear = iso ? Number(iso.substring(0, 4)) : 0;
@@ -694,7 +698,11 @@ export const generateFinancialReportPDF = (
 
     if (isPeriodMatch(periodFilter, mYear, mMonth, mtg.date)) {
       (mtg.attendees || []).forEach(att => {
-        const fine = Number(att.fineAmount) || 0;
+        let fine = Number(att.fineAmount) || 0;
+        if (fine === 0) {
+          if (att.status === 'absent') fine = defaultAbsentFine;
+          else if (att.status === 'late') fine = defaultLateFine;
+        }
         if (fine > 0) {
           fineTransactionsCount++;
           if (att.finePaid) {
@@ -719,6 +727,13 @@ export const generateFinancialReportPDF = (
     });
   });
 
+  // Late Fee Penalty Calculation (>Miezi 3)
+  let totalLateFeePenalty = 0;
+  members.forEach(m => {
+    const debtInfo = calculateMemberFeeDebt(m, state);
+    totalLateFeePenalty += (debtInfo.lateFeePenalty || 0);
+  });
+
   const totalInflows = totalMonthlyCollected + totalRegFees + totalMeetingFinesCollected + emergencyCollectedInPeriod;
   const totalExpenses = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const netSurplus = totalInflows - totalExpenses;
@@ -737,7 +752,7 @@ export const generateFinancialReportPDF = (
   }
 
   summaryBody.push(
-    ['Faini za Vikao & Utoro (Zilizokusanywa)', formatTZS(totalMeetingFinesCollected), `${fineTransactionsCount} faini zilizotozwa kwajili ya utoro/kuchelewa`],
+    ['Faini za Vikao Zilizokusanywa', formatTZS(totalMeetingFinesCollected), `${fineTransactionsCount} faini zilizolipiwa hazina kwajili ya vikao`],
     ['Michango ya Dharura & Misiba', formatTZS(emergencyCollectedInPeriod), 'Michango iliyokusanywa kipindi hiki'],
     ['JUMLA KUU YA MAPATO (INFLOWS)', formatTZS(totalInflows), 'Jumla ya fedha zote zilizopokelewa hazina'],
     ['JUMLA KUU YA MATUMIZI (OUTFLOWS)', formatTZS(totalExpenses), `${expenses.length} miamala ya matumizi`],
@@ -780,11 +795,23 @@ export const generateFinancialReportPDF = (
       `${members.filter(m => !m.registrationFeePaid).length} wanachama hawajalipa kiingilio cha 2023`
     ]);
   }
-  debtRows.push([
-    'Madeni ya Faini za Vikao (Unpaid Meeting Fines)',
-    formatTZS(totalMeetingFinesUnpaid),
-    'Faini za utoro zilizotozwa lakini hazijalipwa'
-  ]);
+  debtRows.push(
+    [
+      'Madeni ya Faini za Ada (>Miezi 3 ya Kuchelewa)',
+      formatTZS(totalLateFeePenalty),
+      'Faini ya TZS 5,000 kwa kila mwezi unaozidi miezi 3 ya deni'
+    ],
+    [
+      'Madeni ya Faini za Vikao (Unpaid Meeting Fines)',
+      formatTZS(totalMeetingFinesUnpaid),
+      'Faini za utoro/kuchelewa vikao zilizotozwa lakini hazijalipwa'
+    ],
+    [
+      'JUMLA YA MADENI YA FAINI ZOTE BADO KULIPWA',
+      formatTZS(totalLateFeePenalty + totalMeetingFinesUnpaid),
+      'Jumla ya faini za ada na faini za vikao zote zinazodaiwa'
+    ]
+  );
 
   autoTable(doc, {
     startY: currentY,
@@ -847,6 +874,77 @@ export const generateFinancialReportPDF = (
     doc.setTextColor(0, 0, 0);
     doc.text('Hakuna rekodi za matumizi katika kipindi hiki.', 14, currentY + 5);
     currentY += 15;
+  }
+
+  // 2B. Meeting Fines Detailed Breakdown Table
+  const periodMeetingFinesPdfRows: any[] = [];
+  (state.meetings || []).forEach(mtg => {
+    const iso = normalizeDateToISO(mtg.date);
+    const mYear = iso ? Number(iso.substring(0, 4)) : 0;
+    const mMonth = iso ? Number(iso.substring(5, 7)) : 0;
+    if (isPeriodMatch(periodFilter, mYear, mMonth, mtg.date)) {
+      (mtg.attendees || []).forEach(att => {
+        let fine = Number(att.fineAmount) || 0;
+        if (fine === 0) {
+          if (att.status === 'absent') fine = defaultAbsentFine;
+          else if (att.status === 'late') fine = defaultLateFine;
+        }
+        if (fine > 0) {
+          const mMember = members.find(m => m.id === att.memberId || m.memberNo === att.memberNo);
+          periodMeetingFinesPdfRows.push([
+            periodMeetingFinesPdfRows.length + 1,
+            mtg.date,
+            mtg.title || 'Mkutano',
+            mMember ? `${mMember.fullName} (${mMember.memberNo})` : (att.memberName || att.memberNo || 'Mjumbe'),
+            att.status === 'absent' ? 'Kutohudhuria Kikao (Utoro)' : 'Kuchelewa Kikao',
+            formatTZS(fine),
+            att.finePaid ? 'IMELIPWA' : 'HAIJALIPWA'
+          ]);
+        }
+      });
+    }
+  });
+
+  if (periodMeetingFinesPdfRows.length > 0) {
+    if (currentY + 35 > doc.internal.pageSize.height) {
+      doc.addPage();
+      currentY = 20;
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(0, 0, 0);
+    doc.text('ORODHA NA MCHANGANUO WA FAINI ZA VIKAO (UTORO & KUCHELEWA):', 14, currentY);
+    currentY += 3;
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [['#', 'Tarehe', 'Kikao', 'Mjumbe', 'Sababu / Aina ya Faini', 'Kiasi', 'Hali']],
+      body: periodMeetingFinesPdfRows,
+      theme: 'striped',
+      headStyles: { fillColor: [126, 34, 206], textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+      bodyStyles: { textColor: [0, 0, 0], fontSize: 7.5 },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center', textColor: [0, 0, 0] },
+        1: { cellWidth: 20, textColor: [0, 0, 0] },
+        2: { cellWidth: 35, fontStyle: 'bold', textColor: [0, 0, 0] },
+        3: { cellWidth: 45, textColor: [0, 0, 0] },
+        4: { cellWidth: 32, textColor: [0, 0, 0] },
+        5: { cellWidth: 22, halign: 'right', fontStyle: 'bold', textColor: [0, 0, 0] },
+        6: { cellWidth: 23, halign: 'center', fontStyle: 'bold', textColor: [0, 0, 0] }
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 6) {
+          if (data.cell.raw === 'IMELIPWA') {
+            data.cell.styles.textColor = [5, 150, 105];
+          } else {
+            data.cell.styles.textColor = [220, 38, 38];
+          }
+        }
+      }
+    });
+
+    // @ts-ignore
+    currentY = doc.lastAutoTable.finalY + 10;
   }
 
   // 3. ORODHA YA WANACHAMA NA MCHANGANUO WA FEDHA (MEMBERS FINANCIAL BREAKDOWN)
@@ -914,10 +1012,17 @@ export const generateFinancialReportPDF = (
       const mYear = iso ? Number(iso.substring(0, 4)) : 0;
       const mMonth = iso ? Number(iso.substring(5, 7)) : 0;
       if (isPeriodMatch(periodFilter, mYear, mMonth, mtg.date)) {
-        const att = (mtg.attendees || []).find(a => a.memberId === m.id);
-        if (att && att.fineAmount && att.fineAmount > 0) {
-          if (att.finePaid) meetingFinesPaid += Number(att.fineAmount) || 0;
-          else meetingFinesDebt += Number(att.fineAmount) || 0;
+        const att = (mtg.attendees || []).find(a => a.memberId === m.id || a.memberNo === m.memberNo);
+        if (att) {
+          let fAmt = Number(att.fineAmount) || 0;
+          if (fAmt === 0) {
+            if (att.status === 'absent') fAmt = defaultAbsentFine;
+            else if (att.status === 'late') fAmt = defaultLateFine;
+          }
+          if (fAmt > 0) {
+            if (att.finePaid) meetingFinesPaid += fAmt;
+            else meetingFinesDebt += fAmt;
+          }
         }
       }
     });
@@ -943,6 +1048,13 @@ export const generateFinancialReportPDF = (
     const totalDebt = regDebt + feeDebt + totalFinesDebt;
     const statusText = totalDebt === 0 ? 'AMELIPA' : (feePaid > 0 || regPaid > 0) ? 'PUNGUFU' : 'ANA DENI';
 
+    const formatMeetingFinesPdfCell = (paid: number, debt: number) => {
+      if (paid > 0 && debt > 0) return `${formatTZS(paid)}\nDeni: ${formatTZS(debt)}`;
+      if (debt > 0) return `Deni: ${formatTZS(debt)}`;
+      if (paid > 0) return formatTZS(paid);
+      return 'TZS 0';
+    };
+
     if (includeRegFee) {
       return [
         idx + 1,
@@ -951,7 +1063,7 @@ export const generateFinancialReportPDF = (
         regPaid > 0 ? formatTZS(regPaid) : '0.00',
         formatTZS(feePaid),
         lateFeePenalty > 0 ? formatTZS(lateFeePenalty) : '0.00',
-        formatTZS(meetingFinesPaid),
+        formatMeetingFinesPdfCell(meetingFinesPaid, meetingFinesDebt),
         formatTZS(emergencyPaid),
         formatTZS(grandTotalPaid),
         formatTZS(totalDebt),
@@ -964,7 +1076,7 @@ export const generateFinancialReportPDF = (
         getMemberDisplayName(m),
         formatTZS(feePaid),
         lateFeePenalty > 0 ? formatTZS(lateFeePenalty) : '0.00',
-        formatTZS(meetingFinesPaid),
+        formatMeetingFinesPdfCell(meetingFinesPaid, meetingFinesDebt),
         formatTZS(emergencyPaid),
         formatTZS(grandTotalPaid),
         formatTZS(totalDebt),
@@ -1209,15 +1321,24 @@ export const generateMembersLedgerPDF = (
     // 3. Meeting Fines in Period
     let meetingFinesPaid = 0;
     let meetingFinesDebt = 0;
+    const defaultAbsentFine = state.groupSettings?.meetingFineDefault || 10000;
+    const defaultLateFine = state.groupSettings?.meetingFineLateDefault || 2000;
     meetings.forEach(mtg => {
       const iso = normalizeDateToISO(mtg.date);
       const mYear = iso ? Number(iso.substring(0, 4)) : 0;
       const mMonth = iso ? Number(iso.substring(5, 7)) : 0;
       if (isPeriodMatch(periodFilter, mYear, mMonth, mtg.date)) {
-        const att = (mtg.attendees || []).find(a => a.memberId === m.id);
-        if (att && att.fineAmount && att.fineAmount > 0) {
-          if (att.finePaid) meetingFinesPaid += Number(att.fineAmount) || 0;
-          else meetingFinesDebt += Number(att.fineAmount) || 0;
+        const att = (mtg.attendees || []).find(a => a.memberId === m.id || a.memberNo === m.memberNo);
+        if (att) {
+          let fAmt = Number(att.fineAmount) || 0;
+          if (fAmt === 0) {
+            if (att.status === 'absent') fAmt = defaultAbsentFine;
+            else if (att.status === 'late') fAmt = defaultLateFine;
+          }
+          if (fAmt > 0) {
+            if (att.finePaid) meetingFinesPaid += fAmt;
+            else meetingFinesDebt += fAmt;
+          }
         }
       }
     });
@@ -1247,6 +1368,13 @@ export const generateMembersLedgerPDF = (
 
     const statusText = totalDebt === 0 ? 'AMELIPA' : (feePaid > 0 || regPaid > 0) ? 'PUNGUFU' : 'ANA DENI';
 
+    const formatMeetingFinesPdfCell = (paid: number, debt: number) => {
+      if (paid > 0 && debt > 0) return `${formatTZS(paid)}\nDeni: ${formatTZS(debt)}`;
+      if (debt > 0) return `Deni: ${formatTZS(debt)}`;
+      if (paid > 0) return formatTZS(paid);
+      return 'TZS 0';
+    };
+
     if (includeRegFee) {
       return [
         idx + 1,
@@ -1256,7 +1384,7 @@ export const generateMembersLedgerPDF = (
         regPaid > 0 ? formatTZS(regPaid) : '0.00',
         formatTZS(feePaid),
         lateFeePenalty > 0 ? formatTZS(lateFeePenalty) : '0.00',
-        formatTZS(meetingFinesPaid),
+        formatMeetingFinesPdfCell(meetingFinesPaid, meetingFinesDebt),
         formatTZS(emergencyPaid),
         formatTZS(grandTotalPaid),
         formatTZS(totalDebt),
@@ -1270,7 +1398,7 @@ export const generateMembersLedgerPDF = (
         m.phone,
         formatTZS(feePaid),
         lateFeePenalty > 0 ? formatTZS(lateFeePenalty) : '0.00',
-        formatTZS(meetingFinesPaid),
+        formatMeetingFinesPdfCell(meetingFinesPaid, meetingFinesDebt),
         formatTZS(emergencyPaid),
         formatTZS(grandTotalPaid),
         formatTZS(totalDebt),
@@ -1592,29 +1720,37 @@ export const generateFinesReportPDF = (
     // Meeting fines in period
     let meetingPaid = 0;
     let meetingUnpaid = 0;
+    const defaultAbsentFine = state.groupSettings?.meetingFineDefault || 10000;
+    const defaultLateFine = state.groupSettings?.meetingFineLateDefault || 2000;
 
     meetings.forEach(mtg => {
       const iso = normalizeDateToISO(mtg.date);
       const mYear = iso ? Number(iso.substring(0, 4)) : 0;
       const mMonth = iso ? Number(iso.substring(5, 7)) : 0;
       if (isPeriodMatch(periodFilter, mYear, mMonth, mtg.date)) {
-        const att = (mtg.attendees || []).find(a => a.memberId === m.id);
-        if (att && att.fineAmount && att.fineAmount > 0) {
-          const fAmt = Number(att.fineAmount) || 0;
-          if (att.finePaid) {
-            meetingPaid += fAmt;
-          } else {
-            meetingUnpaid += fAmt;
+        const att = (mtg.attendees || []).find(a => a.memberId === m.id || a.memberNo === m.memberNo);
+        if (att) {
+          let fAmt = Number(att.fineAmount) || 0;
+          if (fAmt === 0) {
+            if (att.status === 'absent') fAmt = defaultAbsentFine;
+            else if (att.status === 'late') fAmt = defaultLateFine;
           }
-          detailedMeetingFines.push({
-            date: mtg.date,
-            title: mtg.title || 'Mkutano wa UWALEMI',
-            memberNo: m.memberNo,
-            memberName: getMemberDisplayName(m),
-            amount: fAmt,
-            paid: !!att.finePaid,
-            reason: att.fineReason || (att.status === 'absent' ? 'Kutohudhuria Kikao' : 'Kuchelewa Kikao')
-          });
+          if (fAmt > 0) {
+            if (att.finePaid) {
+              meetingPaid += fAmt;
+            } else {
+              meetingUnpaid += fAmt;
+            }
+            detailedMeetingFines.push({
+              date: mtg.date,
+              title: mtg.title || 'Mkutano wa UWALEMI',
+              memberNo: m.memberNo,
+              memberName: getMemberDisplayName(m),
+              amount: fAmt,
+              paid: !!att.finePaid,
+              reason: att.fineReason || (att.status === 'absent' ? 'Kutohudhuria Kikao' : 'Kuchelewa Kikao')
+            });
+          }
         }
       }
     });

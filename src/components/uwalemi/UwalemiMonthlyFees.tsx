@@ -1830,7 +1830,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                     <span className="absolute left-3 top-2.5 text-slate-400 text-xs font-bold">TZS</span>
                     <input
                       type="number"
-                      step="500"
+                      step="any"
                       min="0"
                       value={annualFastFillAmount}
                       onChange={(e) => setAnnualFastFillAmount(Number(e.target.value) || 0)}
@@ -1943,7 +1943,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                           <input
                             type="number"
                             min="0"
-                            step="500"
+                            step="any"
                             value={currentVal}
                             onChange={(e) => {
                               const val = Math.max(0, Number(e.target.value) || 0);
