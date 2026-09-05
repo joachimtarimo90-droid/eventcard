@@ -73,10 +73,10 @@ export const UwalemiFinePaymentModal: React.FC<Props> = ({
   const [paymentMethod, setPaymentMethod] = useState<string>(
     state.groupSettings?.paymentMethods?.[0]?.provider 
       ? `${state.groupSettings.paymentMethods[0].provider} (${state.groupSettings.paymentMethods[0].number})`
-      : 'M-Koba / M-Pesa (0758 219 298 - Eva Lema)'
+      : 'M Koba / M-Pesa (0758 219 298 - Eva O Lema)'
   );
   const [referenceNo, setReferenceNo] = useState<string>('');
-  const [receivedBy, setReceivedBy] = useState<string>('Eva Lema (Mweka Hazina)');
+  const [receivedBy, setReceivedBy] = useState<string>('Eva O Lema (Mweka Hazina)');
   const [notes, setNotes] = useState<string>('');
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -218,12 +218,35 @@ export const UwalemiFinePaymentModal: React.FC<Props> = ({
       });
     }
 
+    // Update accruedFines if this was a late fee fine
+    let updatedAccruedFines = [...(state.accruedFines || [])];
+    if (fineType === 'ada_late_fee') {
+      let paidAllocation = Number(amount);
+      updatedAccruedFines = updatedAccruedFines.map(af => {
+        if ((af.memberId === selectedMember.id || af.memberNo === selectedMember.memberNo) && af.fineType === 'ada_late_fee' && af.status !== 'paid') {
+          const unpaid = Math.max(0, af.amount - (af.paidAmount || 0));
+          if (unpaid > 0 && paidAllocation > 0) {
+            const alloc = Math.min(unpaid, paidAllocation);
+            const newPaid = (af.paidAmount || 0) + alloc;
+            paidAllocation -= alloc;
+            return {
+              ...af,
+              paidAmount: newPaid,
+              status: (newPaid >= af.amount ? 'paid' : 'partial') as 'paid' | 'partial'
+            };
+          }
+        }
+        return af;
+      });
+    }
+
     const updatedFinePayments = [newPayment, ...(state.finePayments || [])];
 
     const updatedState: UwalemiState = {
       ...state,
       meetings: updatedMeetings,
       finePayments: updatedFinePayments,
+      accruedFines: updatedAccruedFines,
       lastUpdated: now.toISOString()
     };
 
@@ -236,7 +259,7 @@ export const UwalemiFinePaymentModal: React.FC<Props> = ({
       // Tuma SMS ya Stakabadhi Kiotomatiki (kama imewashwa)
       if (state.groupSettings?.smsConfig?.autoSendReceipts && newPayment.amount > 0 && selectedMember) {
         triggerAutoReceiptSms({
-          state,
+          state: updatedState,
           member: selectedMember,
           paymentType: 'fine',
           amount: newPayment.amount,
@@ -470,7 +493,7 @@ export const UwalemiFinePaymentModal: React.FC<Props> = ({
                   }`}
                 >
                   <span className="block text-[11px]">Faini ya Ada</span>
-                  <span className="text-[9px] text-slate-400 font-normal">Kuchelewa (&gt;3M)</span>
+                  <span className="text-[9px] text-slate-400 font-normal">Mz 6+ (&gt;3M)</span>
                 </button>
 
                 <button
@@ -568,7 +591,7 @@ export const UwalemiFinePaymentModal: React.FC<Props> = ({
                       {pm.provider} - {pm.number} ({pm.accountName})
                     </option>
                   ))}
-                  <option value="Vodacom M-Pesa (0758 219 298 - Eva Lema)">M-Pesa (0758 219 298 - Eva Lema)</option>
+                  <option value="Vodacom M-Pesa (0758 219 298 - Eva O Lema)">M-Pesa (0758 219 298 - Eva O Lema)</option>
                   <option value="CRDB Bank (0152435678900)">CRDB Bank (0152435678900)</option>
                   <option value="Taslimu (Cash)">Taslimu (Cash)</option>
                   <option value="Airtel Money">Airtel Money</option>

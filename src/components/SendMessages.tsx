@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, RefreshCw, CheckCircle, MessageCircle, AlertCircle, PlayCircle, ArrowRight, X, Clipboard, Check, ExternalLink } from 'lucide-react';
+import { Send, RefreshCw, CheckCircle, MessageCircle, AlertCircle, PlayCircle, ArrowRight, X, Clipboard, Check, ExternalLink, Smartphone, MessageSquare, Search, User, Filter } from 'lucide-react';
 import { EventDetails, Guest, TemplateSettings } from '../types';
-import { drawCardToCanvas, generateGuestCardImage } from '../utils/canvasHelper';
+import { drawCardToCanvas, generateGuestCardImage, preloadImage } from '../utils/canvasHelper';
 import { safeLocalStorage } from '../utils/storage';
 import { convertWebPToJpeg } from '../utils/imageUtils';
 import { isStatusSent } from '../utils/statusHelper';
@@ -44,6 +44,28 @@ export default function SendMessages({ event, settings, guests, language, onUpda
     }
   };
 
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(prev => (prev?.message === message ? null : prev));
+    }, 4500);
+  };
+
+  const [confirmModalConfig, setConfirmModalConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: '',
+    onConfirm: () => {}
+  });
   const [isSendingAll, setIsSendingAll] = useState(false);
   const [isBatchSending, setIsBatchSending] = useState(false);
   const [lastBatchId, setLastBatchId] = useState<string | null>(null);
@@ -52,6 +74,8 @@ export default function SendMessages({ event, settings, guests, language, onUpda
   const [sendingProgress, setSendingProgress] = useState(0);
   const [messageType, setMessageType] = useState<'invitation' | 'reminder' | 'thank-you'>('invitation');
   const [thankYouAudience, setThankYouAudience] = useState<'all' | 'confirmed' | 'attended'>('attended');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending-sms' | 'pending-wa' | 'sent' | 'wa-only' | 'sms-only'>('all');
 
   const [isScheduling, setIsScheduling] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('');
@@ -558,8 +582,15 @@ Thank you very much and God bless you!`;
           if (lastActive && lastActive.status === 'completed' && wasActive && wasActive.status !== 'completed') {
             if (onUpdateGuests) {
               fetch('/api/guests')
-                .then(r => r.json())
-                .then(data => onUpdateGuests(data, "Queue finished", false))
+                .then(r => {
+                  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                  return r.json();
+                })
+                .then(data => {
+                  if (Array.isArray(data)) {
+                    onUpdateGuests(data, "Queue finished", false);
+                  }
+                })
                 .catch(err => console.error("Error refreshing guests:", err));
             }
           }
@@ -685,25 +716,24 @@ Karibu sana!`);
   // Get unique categories list dynamically for edit select category input dropdown
   const availableCategories = Array.from(new Set(guests.map(g => g.cardType).filter(Boolean)));
 
-  const handleResetSingleGuest = (guestId: string) => {
+  const handleResetSingleGuest = (guestId: string, channel: 'sms' | 'whatsapp' | 'all' = 'all') => {
+    const target = guests.find(g => g.id === guestId);
+    const label = channel === 'sms' ? 'SMS' : channel === 'whatsapp' ? 'WhatsApp' : 'SMS na WhatsApp';
     const updated = guests.map(g => {
       if (g.id === guestId) {
         return {
           ...g,
-          smsStatus: 'Sijatuma' as const,
-          whatsappStatus: 'Sijatuma' as const,
-          smsCount: 0,
-          whatsappCount: 0
+          ...(channel === 'sms' || channel === 'all' ? { smsStatus: 'Sijatuma' as const, smsCount: 0 } : {}),
+          ...(channel === 'whatsapp' || channel === 'all' ? { whatsappStatus: 'Sijatuma' as const, whatsappCount: 0 } : {})
         };
       }
       return g;
     });
-    onUpdateGuests(updated);
+    onUpdateGuests(updated, `Amefuta hali ya ${label} kwa mgeni: ${target?.name || guestId}`);
     
-    const target = guests.find(g => g.id === guestId);
     if (target) {
       setSendLogs(prev => [
-        `[${new Date().toLocaleTimeString()}] ↺ Hali ya kutuma imefutwa (Reset) kwa mgeni mmoja: ${target.name}`,
+        `[${new Date().toLocaleTimeString()}] ↺ Hali ya ${label} imefutwa (Reset) kwa: ${target.name}`,
         ...prev
       ]);
     }
@@ -738,25 +768,56 @@ Karibu sana!`);
     setEditingGuest(null);
   };
 
-  // Filtered guests based on message type - Memoized for performance
+  // Filtered guests based on message type, search query and status - Memoized for performance, sorted alphabetically A-Z
   const filteredGuests = React.useMemo(() => {
-    return guests.filter(g => {
-      if (messageType === 'save_the_date') {
-        return g.rsvpStatus === 'Atahudhuria';
-      }
-      if (messageType === 'thank-you') {
-        if (thankYouAudience === 'attended') {
-          return g.checkedIn === true;
+    const query = searchQuery.trim().toLowerCase();
+    return guests
+      .filter(g => {
+        // Search filter by name, phone, code or card category
+        if (query) {
+          const matchName = (g.name || '').toLowerCase().includes(query);
+          const matchPhone = (g.phone || '').toLowerCase().includes(query);
+          const matchCode = (g.code || '').toLowerCase().includes(query) || `eventcard-${g.code || g.id}`.toLowerCase().includes(query);
+          const matchType = (g.cardType || '').toLowerCase().includes(query);
+          if (!matchName && !matchPhone && !matchCode && !matchType) {
+            return false;
+          }
         }
-        if (thankYouAudience === 'confirmed') {
+
+        // Status filter
+        if (statusFilter === 'pending-sms' && isStatusSent(g.smsStatus)) {
+          return false;
+        }
+        if (statusFilter === 'pending-wa' && isStatusSent(g.whatsappStatus)) {
+          return false;
+        }
+        if (statusFilter === 'sent' && !isStatusSent(g.smsStatus) && !isStatusSent(g.whatsappStatus)) {
+          return false;
+        }
+        if (statusFilter === 'wa-only' && g.hasWhatsApp !== true) {
+          return false;
+        }
+        if (statusFilter === 'sms-only' && g.hasWhatsApp !== false) {
+          return false;
+        }
+
+        if (messageType === 'save_the_date') {
           return g.rsvpStatus === 'Atahudhuria';
         }
-        // If 'all', return true
+        if (messageType === 'thank-you') {
+          if (thankYouAudience === 'attended') {
+            return g.checkedIn === true;
+          }
+          if (thankYouAudience === 'confirmed') {
+            return g.rsvpStatus === 'Atahudhuria';
+          }
+          // If 'all', return true
+          return true;
+        }
         return true;
-      }
-      return true;
-    });
-  }, [guests, messageType, thankYouAudience]);
+      })
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'sw'));
+  }, [guests, messageType, thankYouAudience, searchQuery, statusFilter]);
 
   // Status Metrics - Memoized
   const { countSmsSent, countWhatsappSent, countPending } = React.useMemo(() => {
@@ -891,7 +952,13 @@ Karibu sana!`);
       '{contact_1_name}': event.contact1Name || "",
       '{contact_1_phone}': event.contact1 || "",
       '{contact_2_name}': event.contact2Name || "",
-      '{contact_2_phone}': event.contact2 || ""
+      '{contact_2_phone}': event.contact2 || "",
+      '{{13}}': event.contact3Name || "",
+      '{13}': event.contact3Name || "",
+      '{{14}}': event.contact3 || "",
+      '{14}': event.contact3 || "",
+      '{contact_3_name}': event.contact3Name || "",
+      '{contact_3_phone}': event.contact3 || ""
     };
 
     Object.keys(replacements).forEach(key => {
@@ -930,11 +997,13 @@ Karibu sana!`);
   };
 
   const [isDispatching, setIsDispatching] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const handleSendSingle = (guestId: string, channel: 'sms' | 'whatsapp') => {
     console.log(`[Diagnostic] Single send triggered: guestId=${guestId}, channel=${channel}`);
     const target = guests.find(g => g.id === guestId);
     if (target) {
+      setModalError(null);
       setActiveSendTarget({ guest: target, channel });
       setCopySuccess(false);
     } else {
@@ -1073,7 +1142,13 @@ Karibu sana!`);
           '{contact_1_name}': event.contact1Name || "",
           '{contact_1_phone}': event.contact1 || "",
           '{contact_2_name}': event.contact2Name || "",
-          '{contact_2_phone}': event.contact2 || ""
+          '{contact_2_phone}': event.contact2 || "",
+          '{{13}}': event.contact3Name || "",
+          '{13}': event.contact3Name || "",
+          '{{14}}': event.contact3 || "",
+          '{14}': event.contact3 || "",
+          '{contact_3_name}': event.contact3Name || "",
+          '{contact_3_phone}': event.contact3 || ""
         };
 
         const regex = /\{\{[0-9]+\}\}|\{\{[a-zA-Z0-9_\-Hh]+\}\}|\{[a-zA-Z0-9_\-Hh]+\}/g;
@@ -1171,9 +1246,14 @@ Karibu sana!`);
       setActiveSendTarget(null);
     } catch (err: any) {
       console.error("[Diagnostic] Send Failure:", err);
-      alert("Hitilafu katika utumaji: " + err.message);
+      const errMsg = err.message || "Hitilafu katika utumaji wa ujumbe.";
+      setModalError(errMsg);
+      setToast({
+        message: errMsg,
+        type: 'error'
+      });
       setSendLogs(prev => [
-        `[${new Date().toLocaleTimeString()}] ✗ Imeshindwa kwa mgeni: ${target.name}. Sababu: ${err.message}`,
+        `[${new Date().toLocaleTimeString()}] ✗ Imeshindwa kwa mgeni: ${target.name}. Sababu: ${errMsg}`,
         ...prev
       ]);
     } finally {
@@ -1181,104 +1261,18 @@ Karibu sana!`);
     }
   };
 
-  const handleSendAll = async () => {
-    if (isSendingAll || isBatchSending) return;
-    const channel: string = gatewaySettings.provider === 'whatsapp' ? 'whatsapp' : 'sms';
-    
-    // Only send to guests that are currently visible/filtered
-    if (filteredGuests.length === 0) {
-      alert("Samahani, hakuna wageni katika orodha ya sasa wa kutumiwa ujumbe huu.");
-      return;
-    }
-
-    const pendingGuests = filteredGuests.filter(g => {
-      if (channel === 'whatsapp') {
-        return !isStatusSent(g.whatsappStatus);
-      } else {
-        return !isStatusSent(g.smsStatus);
-      }
-    });
-    
-    if (pendingGuests.length === 0) {
-      alert(`Hakuna wageni katika orodha hii ambao hawajapata ujumbe wa ${channel.toUpperCase()} bado!`);
-      return;
-    }
-
-    const formattedScheduleTime = isScheduling && scheduleTime ? scheduleTime.replace('T', ' ') + ':00' : undefined;
-
-    const confirmMsg = `Je, una uhakika unataka kutuma mialiko kwa wageni ${pendingGuests.length} ambao bado hawajapata ujumbe wa ${channel.toUpperCase()}${formattedScheduleTime ? ' kwa muda ' + formattedScheduleTime : ''}?`;
-
-    if (!confirm(confirmMsg)) {
-      return;
-    }
-
-    // IF PROVIDER IS MESEJI, WE CAN DO A REAL BATCH SEND IN ONE GO
-    if (gatewaySettings.provider === 'meseji') {
-      setIsBatchSending(true);
-      setLastBatchId(null);
-      setSendLogs(prev => [`[INFO] Imeanza kuwasilisha ujunbe wa BATCH kwa Meseji API kwa wageni ${pendingGuests.length}...`, ...prev]);
-
-      try {
-        // Use a generic version of the template for batch send (no personalized tags or resolve them generic)
-        const sampleText = getGuestMessageText(pendingGuests[0], true);
-        
-        const res = await fetch('/api/send-bulk', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            guestIds: pendingGuests.map(g => g.id),
-            message: sampleText,
-            scheduleTime: formattedScheduleTime
-          })
-        });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Batch dispatch failed.");
-
-        setLastBatchId(data.batchId);
-        
-        // Update all guest statuses locally
-        const updated = guests.map(g => {
-          if (pendingGuests.find(pg => pg.id === g.id)) {
-            const currentCount = typeof g.smsCount === 'number' ? g.smsCount : (isStatusSent(g.smsStatus) ? 1 : 0);
-            return { 
-              ...g, 
-              smsStatus: 'Imetumia' as const,
-              smsCount: currentCount + 1
-            };
-          }
-          return g;
-        });
-        onUpdateGuests(updated);
-
-        setSendLogs(prev => [
-          `[${new Date().toLocaleTimeString()}] ✓ BATCH SUCCESS! Batch ID: ${data.batchId || 'N/A'}. Total: ${data.total}`,
-          ...prev
-        ]);
-        
-        alert(`Ujumbe wa pamoja (Batch) umekubaliwa na Meseji API!\n\nBatch ID: ${data.batchId || 'N/A'}\nJumla ya Wageni: ${data.total}`);
-
-      } catch (err: any) {
-        setSendLogs(prev => [
-          `[${new Date().toLocaleTimeString()}] ✗ BATCH FAILED. Sababu: ${err.message}`,
-          ...prev
-        ]);
-        addSystemNotification(
-          'error',
-          isEn ? 'Batch Dispatch Failed' : 'Utumaji wa Pamoja Umeshindwa',
-          isEn ? `Batch sending failed. Error: ${err.message}` : `Utumaji wa pamoja (Batch) umeshindwa. Hitilafu: ${err.message}`
-        );
-        alert("Hitilafu katika utumaji wa Batch: " + err.message);
-      } finally {
-        setIsBatchSending(false);
-      }
-      return;
-    }
-
-    // BACKGROUND QUEUE SYSTEM FOR ALL OTHER DISPATCHES (No more slow/risky client side loops)
+  const startBackgroundDispatch = async (channel: 'sms' | 'whatsapp', pendingGuests: Guest[]) => {
     setIsSendingAll(true);
     setSendingProgress(0);
-    setSendLogs(prev => [`[INFO] Inatayarisha picha za kadi na mialiko kwa ajili ya Foleni ya Server...`, ...prev]);
+    setSendLogs(prev => [`[INFO] Inatayarisha picha za kadi na mialiko ya kibinafsi kwa ajili ya wageni ${pendingGuests.length}...`, ...prev]);
+
+    if (channel === 'whatsapp' && settings.imageUrl) {
+      try {
+        await preloadImage(settings.imageUrl);
+      } catch (e) {
+        console.warn("[SendMessages] Background image preload warning:", e);
+      }
+    }
 
     const tasks = [];
     let preparedCount = 0;
@@ -1290,23 +1284,23 @@ Karibu sana!`);
         : 'https://eventcard.co.tz';
       const appUrl = `${currentOrigin}/?invite=${guest.code || guest.id}&eventId=${event.id}&lang=${language}`;
 
-      // 1. Send Main Message
-      let compatibleImageUrl = "";
-      try {
-        const qrCodeText = guest.code || guest.id;
-        compatibleImageUrl = await generateGuestCardImage(
-          event,
-          settings,
-          guest.name,
-          guest.cardType || "DOUBLE",
-          qrCodeText
-        );
-      } catch (err) {
-        console.error("Failed to generate dynamic guest card image:", err);
-        compatibleImageUrl = await convertWebPToJpeg(settings.imageUrl);
+      let compatibleImageUrl = settings.imageUrl || "";
+      if (channel === 'whatsapp') {
+        try {
+          const qrCodeText = guest.code || guest.id;
+          compatibleImageUrl = await generateGuestCardImage(
+            event,
+            settings,
+            guest.name,
+            guest.cardType || "DOUBLE",
+            qrCodeText
+          );
+        } catch (err) {
+          console.warn(`[SendMessages] Error generating dynamic card for guest ${guest.name}:`, err);
+          compatibleImageUrl = settings.imageUrl || "";
+        }
       }
 
-      // Extract template params dynamically for official Meta WhatsApp template matching
       let templateParams: string[] | undefined = undefined;
       const rawTemplate = messageType === 'thank-you' 
         ? (language === 'en' ? thankYouTemplateEn : thankYouTemplateSw)
@@ -1394,7 +1388,13 @@ Karibu sana!`);
         '{contact_1_name}': event.contact1Name || "",
         '{contact_1_phone}': event.contact1 || "",
         '{contact_2_name}': event.contact2Name || "",
-        '{contact_2_phone}': event.contact2 || ""
+        '{contact_2_phone}': event.contact2 || "",
+        '{{13}}': event.contact3Name || "",
+        '{13}': event.contact3Name || "",
+        '{{14}}': event.contact3 || "",
+        '{14}': event.contact3 || "",
+        '{contact_3_name}': event.contact3Name || "",
+        '{contact_3_phone}': event.contact3 || ""
       };
 
       const regex = /\{\{[0-9]+\}\}|\{\{[a-zA-Z0-9_\-Hh]+\}\}|\{[a-zA-Z0-9_\-Hh]+\}/g;
@@ -1446,9 +1446,10 @@ Karibu sana!`);
         ...prev
       ]);
       fetchQueueJobs();
+      showToast(isEn ? `Dispatch started for ${tasks.length} guests!` : `Utumaji wa wageni ${tasks.length} umeanza kwenye foleni!`, 'success');
     } catch (err: any) {
       console.error("Queue Submission Failed:", err);
-      alert("Imeshindwa kutuma kazi ya foleni: " + err.message);
+      showToast("Imeshindwa kutuma kazi ya foleni: " + err.message, "error");
       setSendLogs(prev => [`[ERROR] Hitilafu: ${err.message}`, ...prev]);
     } finally {
       setIsSendingAll(false);
@@ -1456,17 +1457,144 @@ Karibu sana!`);
     }
   };
 
+  const handleSendAll = async (targetChannel?: 'sms' | 'whatsapp') => {
+    if (isSendingAll || isBatchSending) return;
+    const channel: 'sms' | 'whatsapp' = targetChannel || (gatewaySettings.provider === 'whatsapp' ? 'whatsapp' : 'sms');
+    
+    if (filteredGuests.length === 0) {
+      showToast(isEn ? "No guests in current list to send messages to." : "Samahani, hakuna wageni katika orodha ya sasa wa kutumiwa ujumbe huu.", "info");
+      return;
+    }
+
+    const pendingGuests = filteredGuests.filter(g => {
+      if (channel === 'whatsapp') {
+        return !isStatusSent(g.whatsappStatus);
+      } else {
+        return !isStatusSent(g.smsStatus);
+      }
+    });
+    
+    let targetGuests = pendingGuests;
+    let isResendingAll = false;
+
+    if (pendingGuests.length === 0) {
+      targetGuests = filteredGuests;
+      isResendingAll = true;
+    }
+
+    const formattedScheduleTime = isScheduling && scheduleTime ? scheduleTime.replace('T', ' ') + ':00' : undefined;
+
+    const confirmMsg = isResendingAll
+      ? (isEn
+          ? `All ${targetGuests.length} guests in this list show messages already sent. Do you want to resend ${channel.toUpperCase()} messages to ALL ${targetGuests.length} guests again?`
+          : `Wageni wote ${targetGuests.length} walio kwenye orodha hii wanaonyesha wameshatumiwa ujumbe tayari. Je, unataka kuwatumia tena ujumbe wa ${channel.toUpperCase()} wageni wote ${targetGuests.length}?`)
+      : (isEn
+          ? `Are you sure you want to dispatch invitations to ${targetGuests.length} guests via ${channel.toUpperCase()}${formattedScheduleTime ? ' scheduled for ' + formattedScheduleTime : ''}?`
+          : `Je, una uhakika unataka kutuma mialiko ya kibinafsi kwa wageni ${targetGuests.length} kupitia ${channel.toUpperCase()}${formattedScheduleTime ? ' kwa muda ' + formattedScheduleTime : ''}?`);
+
+    setConfirmModalConfig({
+      isOpen: true,
+      title: isEn ? `Dispatch ${channel.toUpperCase()} Messages` : `Tuma Mialiko ya ${channel.toUpperCase()}`,
+      message: confirmMsg,
+      confirmText: isEn ? "Yes, Send Now" : "Ndiyo, Tuma Sasa",
+      onConfirm: () => {
+        setConfirmModalConfig(prev => ({ ...prev, isOpen: false }));
+        startBackgroundDispatch(channel, targetGuests);
+      }
+    });
+  };
+
+  const handleResetSMS = () => {
+    const listToReset = filteredGuests.length > 0 ? filteredGuests : guests;
+    if (listToReset.length === 0) {
+      showToast(isEn ? "No guests in current list to reset." : "Hakuna wageni katika orodha ya sasa wa kufanya reset.", "info");
+      return;
+    }
+    
+    const targetIds = new Set(listToReset.map(g => g.id));
+    const reset = guests.map(g => {
+      if (targetIds.has(g.id)) {
+        return {
+          ...g,
+          smsStatus: 'Sijatuma' as const,
+          smsCount: 0
+        };
+      }
+      return g;
+    });
+    
+    onUpdateGuests(reset, `Amefuta hali ya SMS pekee kwa wageni ${listToReset.length}`);
+    setSendLogs(prev => [`[${new Date().toLocaleTimeString()}] ↺ Hali ya SMS pekee imefutwa (Reset SMS Status) kwa wageni ${listToReset.length}`, ...prev]);
+    
+    showToast(
+      isEn 
+        ? `✓ SMS status reset to 'Pending' for ${listToReset.length} guests successfully!`
+        : `✓ Hali ya SMS pekee imefutwa na kurudishwa kuwa 'Sijatuma' kwa wageni ${listToReset.length} kwa mafanikio!`,
+      'success'
+    );
+  };
+
+  const handleResetWhatsApp = () => {
+    const listToReset = filteredGuests.length > 0 ? filteredGuests : guests;
+    if (listToReset.length === 0) {
+      showToast(isEn ? "No guests in current list to reset." : "Hakuna wageni katika orodha ya sasa wa kufanya reset.", "info");
+      return;
+    }
+    
+    const targetIds = new Set(listToReset.map(g => g.id));
+    const reset = guests.map(g => {
+      if (targetIds.has(g.id)) {
+        return {
+          ...g,
+          whatsappStatus: 'Sijatuma' as const,
+          whatsappCount: 0
+        };
+      }
+      return g;
+    });
+    
+    onUpdateGuests(reset, `Amefuta hali ya WhatsApp pekee kwa wageni ${listToReset.length}`);
+    setSendLogs(prev => [`[${new Date().toLocaleTimeString()}] ↺ Hali ya WhatsApp pekee imefutwa (Reset WA Status) kwa wageni ${listToReset.length}`, ...prev]);
+    
+    showToast(
+      isEn 
+        ? `✓ WhatsApp status reset to 'Pending' for ${listToReset.length} guests successfully!`
+        : `✓ Hali ya WhatsApp pekee imefutwa na kurudishwa kuwa 'Sijatuma' kwa wageni ${listToReset.length} kwa mafanikio!`,
+      'success'
+    );
+  };
+
   const handleReset = () => {
-    const reset = guests.map(g => ({
-      ...g,
-      smsStatus: 'Sijatuma' as const,
-      whatsappStatus: 'Sijatuma' as const,
-      smsCount: 0,
-      whatsappCount: 0
-    }));
-    onUpdateGuests(reset);
+    const listToReset = filteredGuests.length > 0 ? filteredGuests : guests;
+    if (listToReset.length === 0) {
+      showToast(isEn ? "No guests in current list to reset." : "Hakuna wageni katika orodha ya sasa wa kufanya reset.", "info");
+      return;
+    }
+    
+    const targetIds = new Set(listToReset.map(g => g.id));
+    const reset = guests.map(g => {
+      if (targetIds.has(g.id)) {
+        return {
+          ...g,
+          smsStatus: 'Sijatuma' as const,
+          whatsappStatus: 'Sijatuma' as const,
+          smsCount: 0,
+          whatsappCount: 0
+        };
+      }
+      return g;
+    });
+    
+    onUpdateGuests(reset, `Amefuta hali zote za SMS na WhatsApp kwa wageni ${listToReset.length}`);
     setSendLogs([]);
     setSendingProgress(0);
+    
+    showToast(
+      isEn 
+        ? `✓ SMS & WhatsApp statuses reset for ${listToReset.length} guests successfully!`
+        : `✓ Hali za SMS na WhatsApp zimefutwa na kurudishwa kuwa 'Sijatuma' kwa wageni ${listToReset.length} kwa mafanikio!`,
+      'success'
+    );
   };
 
   const renderDeliveryIndicator = (g: Guest) => {
@@ -1559,13 +1687,33 @@ Karibu sana!`);
           )}
 
           {filteredGuests.length > 0 && (
-            <button
-              onClick={handleReset}
-              className="text-slate-200 border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-2 rounded-xl transition flex items-center gap-1 font-bold text-xs cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>{isEn ? "Reset Status" : "Reset Hali"}</span>
-            </button>
+            <div className="flex items-center space-x-1.5 bg-white/5 p-1 rounded-xl border border-white/10">
+              <button
+                onClick={handleResetSMS}
+                className="text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-bold text-xs cursor-pointer"
+                title={isEn ? "Reset SMS status only for filtered guests" : "Futa hali ya SMS pekee na kurudisha Sijatuma"}
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-blue-400" />
+                <span>{isEn ? "Reset SMS" : "Reset SMS Pekee"}</span>
+              </button>
+
+              <button
+                onClick={handleResetWhatsApp}
+                className="text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-bold text-xs cursor-pointer"
+                title={isEn ? "Reset WhatsApp status only for filtered guests" : "Futa hali ya WhatsApp pekee na kurudisha Sijatuma"}
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{isEn ? "Reset WA" : "Reset WA Pekee"}</span>
+              </button>
+
+              <button
+                onClick={handleReset}
+                className="text-slate-400 hover:text-slate-200 hover:bg-white/10 px-2 py-1.5 rounded-lg transition flex items-center gap-1 font-bold text-xs cursor-pointer"
+                title={isEn ? "Reset both SMS and WhatsApp" : "Futa hali zote mbili (SMS na WA)"}
+              >
+                <span>{isEn ? "Reset All" : "Reset Zote"}</span>
+              </button>
+            </div>
           )}
 
           <div className="flex items-center space-x-2 border border-white/10 bg-white/5 rounded-xl px-2 py-1">
@@ -1588,13 +1736,36 @@ Karibu sana!`);
             )}
           </div>
 
+          {/* Bulk SMS Button */}
           <button
-            onClick={handleSendAll}
+            onClick={() => handleSendAll('sms')}
             disabled={isSendingAll || filteredGuests.length === 0}
-            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:shadow-[0_0_15px_rgba(59,130,246,0.30)] text-white px-4 py-2 rounded-xl transition flex items-center gap-1.5 font-bold shadow disabled:bg-white/10 disabled:text-slate-500 disabled:cursor-not-allowed text-xs cursor-pointer"
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 font-bold shadow-md hover:shadow-blue-500/20 disabled:opacity-40 disabled:cursor-not-allowed text-xs cursor-pointer"
+            title={isEn ? "Send SMS invitations to all pending guests" : "Tuma SMS kwa wageni wote waliobakia"}
           >
-            <PlayCircle className="w-4 h-4" />
-            <span>{isSendingAll ? (isEn ? 'Sending...' : 'Inatuma...') : isScheduling ? (isEn ? 'Schedule Send' : 'Weka Ratiba') : (isEn ? 'Dispatch All' : 'Tuma Zote')}</span>
+            <Smartphone className="w-3.5 h-3.5 text-blue-200" />
+            <span>{isSendingAll ? (isEn ? 'Sending...' : 'Inatuma...') : (isEn ? 'Send All SMS' : 'Tuma SMS kwa Wote')}</span>
+            {filteredGuests.filter(g => !isStatusSent(g.smsStatus)).length > 0 && (
+              <span className="ml-1 bg-white/20 text-white text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold">
+                {filteredGuests.filter(g => !isStatusSent(g.smsStatus)).length}
+              </span>
+            )}
+          </button>
+
+          {/* Bulk WhatsApp Button */}
+          <button
+            onClick={() => handleSendAll('whatsapp')}
+            disabled={isSendingAll || filteredGuests.length === 0}
+            className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 font-bold shadow-md hover:shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed text-xs cursor-pointer"
+            title={isEn ? "Send WhatsApp invitations to all pending guests" : "Tuma WhatsApp kwa wageni wote waliobakia"}
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-emerald-200" />
+            <span>{isSendingAll ? (isEn ? 'Sending...' : 'Inatuma...') : (isEn ? 'Send All WhatsApp' : 'Tuma WhatsApp kwa Wote')}</span>
+            {filteredGuests.filter(g => !isStatusSent(g.whatsappStatus)).length > 0 && (
+              <span className="ml-1 bg-white/20 text-white text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold">
+                {filteredGuests.filter(g => !isStatusSent(g.whatsappStatus)).length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -2029,7 +2200,105 @@ Karibu sana!`);
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Left Guest List and Actions (8 Cols) */}
-        <div className="lg:col-span-8 border border-white/10 rounded-2xl overflow-hidden bg-white/5 text-xs">
+        <div className="lg:col-span-8 border border-white/10 rounded-2xl overflow-hidden bg-white/5 text-xs flex flex-col">
+          {/* Guest Search & Filter Bar */}
+          <div className="p-3.5 sm:p-4 bg-white/[0.03] border-b border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            {/* Search Input Box */}
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                id="inp-search-guest-cards"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={isEn ? "Search guest by name, phone or card number..." : "Tafuta jina la mgeni, simu au kadi..."}
+                className="w-full bg-[#050b18] border border-white/15 focus:border-blue-400/80 rounded-xl pl-9 pr-8 py-2 text-white placeholder:text-slate-500 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400/30 transition-all"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
+                  title="Futa utafutaji"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Quick Status Filter & Counter */}
+            <div className="flex items-center gap-2 flex-wrap justify-between sm:justify-end">
+              <div className="flex items-center bg-black/30 border border-white/10 rounded-xl p-0.5 text-[10px] font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    statusFilter === 'all' 
+                      ? 'bg-blue-600 text-white font-bold shadow-sm' 
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {isEn ? "All" : "Wote"} ({guests.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('pending-sms')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    statusFilter === 'pending-sms' 
+                      ? 'bg-blue-600 text-white font-bold shadow-sm' 
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {isEn ? "Pending SMS" : "Bado SMS"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('pending-wa')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    statusFilter === 'pending-wa' 
+                      ? 'bg-emerald-600 text-white font-bold shadow-sm' 
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {isEn ? "Pending WA" : "Bado WA"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('wa-only')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    statusFilter === 'wa-only' 
+                      ? 'bg-teal-600 text-white font-bold shadow-sm' 
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title={isEn ? "Filter only guests with WhatsApp" : "Chuja wageni wenye namba ya WhatsApp pekee"}
+                >
+                  {isEn ? "WhatsApp" : "WhatsApp Pekee"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('sms-only')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    statusFilter === 'sms-only' 
+                      ? 'bg-amber-600 text-white font-bold shadow-sm' 
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title={isEn ? "Filter guests without WhatsApp (SMS Only)" : "Chuja wageni wasio na WhatsApp (SMS Pekee)"}
+                >
+                  {isEn ? "SMS Only" : "SMS Pekee"}
+                </button>
+              </div>
+
+              {/* Match Counter Badge */}
+              <div className="text-[10px] text-slate-400 font-mono px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 whitespace-nowrap">
+                {isEn ? (
+                  <span>Showing <strong className="text-white font-bold">{filteredGuests.length}</strong> / {guests.length}</span>
+                ) : (
+                  <span>Wageni <strong className="text-white font-bold">{filteredGuests.length}</strong> / {guests.length}</span>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -2045,10 +2314,30 @@ Karibu sana!`);
               <tbody className="divide-y divide-white/5 text-white">
                 {filteredGuests.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-5 py-12 text-center text-slate-500 italic">
-                      {messageType === 'save_the_date' 
-                        ? (isEn ? 'No guests confirmed attendance yet. Save the Date is sent to attending guests only.' : 'Hakuna wageni waliothibitisha kuhudhuria bado. Save the Date inatumwa kwa wale walioweka "Atahudhuria" pekee.')
-                        : (isEn ? 'No guests found.' : 'Hakuna wageni waliopatikana.')}
+                    <td colSpan={6} className="px-5 py-12 text-center text-slate-400">
+                      {searchQuery ? (
+                        <div className="flex flex-col items-center justify-center space-y-2">
+                          <Search className="w-7 h-7 text-slate-500 opacity-60" />
+                          <p className="font-semibold text-slate-300 text-xs">
+                            {isEn ? `No guests found matching "${searchQuery}"` : `Hakuna mgeni aliyepatikana kwa utafutaji wa "${searchQuery}"`}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => { setSearchQuery(''); setStatusFilter('all'); }}
+                            className="text-xs text-blue-400 hover:text-blue-300 underline font-semibold cursor-pointer pt-1"
+                          >
+                            {isEn ? "Clear search filter" : "Futa utafutaji & onyesha wageni wote"}
+                          </button>
+                        </div>
+                      ) : messageType === 'save_the_date' ? (
+                        <span className="italic text-slate-500">
+                          {isEn ? 'No guests confirmed attendance yet. Save the Date is sent to attending guests only.' : 'Hakuna wageni waliothibitisha kuhudhuria bado. Save the Date inatumwa kwa wale walioweka "Atahudhuria" pekee.'}
+                        </span>
+                      ) : (
+                        <span className="italic text-slate-500">
+                          {isEn ? 'No guests found.' : 'Hakuna wageni waliopatikana.'}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ) : (
@@ -2058,7 +2347,20 @@ Karibu sana!`);
                         <div>{guest.name}</div>
                         {renderDeliveryIndicator(guest)}
                       </td>
-                      <td className="px-5 py-4 font-mono text-slate-300">{guest.phone}</td>
+                      <td className="px-5 py-4 font-mono text-slate-300">
+                        <div>{guest.phone}</div>
+                        {guest.hasWhatsApp === true ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 mt-1 rounded text-[8px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-sans">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                            <span>WhatsApp</span>
+                          </span>
+                        ) : guest.hasWhatsApp === false ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 mt-1 rounded text-[8px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 font-sans">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                            <span>SMS Only</span>
+                          </span>
+                        ) : null}
+                      </td>
                       
                       {/* RSVP STATUS */}
                       <td className="px-5 py-3 text-center">
@@ -2124,14 +2426,25 @@ Karibu sana!`);
                           {isEn ? "Edit" : "Hariri (Edit)"}
                         </button>
 
-                        {/* Reset Status button */}
-                        {(isStatusSent(guest.smsStatus) || isStatusSent(guest.whatsappStatus)) && (
+                        {/* Reset SMS button */}
+                        {isStatusSent(guest.smsStatus) && (
                           <button
-                            onClick={() => handleResetSingleGuest(guest.id)}
-                            className="p-1 px-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 rounded-lg transition cursor-pointer text-[10px]"
-                            title="Futa Hali ya Kutuma"
+                            onClick={() => handleResetSingleGuest(guest.id, 'sms')}
+                            className="p-1 px-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/20 rounded-lg transition cursor-pointer text-[10px] font-bold"
+                            title="Futa Hali ya SMS Pekee"
                           >
-                            {isEn ? "Reset Status" : "Reset Hali"}
+                            Reset SMS
+                          </button>
+                        )}
+
+                        {/* Reset WA button */}
+                        {isStatusSent(guest.whatsappStatus) && (
+                          <button
+                            onClick={() => handleResetSingleGuest(guest.id, 'whatsapp')}
+                            className="p-1 px-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/20 rounded-lg transition cursor-pointer text-[10px] font-bold"
+                            title="Futa Hali ya WhatsApp Pekee"
+                          >
+                            Reset WA
                           </button>
                         )}
 
@@ -2495,6 +2808,45 @@ Karibu sana!`);
                 )}
               </div>
 
+              {/* Error Notice if Gateway Failed */}
+              {modalError && (
+                <div className="p-3.5 bg-rose-500/15 border border-rose-500/30 rounded-xl text-rose-300 text-xs flex flex-col gap-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                    <div>
+                      <div className="font-bold text-[13px] text-rose-200">{isEn ? 'Gateway Dispatch Notice:' : 'Hitilafu ya Lango la Ujumbe:'}</div>
+                      <div className="text-[11px] text-slate-300 mt-1 leading-relaxed">{modalError}</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-rose-500/20">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalError(null);
+                        handleConfirmSent(activeSendTarget.guest.id, 'whatsapp');
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] flex items-center gap-1.5 cursor-pointer transition shadow"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      {isEn ? 'Send via WhatsApp (Meta API)' : 'Tuma kwa WhatsApp (Meta API)'}
+                    </button>
+                    <a
+                      href={`https://wa.me/${cleanPhoneForWhatsapp(activeSendTarget.guest.phone)}?text=${encodeURIComponent(getGuestMessageText(activeSendTarget.guest, false, true))}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => {
+                        setModalError(null);
+                        handleMarkManualSent(activeSendTarget.guest.id, 'whatsapp');
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer border border-slate-700 transition"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+                      {isEn ? 'Open Direct WhatsApp Web' : 'Fungua WhatsApp ya Mgeni'}
+                    </a>
+                  </div>
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div className="flex flex-col space-y-3 pt-2">
                 <div className="flex space-x-3">
@@ -2551,6 +2903,82 @@ Karibu sana!`);
               </div>
             </motion.div>
           </div>
+          </PortalModal>
+        )}
+      </AnimatePresence>
+
+      {/* Global Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <PortalModal>
+            <motion.div
+              initial={{ opacity: 0, y: -20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95 }}
+              className={`fixed top-6 right-6 z-[9999] max-w-md px-5 py-4 rounded-2xl shadow-2xl border flex items-center gap-3 backdrop-blur-xl font-medium text-xs sm:text-sm ${
+                toast.type === 'error'
+                  ? 'bg-slate-900/95 border-rose-500/50 text-rose-300 shadow-rose-950/40'
+                  : toast.type === 'info'
+                  ? 'bg-slate-900/95 border-blue-500/50 text-blue-300 shadow-blue-950/40'
+                  : 'bg-slate-900/95 border-emerald-500/50 text-emerald-300 shadow-emerald-950/40'
+              }`}
+            >
+              {toast.type === 'error' ? (
+                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+              ) : toast.type === 'info' ? (
+                <AlertCircle className="w-5 h-5 text-blue-400 shrink-0" />
+              ) : (
+                <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+              )}
+              <span className="leading-snug">{toast.message}</span>
+              <button onClick={() => setToast(null)} className="ml-auto p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </motion.div>
+          </PortalModal>
+        )}
+      </AnimatePresence>
+
+      {/* Confirmation Modal */}
+      <AnimatePresence>
+        {confirmModalConfig.isOpen && (
+          <PortalModal>
+            <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 0 }}
+                className="bg-slate-900 border border-slate-700/80 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 text-left"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl border border-blue-500/20">
+                    <RefreshCw className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-bold text-white">{confirmModalConfig.title}</h3>
+                </div>
+                
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  {confirmModalConfig.message}
+                </p>
+
+                <div className="flex space-x-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmModalConfig(prev => ({ ...prev, isOpen: false }))}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold text-slate-300 transition cursor-pointer"
+                  >
+                    {isEn ? 'Cancel' : 'Ghairi'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmModalConfig.onConfirm}
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-600/30 rounded-xl text-xs font-bold text-white transition cursor-pointer"
+                  >
+                    {confirmModalConfig.confirmText}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
           </PortalModal>
         )}
       </AnimatePresence>

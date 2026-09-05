@@ -33,7 +33,11 @@ import {
   Calendar,
   DollarSign,
   Tag,
-  Scale
+  Scale,
+  CreditCard,
+  Layers,
+  ShieldCheck,
+  Zap
 } from 'lucide-react';
 
 interface Props {
@@ -98,17 +102,30 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   }, [initialTemplate, initialRecipients]);
 
   // Gateway Config State
-  const [gatewayConfig, setGatewayConfig] = useState<UwalemiSmsConfig>(
-    state.groupSettings?.smsConfig || {
-      provider: 'simulation',
-      apiKey: '',
-      secretKey: '',
-      senderId: 'UWALEMI',
+  const [gatewayConfig, setGatewayConfig] = useState<UwalemiSmsConfig>(() => {
+    const existing = state.groupSettings?.smsConfig;
+    if (existing && existing.provider) {
+      return existing;
+    }
+    // Default to eHub configuration if no configuration exists
+    return {
+      provider: 'ehub',
+      apiKey: 'sk_Y8rB4E2PzMMOQZ3LyCbf8xYKw1tjniyhae85NX3IxKgLx6GD',
+      secretKey: 'CDWwiiKKTa44Ql6R4uOO4jZgHVnhmnRivl7SrIYgdbeRSKJ3Z8Q7JoaSqe07miWf',
+      senderId: '19f41b59-19d0-4f98-b8c9-9d5b1ac31308',
+      baseUrl: 'https://sms.ehub.co.tz/api/v1/sms/send',
       autoSendReceipts: true,
       autoSendMeetingAlerts: true,
       autoSendMonthlyReminder: true
+    };
+  });
+
+  // Keep gatewayConfig synced with state.groupSettings.smsConfig if updated
+  useEffect(() => {
+    if (state.groupSettings?.smsConfig) {
+      setGatewayConfig(state.groupSettings.smsConfig);
     }
-  );
+  }, [state.groupSettings?.smsConfig]);
 
   const [isTestingReminders, setIsTestingReminders] = useState(false);
   const [reminderTestResult, setReminderTestResult] = useState<{
@@ -118,6 +135,170 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
     recipientsCount: number;
     list?: string[];
   } | null>(null);
+
+  const [isCheckingBalance, setIsCheckingBalance] = useState(false);
+  const [balanceInfo, setBalanceInfo] = useState<{
+    balance?: number | null;
+    provider?: string;
+    isSimulation?: boolean;
+    error?: string;
+    raw?: any;
+    status?: number;
+    globalHasEhub?: boolean;
+  } | null>(null);
+
+  const handleCheckBalance = async () => {
+    setIsCheckingBalance(true);
+    setBalanceInfo(null);
+    try {
+      const q = new URLSearchParams({
+        source: 'uwalemi',
+        provider: gatewayConfig.provider || 'ehub',
+        apiKey: gatewayConfig.apiKey || '',
+        secretKey: gatewayConfig.secretKey || '',
+        senderId: gatewayConfig.senderId || ''
+      });
+      const res = await fetch(`/api/sms-balance?${q.toString()}`);
+      const data = await res.json();
+      if (res.ok) {
+        setBalanceInfo(data);
+      } else {
+        setBalanceInfo({ 
+          error: data.error || 'Imeshindwa kupata salio', 
+          status: res.status, 
+          provider: data.provider, 
+          globalHasEhub: data.globalHasEhub 
+        });
+      }
+    } catch (e: any) {
+      setBalanceInfo({ error: e.message || 'Hitilafu ya mtandao' });
+    } finally {
+      setIsCheckingBalance(false);
+    }
+  };
+
+  const handleSetEhub = async (targetSenderId = '19f41b59-19d0-4f98-b8c9-9d5b1ac31308') => {
+    try {
+      const updatedConfig: UwalemiSmsConfig = {
+        ...gatewayConfig,
+        provider: 'ehub',
+        apiKey: 'sk_Y8rB4E2PzMMOQZ3LyCbf8xYKw1tjniyhae85NX3IxKgLx6GD',
+        secretKey: 'CDWwiiKKTa44Ql6R4uOO4jZgHVnhmnRivl7SrIYgdbeRSKJ3Z8Q7JoaSqe07miWf',
+        senderId: targetSenderId,
+        baseUrl: 'https://sms.ehub.co.tz/api/v1/sms/send'
+      };
+      setGatewayConfig(updatedConfig);
+      const updatedSettings = {
+        ...state.groupSettings,
+        smsConfig: updatedConfig
+      };
+      const updatedState = { ...state, groupSettings: updatedSettings };
+      await onSaveState(updatedState);
+      setSendResult(null);
+      setTimeout(() => handleCheckBalance(), 300);
+      return updatedConfig;
+    } catch (e: any) {
+      console.warn("handleSetEhub failed:", e);
+    }
+  };
+
+  const handleSyncGlobalEhub = async () => {
+    try {
+      const res = await fetch('/api/state');
+      let apiKey = 'sk_Y8rB4E2PzMMOQZ3LyCbf8xYKw1tjniyhae85NX3IxKgLx6GD';
+      let secretKey = 'CDWwiiKKTa44Ql6R4uOO4jZgHVnhmnRivl7SrIYgdbeRSKJ3Z8Q7JoaSqe07miWf';
+      let senderId = '19f41b59-19d0-4f98-b8c9-9d5b1ac31308';
+      let url = 'https://sms.ehub.co.tz/api/v1/sms/send';
+
+      if (res.ok) {
+        const fullState = await res.json();
+        const globalSms = fullState.smsGatewaySettings;
+        if (globalSms && globalSms.provider === 'ehub' && globalSms.apiKey && !globalSms.apiKey.startsWith('zs_')) {
+          apiKey = globalSms.apiKey;
+          secretKey = globalSms.apiSecret || secretKey;
+          url = globalSms.url || url;
+        }
+      }
+
+      const updatedConfig: UwalemiSmsConfig = {
+        ...gatewayConfig,
+        provider: 'ehub',
+        apiKey,
+        secretKey,
+        senderId,
+        baseUrl: url
+      };
+      setGatewayConfig(updatedConfig);
+      const updatedSettings = {
+        ...state.groupSettings,
+        smsConfig: updatedConfig
+      };
+      const updatedState = { ...state, groupSettings: updatedSettings };
+      await onSaveState(updatedState);
+      setSendResult(null);
+      alert('Mipangilio ya eHub SMS (yenye salio lililothibitishwa) imesawazishwa na kuhifadhiwa kikamilifu kwa ajili ya UWALEMI!');
+      setTimeout(() => handleCheckBalance(), 300);
+    } catch (e: any) {
+      alert('Hitilafu: ' + (e.message || e));
+    }
+  };
+
+  const handleQuickFixSenderId = async (newSenderId = '19f41b59-19d0-4f98-b8c9-9d5b1ac31308') => {
+    const updatedConfig: UwalemiSmsConfig = {
+      ...gatewayConfig,
+      provider: 'ehub',
+      apiKey: (!gatewayConfig.apiKey || gatewayConfig.apiKey.startsWith('zs_')) ? 'sk_Y8rB4E2PzMMOQZ3LyCbf8xYKw1tjniyhae85NX3IxKgLx6GD' : gatewayConfig.apiKey,
+      secretKey: (!gatewayConfig.secretKey) ? 'CDWwiiKKTa44Ql6R4uOO4jZgHVnhmnRivl7SrIYgdbeRSKJ3Z8Q7JoaSqe07miWf' : gatewayConfig.secretKey,
+      senderId: newSenderId
+    };
+    setGatewayConfig(updatedConfig);
+    const updatedSettings = {
+      ...state.groupSettings,
+      smsConfig: updatedConfig
+    };
+    const updatedState = { ...state, groupSettings: updatedSettings };
+    await onSaveState(updatedState);
+    setSendResult(null);
+    alert(`Sender ID ya eHub imewekwa na kuhifadhiwa! Sasa unaweza kutuma ujumbe.`);
+  };
+
+  const handleSyncSwalaSms = async () => {
+    const updatedConfig: UwalemiSmsConfig = {
+      provider: 'swalasms',
+      apiKey: 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3',
+      secretKey: '',
+      senderId: 'EVENT CARD',
+      baseUrl: 'https://swalasms.com/api/v1/sms/quick-message',
+      autoSendReceipts: gatewayConfig.autoSendReceipts ?? true,
+      autoSendMeetingAlerts: gatewayConfig.autoSendMeetingAlerts ?? true,
+      autoSendMonthlyReminder: gatewayConfig.autoSendMonthlyReminder ?? true,
+    };
+    setGatewayConfig(updatedConfig);
+    const updatedSettings = {
+      ...state.groupSettings,
+      smsConfig: updatedConfig
+    };
+    const updatedState = { ...state, groupSettings: updatedSettings };
+    await onSaveState(updatedState);
+    setSendResult(null);
+    alert('SwalaSMS (Sender ID: EVENT CARD) imewekwa na kuunganishwa kikamilifu!');
+  };
+
+  const handleSwitchToSimulation = async () => {
+    const updatedConfig: UwalemiSmsConfig = {
+      ...gatewayConfig,
+      provider: 'simulation'
+    };
+    setGatewayConfig(updatedConfig);
+    const updatedSettings = {
+      ...state.groupSettings,
+      smsConfig: updatedConfig
+    };
+    const updatedState = { ...state, groupSettings: updatedSettings };
+    await onSaveState(updatedState);
+    setSendResult(null);
+    alert('Mfumo umebadilishwa kuwa Hali ya Majaribio (Simulation Mode). Ujumbe utarekodiwa kwenye mfumo bila makato ya salio la SMS.');
+  };
 
   const members = useMemo(() => sortMembersByLeadership(state.members || []), [state.members]);
   const messageLogs = state.messageLogs || [];
@@ -181,6 +362,27 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
           monthsCount: debt?.unpaidCount
         };
       });
+    }
+
+    if (recipientFilter === 'fee_debt_only') {
+      return memberDebts
+        .filter(d => (d.feeDebt || 0) > 0 && d.status === 'active')
+        .map(d => ({
+          name: d.memberName,
+          phone: d.phone,
+          memberNo: d.memberNo,
+          memberId: d.memberId,
+          debtAmount: d.feeDebt,
+          feeDebt: d.feeDebt,
+          lateFeePenalty: 0,
+          otherFinesDebt: 0,
+          totalFinesDebt: 0,
+          startMonth: d.startMonthName,
+          endMonth: d.endMonthName,
+          unpaidMonths: d.unpaidMonthsText,
+          periodSummary: d.periodSummary,
+          monthsCount: d.unpaidCount
+        }));
     }
 
     if (recipientFilter === 'all_debtors') {
@@ -316,7 +518,10 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   }, [recipientFilter, selectedMemberIds, initialRecipients, members, memberDebts, memberDebtsMap, currentMonthUnpaidIds]);
 
   const handleApplyTemplate = (type: string) => {
-    if (type === 'smart_debt_reminder') {
+    if (type === 'fee_debt_only_reminder') {
+      setMessageText(`Habari {name}, kikundi cha UWALEMI kinakukumbusha kulipa ada yako ya miezi iliyopita: unadaiwa ada TZS {feeDebt} {periodSummary} ({unpaidMonths}). Lipa kupitia {lipaNamba}. Tafadhali kamilisha malipo yako kuepuka faini ya kuchelewa kulipa ada na kuwa nje ya umoja kwa mujibu wa katiba. Lema, Nguvu Moja!`);
+      setMessageType('reminder');
+    } else if (type === 'smart_debt_reminder') {
       setMessageText(`Habari {name}, kikundi cha UWALEMI kinakukumbusha kulipa ada zako: unadaiwa ada {feeDebt} {periodSummary} ({unpaidMonths}). Faini: {fainiSummary}. Jumla unayopaswa kulipa: {jumlaKuu}. Kamilisha kupitia {lipaNamba}. Lema, Nguvu Moja!`);
       setMessageType('reminder');
     } else if (type === 'fines_only_reminder') {
@@ -398,6 +603,13 @@ Lema, Nguvu Moja!`);
         role: 'Mjumbe',
         status: 'active',
         monthlyFee: 15000,
+        feeDebt: rec.feeDebt || rec.debtAmount || 40000,
+        lateFeePenalty: rec.lateFeePenalty || 0,
+        penaltyMonthsCount: 0,
+        unpaidFromJuneCount: 0,
+        otherFinesDebt: rec.otherFinesDebt || 0,
+        otherFinesPaid: 0,
+        totalFinesDebt: rec.totalFinesDebt || 0,
         totalDebt: rec.debtAmount || 40000,
         unpaidCount: rec.monthsCount || 4,
         startMonthName: rec.startMonth || 'Novemba 2023',
@@ -419,6 +631,13 @@ Lema, Nguvu Moja!`);
       role: 'Mjumbe',
       status: 'active',
       monthlyFee: 15000,
+      feeDebt: 40000,
+      lateFeePenalty: 0,
+      penaltyMonthsCount: 0,
+      unpaidFromJuneCount: 0,
+      otherFinesDebt: 0,
+      otherFinesPaid: 0,
+      totalFinesDebt: 0,
       totalDebt: 40000,
       unpaidCount: 4,
       startMonthName: 'Novemba 2023',
@@ -466,6 +685,7 @@ Lema, Nguvu Moja!`);
         feeDebt: rec.feeDebt ?? rec.debtAmount ?? 0,
         lateFeePenalty: rec.lateFeePenalty ?? 0,
         penaltyMonthsCount: Math.max(0, (rec.monthsCount ?? 0) - 3),
+        unpaidFromJuneCount: 0,
         otherFinesDebt: rec.otherFinesDebt ?? 0,
         otherFinesPaid: 0,
         totalFinesDebt: rec.totalFinesDebt ?? ((rec.lateFeePenalty ?? 0) + (rec.otherFinesDebt ?? 0)),
@@ -604,6 +824,17 @@ Lema, Nguvu Moja!`);
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  onClick={() => {
+                    setRecipientFilter('fee_debt_only');
+                    handleApplyTemplate('fee_debt_only_reminder');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-bold border border-emerald-500/40 cursor-pointer flex items-center gap-1 shadow-sm"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  💳 Madeni ya Ada Pekee (Bila Faini)
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleApplyTemplate('fines_only_reminder')}
                   className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] font-bold border border-rose-500/40 cursor-pointer flex items-center gap-1 shadow-sm"
                 >
@@ -706,7 +937,7 @@ Lema, Nguvu Moja!`);
                 <button
                   type="button"
                   onClick={() => insertTag('{fainiAda}')}
-                  title="Faini ya Ucheleweshaji Ada (5,000/mwezi baada ya mwezi 3)"
+                  title="Faini ya Ucheleweshaji Ada (Kuanzia Mwezi 6, TZS 5,000/mwezi baada ya miezi 3)"
                   className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10.5px] font-mono border border-rose-500/40 cursor-pointer font-bold"
                 >
                   {"{fainiAda}"}
@@ -786,7 +1017,7 @@ Lema, Nguvu Moja!`);
                 <button
                   type="button"
                   onClick={() => insertTag('{lipaNamba}')}
-                  title="Njia ya Malipo (M-Koba / 0758 219 298 Eva Lema)"
+                  title="Njia ya Malipo (M Koba / 0758 219 298 Eva O Lema)"
                   className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10.5px] font-mono border border-slate-700 cursor-pointer"
                 >
                   {"{lipaNamba}"}
@@ -876,16 +1107,48 @@ Lema, Nguvu Moja!`);
 
             {/* Send Result Notification */}
             {sendResult && (
-              <div className={`p-4 rounded-xl text-xs flex items-start gap-3 border ${
+              <div className={`p-4 rounded-xl text-xs flex flex-col gap-3 border ${
                 sendResult.success 
                   ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300' 
                   : 'bg-rose-950/30 border-rose-500/30 text-rose-300'
               }`}>
-                {sendResult.success ? <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400" /> : <XCircle className="w-5 h-5 shrink-0 text-rose-400" />}
-                <div>
-                  <div className="font-bold">{sendResult.success ? 'Ujumbe Umetumwa Kikamilifu!' : 'Hitilafu ya Kutuma'}</div>
-                  <div className="mt-0.5">{sendResult.message}</div>
+                <div className="flex items-start gap-3">
+                  {sendResult.success ? <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400" /> : <XCircle className="w-5 h-5 shrink-0 text-rose-400" />}
+                  <div>
+                    <div className="font-bold text-sm">{sendResult.success ? 'Ujumbe Umetumwa Kikamilifu!' : 'Hitilafu ya Kutuma SMS'}</div>
+                    <div className="mt-1 leading-relaxed text-slate-200">{sendResult.message}</div>
+                  </div>
                 </div>
+
+                {!sendResult.success && (
+                  <div className="mt-2 pt-3 border-t border-rose-900/40 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-slate-400 font-semibold">Ufumbuzi wa Haraka:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleSetEhub('19f41b59-19d0-4f98-b8c9-9d5b1ac31308')}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium flex items-center gap-1.5 transition-all cursor-pointer shadow"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-300" />
+                      Weka eHub SMS (Salio Linalofanya Kazi)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSwitchToSimulation}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-white font-medium flex items-center gap-1.5 transition-all cursor-pointer shadow"
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      Badilisha kuwa Hali ya Majaribio (Simulation)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('gateway')}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium flex items-center gap-1.5 transition-all cursor-pointer border border-slate-700"
+                    >
+                      <Settings className="w-3.5 h-3.5 text-emerald-400" />
+                      Fungua Mipangilio ya Gateway
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -949,6 +1212,32 @@ Lema, Nguvu Moja!`);
             </div>
 
             <div className="space-y-2 text-xs">
+              <label className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                recipientFilter === 'fee_debt_only' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+              }`}>
+                <input
+                  type="radio"
+                  name="recFilter"
+                  checked={recipientFilter === 'fee_debt_only'}
+                  onChange={() => {
+                    setRecipientFilter('fee_debt_only');
+                    handleApplyTemplate('fee_debt_only_reminder');
+                  }}
+                  className="text-emerald-500 mt-0.5"
+                />
+                <div>
+                  <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+                    💳 Wenye Madeni ya Ada Pekee (Bila Faini)
+                    <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono">
+                      {memberDebts.filter(d => (d.feeDebt || 0) > 0 && d.status === 'active').length}
+                    </span>
+                  </span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">
+                    Huchuja wajumbe wanaodaiwa ada za miezi bila kujumuisha faini za aina yoyote.
+                  </span>
+                </div>
+              </label>
+
               <label className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
                 recipientFilter === 'all_debtors' ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
               }`}>
@@ -1211,14 +1500,64 @@ Lema, Nguvu Moja!`);
             </div>
           </div>
 
+          {/* Quick sync suggestion banner if using Meseji with error or wanting eHub */}
+          <div className="p-3.5 bg-emerald-950/40 border border-emerald-800/60 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-start gap-2.5 text-emerald-200">
+              <Zap className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-white">eHub SMS Tanzania (Ina salio na inafanya kazi)</span>
+                <p className="text-[11px] text-emerald-300/90 mt-0.5">
+                  Akaunti ya eHub SMS yenye Sender ID ya "UWALEMI" imethibitishwa na inatuma ujumbe moja kwa moja.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleSetEhub('19f41b59-19d0-4f98-b8c9-9d5b1ac31308')}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shadow shrink-0"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Weka eHub (UWALEMI)
+              </button>
+            </div>
+          </div>
+
           <form onSubmit={handleSaveGateway} className="space-y-4 text-xs">
             <div>
               <label className="block text-slate-300 font-semibold mb-1">Mtoa Huduma (Provider):</label>
               <select
                 value={gatewayConfig.provider}
-                onChange={(e) => setGatewayConfig({ ...gatewayConfig, provider: e.target.value as any })}
+                onChange={(e) => {
+                  const val = e.target.value as any;
+                  const newConfig = { ...gatewayConfig, provider: val };
+                  if (val === 'swalasms') {
+                    newConfig.apiKey = newConfig.apiKey || 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3';
+                    newConfig.senderId = 'EVENT CARD';
+                    newConfig.baseUrl = 'https://swalasms.com/api/v1/sms/quick-message';
+                  } else if (val === 'meseji') {
+                    newConfig.baseUrl = 'https://meseji.co.tz/api/v1/sms/send';
+                    if (!newConfig.senderId || newConfig.senderId.includes('-')) {
+                      newConfig.senderId = 'MESEJI';
+                    }
+                  } else if (val === 'ehub') {
+                    newConfig.baseUrl = 'https://sms.ehub.co.tz/api/v1/sms/send';
+                    if (!newConfig.senderId || !newConfig.senderId.includes('-')) {
+                      newConfig.senderId = '19f41b59-19d0-4f98-b8c9-9d5b1ac31308';
+                    }
+                  } else if (val === 'beem') {
+                    newConfig.baseUrl = 'https://api.beem.africa/v1/send';
+                    if (!newConfig.senderId) newConfig.senderId = 'INFO';
+                  } else if (val === 'nextsms') {
+                    newConfig.baseUrl = 'https://messaging-service.co.tz/api/sms/v1/text/single';
+                    if (!newConfig.senderId) newConfig.senderId = 'NEXTSMS';
+                  }
+                  setGatewayConfig(newConfig);
+                }}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
               >
+                <option value="swalasms">SwalaSMS (swalasms.com) - Salio 100 SMS (Inafanya Kazi)</option>
+                <option value="ehub">eHub SMS Tanzania (sms.ehub.co.tz) - Inapendekezwa</option>
                 <option value="meseji">Meseji API (Meseji.co.tz - Tanzania)</option>
                 <option value="beem">Beem Africa (apisms.beem.africa)</option>
                 <option value="nextsms">NextSMS Tanzania (messaging-service.co.tz)</option>
@@ -1226,40 +1565,197 @@ Lema, Nguvu Moja!`);
               </select>
             </div>
 
+            {gatewayConfig.provider === 'swalasms' && (
+              <div className="bg-emerald-950/40 border border-emerald-800/60 p-3 rounded-xl space-y-1 text-[11px] text-emerald-200">
+                <div className="font-bold flex items-center gap-1.5 text-emerald-300">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  SwalaSMS Live (Sender ID: EVENT CARD / Salio: 100 SMS)
+                </div>
+                <p className="text-slate-300">
+                  Akaunti ya SwalaSMS imeunganishwa moja kwa moja kwa ajili ya kutuma risiti, vikumbusho vya vikao na michango ya UWALEMI.
+                </p>
+              </div>
+            )}
+
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">Jina la Mtumaji (Sender ID):</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-slate-300 font-semibold">Jina la Mtumaji (Sender ID):</label>
+                <div className="flex items-center gap-1.5">
+                  {gatewayConfig.provider === 'swalasms' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setGatewayConfig({ ...gatewayConfig, senderId: 'EVENT CARD' })}
+                        className="text-[10px] text-emerald-400 hover:text-emerald-300 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded cursor-pointer transition-colors font-bold"
+                      >
+                        EVENT CARD
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGatewayConfig({ ...gatewayConfig, senderId: 'TAARIFA' })}
+                        className="text-[10px] text-indigo-300 hover:text-white bg-indigo-950/60 border border-indigo-800/60 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                      >
+                        TAARIFA
+                      </button>
+                    </>
+                  ) : gatewayConfig.provider === 'ehub' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setGatewayConfig({ 
+                          ...gatewayConfig, 
+                          senderId: '19f41b59-19d0-4f98-b8c9-9d5b1ac31308' 
+                        })}
+                        className="text-[10px] text-emerald-400 hover:text-emerald-300 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded cursor-pointer transition-colors font-bold"
+                      >
+                        Weka "UWALEMI"
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGatewayConfig({ 
+                          ...gatewayConfig, 
+                          senderId: '339330f1-4e6a-4bf7-a9f8-eaae2a9dd397' 
+                        })}
+                        className="text-[10px] text-indigo-300 hover:text-white bg-indigo-950/60 border border-indigo-800/60 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                      >
+                        Weka "EVENT CARD"
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setGatewayConfig({ ...gatewayConfig, senderId: 'UWALEMI' })}
+                      className="text-[10px] text-emerald-400 hover:text-emerald-300 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded cursor-pointer transition-colors font-bold"
+                    >
+                      Weka "UWALEMI"
+                    </button>
+                  )}
+                </div>
+              </div>
               <input
                 type="text"
                 value={gatewayConfig.senderId || ''}
                 onChange={(e) => setGatewayConfig({ ...gatewayConfig, senderId: e.target.value })}
-                placeholder="mf. UWALEMI au MESEJI"
+                placeholder={gatewayConfig.provider === 'ehub' ? 'Sender ID UUID ya eHub (19f41b59-19d0-4f98-b8c9-9d5b1ac31308)' : 'mf. UWALEMI'}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
               />
+              {gatewayConfig.provider === 'ehub' && (
+                <p className="text-[11px] text-emerald-400/90 mt-1">
+                  ✓ <strong>Sender ID ya UWALEMI (eHub):</strong> <span className="font-mono bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/60 text-white">19f41b59-19d0-4f98-b8c9-9d5b1ac31308</span> (Imeidhinishwa rasmi na inafanya kazi).
+                </p>
+              )}
+              {gatewayConfig.provider === 'meseji' && (
+                <p className="text-[11px] text-slate-400 mt-1">
+                  💡 <strong>Kidokezo cha Meseji.co.tz:</strong> Tumia Sender ID ya <span className="font-mono text-emerald-400 font-bold">MESEJI</span> isipokuwa uwe umeshasajili na kuidhinishiwa jina lingine (kama UWALEMI) kwenye dashboard ya Meseji.
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">API Key / Token:</label>
+              <label className="block text-slate-300 font-semibold mb-1">
+                {gatewayConfig.provider === 'meseji' ? 'Meseji API Token / Key:' : 'API Key:'}
+              </label>
               <input
                 type="password"
                 value={gatewayConfig.apiKey || ''}
                 onChange={(e) => setGatewayConfig({ ...gatewayConfig, apiKey: e.target.value })}
-                placeholder="Weka API Key yako hapa"
+                placeholder={gatewayConfig.provider === 'meseji' ? 'Weka Token ya Meseji.co.tz (mf. zs_...)' : 'Weka API Key yako hapa'}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
               />
+              {gatewayConfig.provider === 'meseji' && (
+                <p className="text-[11px] text-amber-300/90 mt-1">
+                  ⚠️ <strong>Muhimu:</strong> Ikiwa unapata hitilafu ya "Invalid or expired token", ingia kwenye <a href="https://meseji.co.tz" target="_blank" rel="noopener noreferrer" className="underline text-emerald-400 font-semibold">Meseji.co.tz</a> &gt; API Settings, tengeneza Token mpya na uinakili hapa.
+                </p>
+              )}
             </div>
 
-            {gatewayConfig.provider !== 'meseji' && (
+            {gatewayConfig.provider !== 'meseji' && gatewayConfig.provider !== 'simulation' && (
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">API Secret Key:</label>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  {gatewayConfig.provider === 'ehub' ? 'eHub API Secret (Secret Key):' : 'API Secret Key:'}
+                </label>
                 <input
                   type="password"
                   value={gatewayConfig.secretKey || ''}
                   onChange={(e) => setGatewayConfig({ ...gatewayConfig, secretKey: e.target.value })}
-                  placeholder="Weka Secret Key (kama inahitajika)"
+                  placeholder="Weka Secret Key"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
                 />
               </div>
             )}
+
+            {/* Test Connection & Balance Checker */}
+            <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
+                  <CreditCard className="w-3.5 h-3.5 text-indigo-400" />
+                  Uhakiki wa Salio & Muunganisho (Live Gateway Status)
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCheckBalance}
+                  disabled={isCheckingBalance}
+                  className="px-3 py-1 rounded-lg bg-indigo-600/80 hover:bg-indigo-500 text-white font-medium text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isCheckingBalance ? 'animate-spin' : ''}`} />
+                  {isCheckingBalance ? 'Inahakiki...' : 'Kagua Salio Sasa'}
+                </button>
+              </div>
+
+              {balanceInfo && (
+                <div className={`p-3.5 rounded-lg border text-xs ${
+                  balanceInfo.error 
+                    ? 'bg-rose-950/50 border-rose-800/80 text-rose-300' 
+                    : 'bg-emerald-950/50 border-emerald-800/80 text-emerald-300'
+                }`}>
+                  {balanceInfo.error ? (
+                    <div className="space-y-2">
+                      <div className="font-bold flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                        <span>Hitilafu ya Muunganisho / Salio ({balanceInfo.provider?.toUpperCase()}):</span>
+                      </div>
+                      <div className="text-[11px] text-slate-200 leading-relaxed bg-black/30 p-2.5 rounded-lg border border-rose-900/50">
+                        {balanceInfo.error}
+                      </div>
+
+                      <div className="pt-2 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSyncGlobalEhub}
+                          className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-[11px] flex items-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Tumia eHub SMS (Salio Lililothibitishwa)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSwitchToSimulation}
+                          className="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-[11px] flex items-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                          Badili kuwa Hali ya Majaribio (Simulation)
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <div className="font-bold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        Muunganisho na {balanceInfo.provider?.toUpperCase()} Uko Sawa!
+                      </div>
+                      <div className="text-xs text-slate-200">
+                        Salio la SMS (SMS Credits): <strong className="text-emerald-400 font-mono text-base">{balanceInfo.balance !== null && balanceInfo.balance !== undefined ? Number(balanceInfo.balance).toLocaleString() : 'Iko hewani'}</strong> SMS
+                      </div>
+                      {balanceInfo.balance === 0 && (
+                        <div className="text-[11px] text-amber-300 mt-1">
+                          ⚠️ Salio lako la SMS ni 0. Ili SMS zitumwe kwa wanachama, tafadhali ongeza salio kwenye akaunti yako ya SMS.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="space-y-3 pt-3 border-t border-slate-800">
               <label className="flex items-start gap-3 cursor-pointer text-slate-300">

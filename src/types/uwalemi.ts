@@ -82,7 +82,7 @@ export interface UwalemiEmergencyFund {
 export interface UwalemiExpense {
   id: string;
   title: string;
-  category: 'msiba' | 'matibabu' | 'uendeshaji' | 'kikao' | 'huduma' | 'nyingine';
+  category: 'msiba' | 'matibabu' | 'uendeshaji' | 'kikao' | 'mkutano_mkuu' | 'huduma' | 'nyingine';
   amount: number;
   date: string;
   paidTo: string;
@@ -122,6 +122,21 @@ export interface UwalemiFinePayment {
   createdAt?: string;
 }
 
+export interface UwalemiAccruedFine {
+  id: string;
+  memberId: string;
+  memberNo: string;
+  memberName: string;
+  fineType: 'ada_late_fee' | 'kikao' | 'nyingine';
+  reason: string;
+  year?: number;
+  month?: number;
+  amount: number;
+  assessedDate: string;
+  status: 'unpaid' | 'paid' | 'partial';
+  paidAmount?: number;
+}
+
 export interface UwalemiMeeting {
   id: string;
   meetingNo: number;
@@ -137,7 +152,7 @@ export interface UwalemiMeeting {
 }
 
 export interface UwalemiSmsConfig {
-  provider: 'meseji' | 'beem' | 'nextsms' | 'ehub' | 'custom' | 'simulation';
+  provider: 'swalasms' | 'meseji' | 'beem' | 'nextsms' | 'ehub' | 'custom' | 'simulation';
   apiKey: string;
   secretKey: string;
   senderId: string;
@@ -188,6 +203,7 @@ export interface UwalemiState {
   expenses: UwalemiExpense[];
   meetings: UwalemiMeeting[];
   finePayments?: UwalemiFinePayment[];
+  accruedFines?: UwalemiAccruedFine[];
   messageLogs: UwalemiMessageLog[];
   lastMonthlyReminderYearMonth?: string;
   lastMonthlyReminderDate?: string;

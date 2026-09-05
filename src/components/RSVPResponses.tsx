@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clipboard, CheckCircle, XCircle, HelpCircle, MessageSquare, AlertCircle, RefreshCw, Send, ArrowRight, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Clipboard, CheckCircle, XCircle, HelpCircle, MessageSquare, AlertCircle, RefreshCw, Send, ArrowRight, Search, ArrowUpDown, ArrowUp, ArrowDown, Bell, CheckCircle2, Phone, Edit2, Check, X, ShieldCheck } from 'lucide-react';
 import { EventDetails, Guest } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -24,8 +24,81 @@ export default function RSVPResponses({ event, guests, onUpdateGuests, onNext }:
 
   // Search and Sort states
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<'name' | 'rsvpStatus' | 'none'>('none');
+  const [sortBy, setSortBy] = useState<'name' | 'rsvpStatus' | 'none'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  // WhatsApp Alert Receiver Phone state (Completely separate from RSVP 1-3 contacts)
+  const [adminAlertPhone, setAdminAlertPhone] = useState<string>('');
+  const [isEditingAlertPhone, setIsEditingAlertPhone] = useState(false);
+  const [tempAlertPhone, setTempAlertPhone] = useState<string>('');
+  const [isSavingAlertPhone, setIsSavingAlertPhone] = useState(false);
+  const [alertPhoneSavedMsg, setAlertPhoneSavedMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/admin-alert-phone')
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.phone) {
+          setAdminAlertPhone(d.phone);
+          setTempAlertPhone(d.phone);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveAlertPhone = async () => {
+    setIsSavingAlertPhone(true);
+    setAlertPhoneSavedMsg(null);
+    try {
+      const res = await fetch('/api/admin-alert-phone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: tempAlertPhone, eventId: event?.id })
+      });
+      const d = await res.json();
+      if (d.success) {
+        setAdminAlertPhone(d.phone);
+        setIsEditingAlertPhone(false);
+        setAlertPhoneSavedMsg(isEn ? "Notification phone saved successfully!" : "Namba ya arifa imehifadhiwa vizuri!");
+        setTimeout(() => setAlertPhoneSavedMsg(null), 3500);
+      }
+    } catch (e: any) {
+      console.error("Failed to save alert phone:", e);
+    } finally {
+      setIsSavingAlertPhone(false);
+    }
+  };
+
+  // WhatsApp Alert Test state
+  const [isTestingWhatsApp, setIsTestingWhatsApp] = useState(false);
+  const [whatsAppTestFeedback, setWhatsAppTestFeedback] = useState<{ success: boolean; message: string; channel?: string; sentTo?: string } | null>(null);
+
+  const handleTestWhatsAppAlert = async () => {
+    setIsTestingWhatsApp(true);
+    setWhatsAppTestFeedback(null);
+    try {
+      const targetPhone = adminAlertPhone || tempAlertPhone || undefined;
+      const res = await fetch('/api/whatsapp/test-admin-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: targetPhone })
+      });
+      const data = await res.json();
+      setWhatsAppTestFeedback({
+        success: !!data.success,
+        message: data.message || (data.success ? 'Arifa ya WhatsApp imetumwa vizuri!' : 'Hitilafu: ' + (data.error || 'Haijatumiwa')),
+        channel: data.channel,
+        sentTo: data.sentTo
+      });
+    } catch (e: any) {
+      setWhatsAppTestFeedback({
+        success: false,
+        message: e.message || 'Hitilafu ya muunganisho wa mfumo'
+      });
+    } finally {
+      setIsTestingWhatsApp(false);
+    }
+  };
   
   // Multi-Filter sidebar states
   const [filterRsvpStatus, setFilterRsvpStatus] = useState<string>('ALL');
@@ -33,10 +106,50 @@ export default function RSVPResponses({ event, guests, onUpdateGuests, onNext }:
 
   // Computations
   const totalGuests = guests.length;
-  const countAttending = guests.filter(g => g.rsvpStatus === 'Atahudhuria').reduce((acc, current) => acc + (current.rsvpGuestsCount || 1), 0);
-  const countDeclined = guests.filter(g => g.rsvpStatus === 'Hatahudhuria').length;
-  const countMaybe = guests.filter(g => g.rsvpStatus === 'Labda').length;
-  const countNotResponded = guests.filter(g => g.rsvpStatus === 'Bado' || !g.rsvpStatus).length;
+  const attendingGuests = guests.filter(g => g.rsvpStatus === 'Atahudhuria');
+  const countAttendingCards = attendingGuests.length;
+  const countAttendingPax = attendingGuests.reduce((acc, current) => acc + (current.rsvpGuestsCount || (current.cardType === 'DOUBLE' ? 2 : 1)), 0);
+  const attendingSingle = attendingGuests.filter(g => !g.cardType || g.cardType === 'SINGLE').length;
+  const attendingDouble = attendingGuests.filter(g => g.cardType === 'DOUBLE' || g.cardType === 'COUPLE').length;
+
+  const declinedGuests = guests.filter(g => g.rsvpStatus === 'Hatahudhuria');
+  const countDeclined = declinedGuests.length;
+  const countDeclinedPax = declinedGuests.reduce((acc, current) => acc + (current.cardType === 'DOUBLE' || current.cardType === 'COUPLE' ? 2 : 1), 0);
+  const declinedSingle = declinedGuests.filter(g => !g.cardType || g.cardType === 'SINGLE').length;
+  const declinedDouble = declinedGuests.filter(g => g.cardType === 'DOUBLE' || g.cardType === 'COUPLE').length;
+
+  const maybeGuests = guests.filter(g => g.rsvpStatus === 'Labda');
+  const countMaybe = maybeGuests.length;
+  const countMaybePax = maybeGuests.reduce((acc, current) => acc + (current.rsvpGuestsCount || (current.cardType === 'DOUBLE' || current.cardType === 'COUPLE' ? 2 : 1)), 0);
+  const maybeSingle = maybeGuests.filter(g => !g.cardType || g.cardType === 'SINGLE').length;
+  const maybeDouble = maybeGuests.filter(g => g.cardType === 'DOUBLE' || g.cardType === 'COUPLE').length;
+
+  const pendingGuests = guests.filter(g => g.rsvpStatus === 'Bado' || !g.rsvpStatus);
+  const countNotResponded = pendingGuests.length;
+  const countNotRespondedPax = pendingGuests.reduce((acc, current) => acc + (current.cardType === 'DOUBLE' || current.cardType === 'COUPLE' ? 2 : 1), 0);
+  const pendingSingle = pendingGuests.filter(g => !g.cardType || g.cardType === 'SINGLE').length;
+  const pendingDouble = pendingGuests.filter(g => g.cardType === 'DOUBLE' || g.cardType === 'COUPLE').length;
+
+  const countAttending = countAttendingPax;
+  const unseenCount = guests.filter(g => g.rsvpStatus && g.rsvpStatus !== 'Bado' && !g.rsvpSeen).length;
+
+  // Automatically mark all as seen when page opens
+  React.useEffect(() => {
+    const hasUnseen = guests.some(g => g.rsvpStatus && g.rsvpStatus !== 'Bado' && !g.rsvpSeen);
+    if (hasUnseen) {
+      const updated = guests.map(g => 
+        (g.rsvpStatus && g.rsvpStatus !== 'Bado' && !g.rsvpSeen) ? { ...g, rsvpSeen: true } : g
+      );
+      onUpdateGuests(updated);
+    }
+  }, []);
+
+  const handleMarkAllSeen = () => {
+    const updated = guests.map(g => 
+      (g.rsvpStatus && g.rsvpStatus !== 'Bado') ? { ...g, rsvpSeen: true } : g
+    );
+    onUpdateGuests(updated);
+  };
 
   const handleLaunchSimulator = (guestId: string) => {
     setSelectedSimGuestId(guestId);
@@ -52,13 +165,17 @@ export default function RSVPResponses({ event, guests, onUpdateGuests, onNext }:
   const handleSaveSimulation = () => {
     if (!selectedSimGuestId) return;
 
+    const nowIso = new Date().toISOString();
+    const guestObj = guests.find(g => g.id === selectedSimGuestId);
     const updated = guests.map(g => {
       if (g.id === selectedSimGuestId) {
         return {
           ...g,
           rsvpStatus: simStatus as any,
           rsvpGuestsCount: simStatus === 'Hatahudhuria' ? 0 : simCompanions,
-          rsvpComment: simComment ? simComment.trim() : undefined
+          rsvpComment: simComment ? simComment.trim() : undefined,
+          rsvpUpdatedAt: nowIso,
+          rsvpSeen: false
         };
       }
       return g;
@@ -66,6 +183,61 @@ export default function RSVPResponses({ event, guests, onUpdateGuests, onNext }:
 
     onUpdateGuests(updated);
     setIsSimulatorOpen(false);
+
+    // Trigger backend notification flow
+    if (guestObj) {
+      fetch('/api/rsvp-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guestId: selectedSimGuestId,
+          phone: guestObj.phone,
+          rsvpStatus: simStatus,
+          rsvpGuestsCount: simStatus === 'Hatahudhuria' ? 0 : simCompanions,
+          rsvpComment: simComment ? simComment.trim() : ""
+        })
+      }).catch(err => console.warn("Simulator RSVP update error:", err));
+    }
+  };
+
+  const handleQuickStatusChange = (guestId: string, newStatus: 'Atahudhuria' | 'Hatahudhuria' | 'Labda' | 'Bado') => {
+    const nowIso = new Date().toISOString();
+    const targetGuest = guests.find(g => g.id === guestId);
+    const updated = guests.map(g => {
+      if (g.id === guestId) {
+        const count = newStatus === 'Atahudhuria' 
+          ? (g.rsvpGuestsCount || (g.cardType === 'DOUBLE' ? 2 : 1))
+          : (newStatus === 'Hatahudhuria' ? 0 : g.rsvpGuestsCount);
+        return {
+          ...g,
+          rsvpStatus: newStatus as any,
+          rsvpGuestsCount: count,
+          rsvpUpdatedAt: nowIso,
+          rsvpSeen: false
+        };
+      }
+      return g;
+    });
+
+    onUpdateGuests(updated);
+
+    // Trigger backend notification flow
+    if (targetGuest) {
+      const count = newStatus === 'Atahudhuria' 
+        ? (targetGuest.rsvpGuestsCount || (targetGuest.cardType === 'DOUBLE' ? 2 : 1))
+        : 0;
+      fetch('/api/rsvp-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guestId: guestId,
+          phone: targetGuest.phone,
+          rsvpStatus: newStatus,
+          rsvpGuestsCount: count,
+          rsvpComment: targetGuest.rsvpComment || ""
+        })
+      }).catch(err => console.warn("Quick status RSVP update error:", err));
+    }
   };
 
   const handlePrepopulateRSVPs = () => {
@@ -78,13 +250,16 @@ export default function RSVPResponses({ event, guests, onUpdateGuests, onNext }:
       isEn ? 'I will come with my wife as invited!' : 'Nitakuja na mke wangu kama mlivyotualika!'
     ];
 
+    const nowIso = new Date().toISOString();
     const randomized = guests.map((g, idx) => {
       const isDeclined = statuses[idx % statusLength()] === 'Hatahudhuria';
       return {
         ...g,
         rsvpStatus: statuses[idx % statusLength()],
         rsvpGuestsCount: isDeclined ? 0 : (g.cardType === 'DOUBLE' ? 2 : 1),
-        rsvpComment: comments[idx % commentLength()]
+        rsvpComment: comments[idx % commentLength()],
+        rsvpUpdatedAt: nowIso,
+        rsvpSeen: false
       };
     });
 
@@ -147,52 +322,232 @@ export default function RSVPResponses({ event, guests, onUpdateGuests, onNext }:
           </h2>
           <p className="text-slate-350 mt-0.5">{isEn ? 'View statistics, number of attending guests, and congratulatory messages.' : 'Angalia takwimu, idadi ya wageni wanaokuja, na ujumbe wa pongezi walioandika wageni.'}</p>
         </div>
+
+        {unseenCount > 0 && (
+          <button
+            onClick={handleMarkAllSeen}
+            className="self-start sm:self-auto px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 hover:text-white border border-blue-500/30 rounded-xl font-bold text-[11px] transition-all flex items-center gap-2 shadow-sm cursor-pointer"
+          >
+            <CheckCircle className="w-4 h-4 text-blue-400" />
+            <span>{isEn ? `Mark all as read (${unseenCount})` : `Weka zote zimesomwa (${unseenCount})`}</span>
+          </button>
+        )}
       </div>
 
+      {/* WHATSAPP AUTOMATED INSTANT ALERTS STATUS BANNER */}
+      <div className="bg-gradient-to-r from-emerald-950/40 via-blue-950/20 to-slate-900/40 border border-emerald-500/30 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 mt-0.5">
+              <Bell className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>{isEn ? "Automated WhatsApp Alerts Active" : "Arifa za Moja kwa Moja za WhatsApp Ziko Hewani"}</span>
+                </span>
+                
+                {/* Dedicated Alert Receiver Phone Badge */}
+                <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 flex items-center gap-1">
+                  <Phone className="w-2.5 h-2.5 text-emerald-400" />
+                  <span>{isEn ? "Alert Receiver Phone: " : "Mpokezi wa Arifa: "}</span>
+                  <strong>{adminAlertPhone || (isEn ? "None set" : "Haijawekwa")}</strong>
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditingAlertPhone(!isEditingAlertPhone);
+                    setTempAlertPhone(adminAlertPhone);
+                  }}
+                  className="text-[10px] text-blue-400 hover:text-blue-300 underline font-semibold flex items-center gap-1 cursor-pointer transition"
+                >
+                  <Edit2 className="w-2.5 h-2.5" />
+                  <span>{isEditingAlertPhone ? (isEn ? "Cancel" : "Funga") : (isEn ? "Change Number" : "Badili Namba")}</span>
+                </button>
+              </div>
+
+              <p className="text-[11px] text-slate-350 mt-1">
+                {isEn 
+                  ? "The system automatically notifies your dedicated phone on WhatsApp whenever a guest responds or changes their mind." 
+                  : "Mfumo unakutumia ujumbe wa WhatsApp papo hapo kila mgeni anapojibu mwaliko mtandaoni au akibadilisha mawazo yake."}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
+            <button
+              type="button"
+              onClick={handleTestWhatsAppAlert}
+              disabled={isTestingWhatsApp}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[11px] font-bold rounded-xl transition flex items-center gap-1.5 border border-emerald-400/30 cursor-pointer shadow-md shadow-emerald-900/20"
+            >
+              {isTestingWhatsApp ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              <span>{isTestingWhatsApp ? (isEn ? "Sending..." : "Inatuma...") : (isEn ? "Test WhatsApp Alert" : "Jaribu Arifa ya WhatsApp")}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* INLINE EDIT FOR ALERT RECEIVER PHONE */}
+        <AnimatePresence>
+          {isEditingAlertPhone && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="bg-black/40 border border-emerald-500/20 rounded-xl p-3 space-y-2 mt-1"
+            >
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-emerald-300 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{isEn ? "Custom WhatsApp Alert Receiver Phone (Admin Alert Receiver)" : "Namba Maalum ya Kupokea Arifa za WhatsApp (Msimamizi / Wewe Mwenyewe)"}</span>
+                </label>
+                <span className="text-[10px] text-amber-350 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                  {isEn ? "Independent from RSVP 1, 2, 3" : "Haiingiliani na RSVP 1, 2, wala 3"}
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={tempAlertPhone}
+                  onChange={(e) => setTempAlertPhone(e.target.value)}
+                  placeholder={isEn ? "e.g. 07xxxxxxxx or any phone number" : "Mfano: 07xxxxxxxx au namba yako yoyote"}
+                  className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2 text-white text-xs font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveAlertPhone}
+                    disabled={isSavingAlertPhone}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow"
+                  >
+                    {isSavingAlertPhone ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                    <span>{isSavingAlertPhone ? (isEn ? "Saving..." : "Inahifadhi...") : (isEn ? "Save Number" : "Hifadhi Namba")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingAlertPhone(false)}
+                    className="px-3 py-2 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-medium rounded-xl transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                    <span>{isEn ? "Cancel" : "Ghairi"}</span>
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-[10.5px] text-slate-400 leading-relaxed">
+                {isEn 
+                  ? "💡 You can put your own personal phone number here. All instant guest alerts will be sent here, while the 3 RSVP hotline numbers in Event Details remain untouched for guest inquiries."
+                  : "💡 Unaweza kuweka namba yako binafsi hapa. Arifa zote za papo hapo za wageni zitatumwa kwenye namba hii pekee, huku zile namba 3 za RSVP za kwenye kadi zikibaki kama zilivyo kwa ajili ya wageni."}
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {alertPhoneSavedMsg && (
+          <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg flex items-center gap-2 font-medium">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span>{alertPhoneSavedMsg}</span>
+          </motion.div>
+        )}
+      </div>
+
+      {whatsAppTestFeedback && (
+        <div className={`p-3.5 rounded-xl border text-xs flex items-center justify-between gap-2.5 ${
+          whatsAppTestFeedback.success 
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+            : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+        }`}>
+          <div className="flex items-center gap-2">
+            {whatsAppTestFeedback.success ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}
+            <div>
+              <p className="font-semibold">{whatsAppTestFeedback.message}</p>
+              {whatsAppTestFeedback.channel && (
+                <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                  Njia: {whatsAppTestFeedback.channel} | Ilipotumwa: {whatsAppTestFeedback.sentTo}
+                </p>
+              )}
+            </div>
+          </div>
+          <button 
+            onClick={() => setWhatsAppTestFeedback(null)}
+            className="text-[10px] opacity-70 hover:opacity-100 font-bold px-2 py-1 rounded hover:bg-white/10"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Numerical Metrics Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
         {/* Attending card */}
-        <div className="backdrop-blur-md bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 flex items-center space-x-3 text-white">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
-            <CheckCircle className="w-5 h-5" />
+        <div className="backdrop-blur-md bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 flex flex-col justify-between text-white space-y-2">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
+              <CheckCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[9px] text-slate-400 font-mono tracking-wider font-semibold uppercase">{isEn ? 'Attending' : 'Wanakuja (Attending)'}</p>
+              <p className="text-lg font-extrabold text-emerald-400 mt-0.5">{countAttendingCards} {isEn ? 'Cards' : 'Kadi'} <span className="text-xs font-normal text-slate-400">({countAttendingPax} pax)</span></p>
+            </div>
           </div>
-          <div>
-            <p className="text-[9px] text-slate-400 font-mono tracking-wider font-semibold uppercase">{isEn ? 'Attending' : 'Wanakuja (Attending)'}</p>
-            <p className="text-lg font-extrabold text-emerald-400 mt-0.5">{countAttending} {isEn ? 'Guests' : 'Wageni'}</p>
+          <div className="flex items-center justify-between text-[11px] font-mono pt-2 border-t border-emerald-500/20 text-slate-300">
+            <span>Single: <strong className="text-emerald-400 font-bold">{attendingSingle}</strong></span>
+            <span>Double: <strong className="text-purple-300 font-bold">{attendingDouble}</strong></span>
           </div>
         </div>
 
         {/* Declined card */}
-        <div className="backdrop-blur-md bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-center space-x-3 text-white">
-          <div className="w-10 h-10 rounded-xl bg-red-500/15 text-rose-400 flex items-center justify-center shrink-0 border border-red-500/20">
-            <XCircle className="w-5 h-5" />
+        <div className="backdrop-blur-md bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex flex-col justify-between text-white space-y-2">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-red-500/15 text-rose-400 flex items-center justify-center shrink-0 border border-red-500/20">
+              <XCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[9px] text-slate-400 font-mono tracking-wider font-semibold uppercase">{isEn ? 'Declined' : 'Hawaji (Declined)'}</p>
+              <p className="text-lg font-extrabold text-rose-400 mt-0.5">{countDeclined} {isEn ? 'Cards' : 'Kadi'} <span className="text-xs font-normal text-slate-400">({countDeclinedPax} pax)</span></p>
+            </div>
           </div>
-          <div>
-            <p className="text-[9px] text-slate-400 font-mono tracking-wider font-semibold uppercase">{isEn ? 'Declined' : 'Hawaji (Declined)'}</p>
-            <p className="text-lg font-extrabold text-rose-400 mt-0.5">{countDeclined} {isEn ? 'Cards' : 'Kadi'}</p>
+          <div className="flex items-center justify-between text-[11px] font-mono pt-2 border-t border-rose-500/20 text-slate-300">
+            <span>Single: <strong className="text-rose-400 font-bold">{declinedSingle}</strong></span>
+            <span>Double: <strong className="text-purple-300 font-bold">{declinedDouble}</strong></span>
           </div>
         </div>
 
         {/* Maybe Card */}
-        <div className="backdrop-blur-md bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-center space-x-3 text-white">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
-            <HelpCircle className="w-5 h-5" />
+        <div className="backdrop-blur-md bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex flex-col justify-between text-white space-y-2">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+              <HelpCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[9px] text-slate-400 font-mono tracking-wider font-semibold uppercase">{isEn ? 'Maybe' : 'Hawana Uhakika'}</p>
+              <p className="text-lg font-extrabold text-amber-400 mt-0.5">{countMaybe} {isEn ? 'Cards' : 'Kadi'} <span className="text-xs font-normal text-slate-400">({countMaybePax} pax)</span></p>
+            </div>
           </div>
-          <div>
-            <p className="text-[9px] text-slate-400 font-mono tracking-wider font-semibold uppercase">{isEn ? 'Maybe' : 'Hawana Uhakika'}</p>
-            <p className="text-lg font-extrabold text-amber-400 mt-0.5">{countMaybe} {isEn ? 'Guests' : 'Wageni'}</p>
+          <div className="flex items-center justify-between text-[11px] font-mono pt-2 border-t border-amber-500/20 text-slate-300">
+            <span>Single: <strong className="text-amber-400 font-bold">{maybeSingle}</strong></span>
+            <span>Double: <strong className="text-purple-300 font-bold">{maybeDouble}</strong></span>
           </div>
         </div>
 
         {/* Pending Card */}
-        <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center space-x-3 text-white">
-          <div className="w-10 h-10 rounded-xl bg-white/10 text-slate-300 flex items-center justify-center shrink-0 border border-white/10">
-            <MessageSquare className="w-5 h-5" />
+        <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col justify-between text-white space-y-2">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-white/10 text-slate-300 flex items-center justify-center shrink-0 border border-white/10">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[9px] text-slate-400 font-mono tracking-wider font-semibold uppercase">{isEn ? 'Pending' : 'Bado Kujibu'}</p>
+              <p className="text-lg font-extrabold text-white mt-0.5">{countNotResponded} {isEn ? 'Cards' : 'Kadi'} <span className="text-xs font-normal text-slate-400">({countNotRespondedPax} pax)</span></p>
+            </div>
           </div>
-          <div>
-            <p className="text-[9px] text-slate-400 font-mono tracking-wider font-semibold uppercase">{isEn ? 'Pending' : 'Bado Kujibu'}</p>
-            <p className="text-lg font-extrabold text-white mt-0.5">{countNotResponded} {isEn ? 'Cards' : 'Kadi'}</p>
+          <div className="flex items-center justify-between text-[11px] font-mono pt-2 border-t border-white/10 text-slate-300">
+            <span>Single: <strong className="text-slate-200 font-bold">{pendingSingle}</strong></span>
+            <span>Double: <strong className="text-purple-300 font-bold">{pendingDouble}</strong></span>
           </div>
         </div>
 
@@ -350,9 +705,62 @@ export default function RSVPResponses({ event, guests, onUpdateGuests, onNext }:
           </div>
         </div>
 
-        {/* Column 2: Main RSVP Records Table */}
-        <div className="flex-1 border border-white/10 rounded-2xl overflow-hidden bg-white/5 text-xs h-fit self-start">
-        <div className="overflow-x-auto">
+        {/* Column 2: Main RSVP Records Table & Search Toolbar */}
+        <div className="flex-1 space-y-3 h-fit self-start">
+          {/* Quick Search Toolbar above Table */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="relative w-full sm:w-80">
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <Search className="w-4 h-4" />
+              </span>
+              <input
+                id="search-rsvp-guest-input"
+                type="text"
+                placeholder={isEn ? "Search guest name, phone or code..." : "Tafuta jina la mgeni, simu au kadi..."}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 rounded-xl border border-white/10 bg-[#050b18]/70 text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs transition"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-white text-xs font-bold"
+                  title="Futa utafutaji"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 custom-scrollbar">
+              {[
+                { id: 'ALL', label: isEn ? 'All' : 'Wote', count: guests.length },
+                { id: 'Atahudhuria', label: isEn ? 'Attending' : 'Wanakuja', count: guests.filter(g => g.rsvpStatus === 'Atahudhuria').length, color: 'text-emerald-400 bg-emerald-500/10' },
+                { id: 'Hatahudhuria', label: isEn ? 'Declined' : 'Hawaji', count: countDeclined, color: 'text-rose-400 bg-rose-500/10' },
+                { id: 'Labda', label: isEn ? 'Maybe' : 'Labda', count: countMaybe, color: 'text-amber-400 bg-amber-500/10' },
+                { id: 'BADO', label: isEn ? 'Pending' : 'Bado', count: countNotResponded, color: 'text-slate-300 bg-white/10' },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setFilterRsvpStatus(tab.id)}
+                  className={`px-2.5 py-1.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1 border ${
+                    filterRsvpStatus === tab.id
+                      ? 'bg-blue-600 border-blue-500 text-white shadow-sm'
+                      : 'bg-white/5 border-white/5 text-slate-400 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-mono ${filterRsvpStatus === tab.id ? 'bg-black/30 text-white' : (tab.color || 'bg-white/10 text-slate-300')}`}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Main RSVP Records Table */}
+          <div className="border border-white/10 rounded-2xl overflow-hidden bg-white/5 text-xs">
+          <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-white/5 border-b border-white/10 text-slate-400 font-mono font-bold uppercase text-[9px] tracking-wider">
@@ -398,19 +806,34 @@ export default function RSVPResponses({ event, guests, onUpdateGuests, onNext }:
               ) : (
                 sortedGuests.map((g) => (
                   <tr key={g.id} className="hover:bg-white/5 transition border-b border-white/5">
-                    <td className="px-5 py-3 font-bold text-white">{g.name}</td>
+                    <td className="px-5 py-3 font-bold text-white">
+                      <div>{g.name}</div>
+                      {g.rsvpUpdatedAt && (
+                        <div className="text-[9.5px] text-blue-300/80 font-normal font-mono flex items-center gap-1 mt-0.5">
+                          <span>🕒 {isEn ? 'Updated:' : 'Ilibadilishwa:'}</span>
+                          <span>{new Date(g.rsvpUpdatedAt).toLocaleDateString()} {new Date(g.rsvpUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      )}
+                    </td>
                     <td className="px-5 py-3 font-mono text-slate-300">{g.phone}</td>
                     
-                    {/* Status Badge */}
+                    {/* Status Badge & Quick Change */}
                     <td className="px-5 py-3 text-center">
-                      <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold border inline-flex items-center space-x-1 ${
-                        g.rsvpStatus === 'Atahudhuria' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                        g.rsvpStatus === 'Hatahudhuria' ? 'bg-red-500/10 text-rose-350 border-red-500/20' :
-                        g.rsvpStatus === 'Labda' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
-                        'bg-white/5 text-slate-400 border-white/10'
-                      }`}>
-                        {g.rsvpStatus === 'Bado' || !g.rsvpStatus ? 'Bado Jibu' : g.rsvpStatus}
-                      </span>
+                      <select
+                        value={g.rsvpStatus || 'Bado'}
+                        onChange={(e) => handleQuickStatusChange(g.id, e.target.value as any)}
+                        className={`px-2.5 py-1 rounded-full text-[9.5px] font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-400 ${
+                          g.rsvpStatus === 'Atahudhuria' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
+                          g.rsvpStatus === 'Hatahudhuria' ? 'bg-red-500/10 text-rose-350 border-red-500/30' :
+                          g.rsvpStatus === 'Labda' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
+                          'bg-white/5 text-slate-400 border-white/10'
+                        }`}
+                      >
+                        <option value="Atahudhuria" className="bg-[#0c1427] text-emerald-400 font-bold">🟢 Atahudhuria</option>
+                        <option value="Hatahudhuria" className="bg-[#0c1427] text-rose-400 font-bold">🔴 Hatahudhuria</option>
+                        <option value="Labda" className="bg-[#0c1427] text-amber-400 font-bold">🟡 Labda</option>
+                        <option value="Bado" className="bg-[#0c1427] text-slate-400 font-bold">⚪ Bado Jibu</option>
+                      </select>
                     </td>
 
                     <td className="px-5 py-3 text-center font-bold font-mono text-slate-200">
@@ -437,7 +860,8 @@ export default function RSVPResponses({ event, guests, onUpdateGuests, onNext }:
             </tbody>
           </table>
         </div>
-      </div>
+        </div>
+        </div>
       </div> {/* End of main multi-filter layout container */}
 
       {/* Navigation section */}

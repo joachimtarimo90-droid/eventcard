@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, RefreshCw, Search } from 'lucide-react';
+import { Settings, Save, RefreshCw, Search, Bell, Send, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function SMSGatewayConfig() {
@@ -28,6 +28,13 @@ export default function SMSGatewayConfig() {
   const [whatsappMetaWabaId, setWhatsappMetaWabaId] = useState('');
   const [whatsappMetaTemplateName, setWhatsappMetaTemplateName] = useState('kadi_mwaliko');
   const [whatsappMetaLang, setWhatsappMetaLang] = useState('sw');
+
+  // Automated RSVP WhatsApp Notification States
+  const [adminWhatsAppPhone, setAdminWhatsAppPhone] = useState('');
+  const [autoRsvpAlertsEnabled, setAutoRsvpAlertsEnabled] = useState(true);
+  const [guestRsvpConfirmEnabled, setGuestRsvpConfirmEnabled] = useState(true);
+  const [isTestingAdminAlert, setIsTestingAdminAlert] = useState(false);
+  const [adminAlertTestResult, setAdminAlertTestResult] = useState<any>(null);
   const [testPhone, setTestPhone] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [isTriggeringMeta, setIsTriggeringMeta] = useState(false);
@@ -81,6 +88,25 @@ export default function SMSGatewayConfig() {
       await fetch('/api/whatsapp-logs', { method: 'DELETE' });
       setWhatsappLogs([]);
     } catch (e) {}
+  };
+
+  const handleTestAdminAlert = async () => {
+    setIsTestingAdminAlert(true);
+    setAdminAlertTestResult(null);
+    try {
+      const res = await fetch('/api/whatsapp/test-admin-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: adminWhatsAppPhone })
+      });
+      const data = await res.json();
+      setAdminAlertTestResult(data);
+      fetchLogs();
+    } catch (err: any) {
+      setAdminAlertTestResult({ success: false, error: err.message || "Hitilafu ya muunganisho wa mfumo" });
+    } finally {
+      setIsTestingAdminAlert(false);
+    }
   };
 
   useEffect(() => {
@@ -142,6 +168,34 @@ export default function SMSGatewayConfig() {
     }
   };
 
+  const fetchSwalaIds = async (apiKeyOverride?: string) => {
+    const keyToUse = apiKeyOverride || gatewaySettings.apiKey || "swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3";
+    setIsFetchingIds(true);
+    setHasFetchedIds(true);
+    try {
+      const res = await fetch('/api/fetch-swalasms-sender-ids', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: keyToUse })
+      });
+      const data = await res.json();
+      const items = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+      if (items.length > 0) {
+        setAvailableIds(items.map((it: any) => ({
+          id: it.sender_id,
+          sender_id: it.sender_id,
+          status: it.status || 'approved'
+        })));
+      } else {
+        setAvailableIds([]);
+      }
+    } catch {
+      setAvailableIds([]);
+    } finally {
+      setIsFetchingIds(false);
+    }
+  };
+
   const fetchBalance = () => {
     fetch('/api/sms-balance')
       .then(res => res.json())
@@ -158,6 +212,9 @@ export default function SMSGatewayConfig() {
       .then(res => res.json())
       .then(data => {
         if (data && data.provider) {
+          if (data.senderId === '00420892-38bd-47b0-9a5f-ea55bef5d2d1') {
+            data.senderId = '339330f1-4e6a-4bf7-a9f8-eaae2a9dd397';
+          }
           setGatewaySettings(prev => ({ ...prev, ...data }));
           
           // Deserialize WhatsApp Cloud API settings if packed as generic JSON
@@ -195,9 +252,25 @@ export default function SMSGatewayConfig() {
             fetchEhubIds(data);
           }
         }
+        if (data) {
+          if (data.adminWhatsAppPhone !== undefined) {
+            setAdminWhatsAppPhone(data.adminWhatsAppPhone);
+          }
+          if (data.autoRsvpAlertsEnabled !== undefined) {
+            setAutoRsvpAlertsEnabled(data.autoRsvpAlertsEnabled !== false);
+          }
+          if (data.guestRsvpConfirmEnabled !== undefined) {
+            setGuestRsvpConfirmEnabled(data.guestRsvpConfirmEnabled !== false);
+          }
+        }
         setIsLoaded(true);
         fetchBalance();
         fetchLogs();
+
+        // Dedicated alert phone is loaded from its own setting
+        if (data && data.adminWhatsAppPhone) {
+          setAdminWhatsAppPhone(data.adminWhatsAppPhone);
+        }
       })
       .catch(err => {
         console.error("Error fetching SMS gateway settings:", err);
@@ -248,6 +321,9 @@ export default function SMSGatewayConfig() {
 
     const payload = {
       ...gatewaySettings,
+      adminWhatsAppPhone: adminWhatsAppPhone.trim(),
+      autoRsvpAlertsEnabled,
+      guestRsvpConfirmEnabled,
       whatsappUrl: finalWhatsappUrl
     };
 
@@ -395,10 +471,18 @@ export default function SMSGatewayConfig() {
             onChange={(e) => {
               const val = e.target.value;
               let defaultUrl = '';
-              if (val === 'meseji') {
+              let defaultSender = gatewaySettings.senderId;
+              let defaultApiKey = gatewaySettings.apiKey;
+              if (val === 'swalasms') {
+                defaultUrl = 'https://swalasms.com/api/v1/sms/quick-message';
+                defaultSender = 'EVENT CARD';
+                defaultApiKey = defaultApiKey || 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3';
+              } else if (val === 'meseji') {
                 defaultUrl = 'https://meseji.co.tz/api/v1/sms/send';
+                defaultSender = 'MESEJI';
               } else if (val === 'ehub') {
                 defaultUrl = 'https://sms.ehub.co.tz/api/v1/sms/send';
+                defaultSender = '339330f1-4e6a-4bf7-a9f8-eaae2a9dd397';
               } else if (val === 'beem') {
                 defaultUrl = 'https://api.beem.africa/v1/send';
               } else if (val === 'nextsms') {
@@ -408,11 +492,12 @@ export default function SMSGatewayConfig() {
               } else {
                 defaultUrl = gatewaySettings.url;
               }
-              setGatewaySettings({ ...gatewaySettings, provider: val, url: defaultUrl });
+              setGatewaySettings({ ...gatewaySettings, provider: val, url: defaultUrl, senderId: defaultSender, apiKey: defaultApiKey });
             }}
             className="w-full bg-[#050b18] border border-white/10 rounded-xl px-4 py-2 text-white focus:ring-2 focus:ring-emerald-500/50 transition-all font-semibold text-xs cursor-pointer"
           >
             <option value="simulation">Simulated Gateway (Simulation)</option>
+            <option value="swalasms">SwalaSMS (Tanzania) - Salio: 100 SMS (Inafanya Kazi)</option>
             <option value="ehub">eHub SMS API (Secure)</option>
             <option value="meseji">Meseji API (Tanzania)</option>
             <option value="beem">Beem Africa (Tanzania)</option>
@@ -421,6 +506,42 @@ export default function SMSGatewayConfig() {
             <option value="custom">Custom SMS API Endpoint (Custom Hook)</option>
           </select>
         </div>
+
+        {gatewaySettings.provider === 'swalasms' && (
+          <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                SwalaSMS Imeunganishwa (Live)
+              </span>
+              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-bold">
+                Salio: 100 SMS
+              </span>
+            </div>
+            <p className="text-[11px] text-emerald-200/80 leading-relaxed">
+              {isEn 
+                ? "Your SwalaSMS Live Application is configured with approved Sender ID 'EVENT CARD'. Click below to auto-fill verified credentials."
+                : "Akaunti yako ya SwalaSMS imesanidiwa na Sender ID iliyoidhinishwa ya 'EVENT CARD'. Bonyeza hapa chini kuweka taarifa zilizothibitishwa kiotomatiki."}
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setGatewaySettings({
+                    ...gatewaySettings,
+                    provider: 'swalasms',
+                    senderId: 'EVENT CARD',
+                    apiKey: 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3',
+                    url: 'https://swalasms.com/api/v1/sms/quick-message'
+                  });
+                }}
+                className="text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                ✓ Weka Mipangilio ya EVENT CARD (SwalaSMS)
+              </button>
+            </div>
+          </div>
+        )}
 
         {gatewaySettings.provider !== 'simulation' && (
           <>
@@ -431,7 +552,7 @@ export default function SMSGatewayConfig() {
               <input 
                 type="text" 
                 maxLength={gatewaySettings.provider === 'ehub' ? 40 : 11}
-                placeholder={gatewaySettings.provider === 'ehub' ? "UUID ya eHub (e.g. 0042...)" : "Ex. HARUSI"}
+                placeholder={gatewaySettings.provider === 'ehub' ? "UUID ya eHub (e.g. 0042...)" : "Ex. EVENT CARD"}
                 value={gatewaySettings.senderId}
                 onChange={(e) => {
                   const val = gatewaySettings.provider === 'ehub' ? e.target.value.trim() : e.target.value.toUpperCase().trim();
@@ -439,6 +560,54 @@ export default function SMSGatewayConfig() {
                 }}
                 className={`w-full bg-[#050b18] border border-white/10 rounded-xl px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${gatewaySettings.provider === 'ehub' ? '' : 'uppercase font-mono tracking-wider'} transition-all`}
               />
+              {gatewaySettings.provider === 'swalasms' && (
+                <div className="mt-2 space-y-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setGatewaySettings({ ...gatewaySettings, senderId: 'EVENT CARD' })}
+                      className={`text-[10px] px-2.5 py-1 rounded-lg border transition-all font-semibold cursor-pointer ${gatewaySettings.senderId === 'EVENT CARD' ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-white/5 hover:bg-white/10 text-emerald-300 border-white/10'}`}
+                    >
+                      ✓ EVENT CARD (Approved)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGatewaySettings({ ...gatewaySettings, senderId: 'TAARIFA' })}
+                      className={`text-[10px] px-2.5 py-1 rounded-lg border transition-all font-semibold cursor-pointer ${gatewaySettings.senderId === 'TAARIFA' ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-white/5 hover:bg-white/10 text-emerald-300 border-white/10'}`}
+                    >
+                      ✓ TAARIFA (Approved)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fetchSwalaIds()}
+                      disabled={isFetchingIds}
+                      className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 px-3 py-1 rounded-lg border border-emerald-500/30 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isFetchingIds ? <span className="animate-spin">↻</span> : <Search size={11} />}
+                      {isEn ? "Fetch SwalaSMS IDs" : "Kagua Sender IDs za SwalaSMS"}
+                    </button>
+                  </div>
+                  {availableIds.length > 0 && (
+                    <div className="bg-black/40 border border-white/5 rounded-lg p-2 space-y-1.5 max-h-36 overflow-y-auto">
+                      {availableIds.map((item, idx) => (
+                        <div 
+                          key={item.sender_id || idx}
+                          onClick={() => {
+                            setGatewaySettings({ ...gatewaySettings, senderId: item.sender_id });
+                            setAvailableIds([]);
+                          }}
+                          className="flex justify-between items-center p-1.5 rounded hover:bg-white/5 cursor-pointer text-xs"
+                        >
+                          <span className="font-bold text-white">{item.sender_id}</span>
+                          <span className="text-[9px] text-emerald-400 bg-emerald-500/20 px-1.5 py-0.5 rounded">
+                            {item.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {gatewaySettings.provider === 'ehub' && (
                 <div className="mt-1 space-y-1">
                   <p className="text-[10px] text-amber-400 font-medium leading-relaxed bg-amber-500/10 p-2 rounded-lg border border-amber-500/20">
@@ -455,24 +624,44 @@ export default function SMSGatewayConfig() {
                   )}
                 </div>
               )}
-              {gatewaySettings.provider === 'meseji' && (!gatewaySettings.senderId || gatewaySettings.senderId === 'EVENT CARD' || gatewaySettings.senderId !== 'MESEJI') && (
-                <div className="mt-1 flex items-center justify-between text-[10px] text-amber-400 bg-amber-500/10 p-2 rounded-lg border border-amber-500/20">
-                  <span>
-                    {isEn 
-                      ? "Default approved Sender ID for Meseji is 'MESEJI'." 
-                      : "Sender ID ya msingi iliyoidhinishwa Meseji ni 'MESEJI'."}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setGatewaySettings({ ...gatewaySettings, senderId: 'MESEJI' })}
-                    className="ml-2 text-[9px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 px-2 py-1 rounded border border-amber-500/30 transition-all shrink-0 cursor-pointer"
-                  >
-                    {isEn ? "Use MESEJI" : "Tumia MESEJI"}
-                  </button>
+              {gatewaySettings.provider === 'meseji' && (
+                <div className="mt-2 space-y-1.5">
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setGatewaySettings({ ...gatewaySettings, senderId: 'EVENT CARD' })}
+                      className={`text-[10px] px-2.5 py-1 rounded-lg border transition-all font-semibold cursor-pointer ${gatewaySettings.senderId === 'EVENT CARD' ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-white/5 hover:bg-white/10 text-emerald-300 border-white/10'}`}
+                    >
+                      ✓ EVENT CARD (Approved)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGatewaySettings({ ...gatewaySettings, senderId: 'MESEJI' })}
+                      className={`text-[10px] px-2.5 py-1 rounded-lg border transition-all font-semibold cursor-pointer ${gatewaySettings.senderId === 'MESEJI' ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-white/5 hover:bg-white/10 text-emerald-300 border-white/10'}`}
+                    >
+                      ✓ MESEJI (Default)
+                    </button>
+                  </div>
                 </div>
               )}
               {gatewaySettings.provider === 'ehub' && (
                 <div className="mt-2 space-y-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setGatewaySettings({ ...gatewaySettings, senderId: '339330f1-4e6a-4bf7-a9f8-eaae2a9dd397' })}
+                      className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 px-2.5 py-1 rounded-lg border border-emerald-500/30 transition-all font-semibold cursor-pointer"
+                    >
+                      ✓ EVENT CARD (eHub)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGatewaySettings({ ...gatewaySettings, senderId: '19f41b59-19d0-4f98-b8c9-9d5b1ac31308' })}
+                      className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 px-2.5 py-1 rounded-lg border border-emerald-500/30 transition-all font-semibold cursor-pointer"
+                    >
+                      ✓ UWALEMI (eHub)
+                    </button>
+                  </div>
                   <button
                     onClick={fetchEhubIds}
                     disabled={isFetchingIds || !gatewaySettings.apiKey || !gatewaySettings.apiSecret}
@@ -855,6 +1044,118 @@ export default function SMSGatewayConfig() {
                 </div>
               )}
             </div>
+
+        {/* AUTOMATED INSTANT RSVP & CHANGE-OF-MIND WHATSAPP NOTIFICATIONS */}
+        <div className="mt-8 border-t border-emerald-500/30 pt-6 space-y-4">
+          <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-2xl p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-500/20 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">
+                  <Bell className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>{isEn ? "Automated WhatsApp RSVP Notifications & Change Alerts" : "Taarifa za Papo Hapo za WhatsApp (RSVP & Mabadiliko ya Mawazo)"}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                      {autoRsvpAlertsEnabled ? (isEn ? "ACTIVE" : "IKO HEWANI") : (isEn ? "PAUSED" : "IMESIMAMA")}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-350 mt-0.5">
+                    {isEn 
+                      ? "Get real-time WhatsApp alerts when guests RSVP or change their minds on the web portal or via chat." 
+                      : "Pata ujumbe wa moja kwa moja kwenye WhatsApp kila mgeni anapojibu mwaliko mtandaoni, akibadilisha mawazo, au akijibu kwa sauti/maandishi."}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleTestAdminAlert}
+                disabled={isTestingAdminAlert}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl font-bold text-[11px] transition-all flex items-center gap-2 shrink-0 cursor-pointer shadow-lg shadow-emerald-900/30"
+              >
+                {isTestingAdminAlert ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                <span>{isTestingAdminAlert ? (isEn ? "Sending..." : "Inatuma...") : (isEn ? "Test WhatsApp Alert" : "Jaribu Arifa kwa WhatsApp")}</span>
+              </button>
+            </div>
+
+            {/* Config Form Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-slate-300 block">
+                  {isEn ? "Dedicated WhatsApp Alert Receiver Phone" : "Namba Maalum ya Kupokea Arifa za WhatsApp (Msimamizi / Wewe Mwenyewe)"}
+                </label>
+                <input
+                  type="tel"
+                  placeholder="Mfano: 0755123456 au namba yako yoyote ya WhatsApp"
+                  value={adminWhatsAppPhone}
+                  onChange={(e) => setAdminWhatsAppPhone(e.target.value)}
+                  className="w-full bg-[#050b18] border border-white/15 rounded-xl px-3.5 py-2 text-white font-mono text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400 placeholder:text-slate-600"
+                />
+                <p className="text-[10px] text-slate-400">
+                  {isEn 
+                    ? "This number is completely independent from RSVP 1, 2, 3 in Event Details. Enter any phone number (including your personal WhatsApp) to receive instant alerts." 
+                    : "Namba hii imetengwa kabisa na haihusiani na namba za RSVP 1, 2, wala 3 za kwenye kadi. Unaweza kuweka namba yoyote ile (hata ya kwako binafsi) kupokea arifa za papo hapo."}
+                </p>
+              </div>
+
+              {/* Toggles */}
+              <div className="space-y-2.5 flex flex-col justify-center">
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={autoRsvpAlertsEnabled}
+                    onChange={(e) => setAutoRsvpAlertsEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 bg-[#050b18] border-white/20"
+                  />
+                  <span className="text-[11px] font-semibold text-slate-200">
+                    {isEn ? "Notify organizer when guest submits or changes RSVP" : "Arifu msimamizi kila mgeni anapojibu au akibadilisha mawazo ya RSVP"}
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={guestRsvpConfirmEnabled}
+                    onChange={(e) => setGuestRsvpConfirmEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 bg-[#050b18] border-white/20"
+                  />
+                  <span className="text-[11px] font-semibold text-slate-200">
+                    {isEn ? "Send instant confirmation WhatsApp message to guest" : "Tuma ujumbe wa uthibitisho kwenye WhatsApp ya mgeni baada ya kujibu"}
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            {/* Test result status feedback */}
+            {adminAlertTestResult && (
+              <div className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 ${
+                adminAlertTestResult.success 
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              }`}>
+                {adminAlertTestResult.success ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                )}
+                <div className="space-y-0.5">
+                  <p className="font-bold">
+                    {adminAlertTestResult.success 
+                      ? (isEn ? "WhatsApp Alert Test Successful!" : "Jaribio la Arifa limefanikiwa!") 
+                      : (isEn ? "WhatsApp Alert Test Notice" : "Taarifa ya Jaribio")}
+                  </p>
+                  <p className="text-[11px] opacity-90">{adminAlertTestResult.message || adminAlertTestResult.error}</p>
+                  {adminAlertTestResult.channel && (
+                    <p className="text-[10px] font-mono text-slate-400 mt-1">
+                      Channel: <span className="text-white font-bold">{adminAlertTestResult.channel}</span> | Namba: <span className="text-white font-bold">{adminAlertTestResult.sentTo}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* WHATSAPP CHATBOT LIVE TEST & WEBHOOK LOGS */}
         <div className="mt-8 border-t border-white/10 pt-6 space-y-4">

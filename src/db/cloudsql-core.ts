@@ -14,8 +14,9 @@ function hasConnectionError(error: any): boolean {
   const msg = String(error.message || "").toLowerCase();
   const causeMsg = error.cause ? String(error.cause.message || "").toLowerCase() : "";
   const stackMsg = String(error.stack || "").toLowerCase();
+  const code = String(error.code || error.cause?.code || "").toLowerCase();
   
-  const searchStr = `${msg} ${causeMsg} ${stackMsg}`;
+  const searchStr = `${msg} ${causeMsg} ${stackMsg} ${code}`;
   
   return (
     searchStr.includes("connection terminated") ||
@@ -25,24 +26,35 @@ function hasConnectionError(error: any): boolean {
     searchStr.includes("connection closed") ||
     searchStr.includes("unexpected termination") ||
     searchStr.includes("ssl syscall error") ||
-    searchStr.includes("broken pipe")
+    searchStr.includes("broken pipe") ||
+    searchStr.includes("failed query") ||
+    searchStr.includes("socket has been ended") ||
+    searchStr.includes("ehostunreach") ||
+    searchStr.includes("57p01") ||
+    searchStr.includes("admin_shutdown") ||
+    searchStr.includes("enotfound") ||
+    searchStr.includes("econnrefused")
   );
 }
 
-async function executeQuery<T>(label: string, queryFn: () => Promise<T>, retries = 3): Promise<T> {
+async function executeQuery<T>(label: string, queryFn: () => Promise<T>, retries = 4): Promise<T> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       return await queryFn();
     } catch (error: any) {
       const isConnectionDrop = hasConnectionError(error);
 
-      if (isConnectionDrop && attempt < retries) {
-        console.warn(`[CloudSQL] ${label} attempt ${attempt} unreachable: ${error.message || error}. Retrying...`);
-        await wait(attempt * 1500); // Exponential backoff: 1.5s, 3.0s
+      if (attempt < retries) {
+        const errorDetail = error.cause?.message || error.message || String(error);
+        const preview = typeof errorDetail === "string" ? errorDetail.split("\n")[0].substring(0, 80) : "";
+        console.warn(`[CloudSQL] ${label} attempt ${attempt} reconnecting (${preview}). Retrying in ${attempt * 1000}ms...`);
+        await wait(attempt * 1000);
         continue;
       }
       
-      console.warn(`[CloudSQL] ${label} unavailable: ${error.message || error}`);
+      const errMsg = error.cause?.message || error.message || String(error);
+      const preview = typeof errMsg === "string" ? errMsg.split("\n")[0].substring(0, 100) : "";
+      console.warn(`[CloudSQL] ${label} unavailable: ${preview}`);
       throw new Error(`Database operation '${label}' failed. Please try again later.`, { cause: error });
     }
   }
@@ -53,6 +65,7 @@ export async function ensureTablesExist(): Promise<void> {
   await executeQuery("ensureTablesExist", async () => {
     console.log("[CloudSQL] Verifying and provisioning database tables if not present...");
     
+    // Execute core DDL in a single consolidated transaction for atomicity and speed
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "events" (
         "id" text PRIMARY KEY,
@@ -82,9 +95,7 @@ export async function ensureTablesExist(): Promise<void> {
         "contribution_deadline" text,
         "created_at" timestamp DEFAULT now()
       );
-    `);
 
-    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "guests" (
         "id" text PRIMARY KEY,
         "event_id" text REFERENCES "events"("id") ON DELETE CASCADE,
@@ -114,9 +125,7 @@ export async function ensureTablesExist(): Promise<void> {
         "custom_fields" jsonb,
         "tags" jsonb
       );
-    `);
 
-    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "save_the_dates" (
         "id" text PRIMARY KEY,
         "event_id" text REFERENCES "events"("id") ON DELETE CASCADE,
@@ -125,9 +134,7 @@ export async function ensureTablesExist(): Promise<void> {
         "image_url" text,
         "created_at" text
       );
-    `);
 
-    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "save_the_date_recipients" (
         "id" text PRIMARY KEY,
         "save_the_date_id" text REFERENCES "save_the_dates"("id") ON DELETE CASCADE,
@@ -135,9 +142,7 @@ export async function ensureTablesExist(): Promise<void> {
         "sent_at" text,
         "status" text DEFAULT 'Pending'
       );
-    `);
 
-    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "template_settings" (
         "id" text PRIMARY KEY,
         "image_url" text NOT NULL,
@@ -157,9 +162,7 @@ export async function ensureTablesExist(): Promise<void> {
         "card_type_color" text,
         "orientation" text DEFAULT 'portrait'
       );
-    `);
 
-    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "sms_gateway_settings" (
         "id" text PRIMARY KEY,
         "provider" text DEFAULT 'simulation',
@@ -172,9 +175,7 @@ export async function ensureTablesExist(): Promise<void> {
         "custom_headers" text DEFAULT '{}',
         "custom_body" text DEFAULT '{\n  "to": "{to}",\n  "message": "{message}"\n}'
       );
-    `);
 
-    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "committee_members" (
         "id" text PRIMARY KEY,
         "name" text NOT NULL,
@@ -184,18 +185,14 @@ export async function ensureTablesExist(): Promise<void> {
         "permission_level" text DEFAULT 'Summary Access',
         "token" text
       );
-    `);
 
-    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "committee_roles" (
         "id" text PRIMARY KEY,
         "name" text NOT NULL,
         "permission_level" text NOT NULL,
         "description" text
       );
-    `);
 
-    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "audit_logs" (
         "id" text PRIMARY KEY,
         "timestamp" text NOT NULL,
@@ -204,9 +201,7 @@ export async function ensureTablesExist(): Promise<void> {
         "details" text NOT NULL,
         "ip_address" text
       );
-    `);
 
-    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "user_account" (
         "id" text PRIMARY KEY,
         "username" text,
@@ -216,9 +211,7 @@ export async function ensureTablesExist(): Promise<void> {
         "transactions" jsonb,
         "active_event_id" text
       );
-    `);
 
-    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "uwalemi_state" (
         "id" text PRIMARY KEY,
         "data" jsonb NOT NULL,
@@ -228,10 +221,17 @@ export async function ensureTablesExist(): Promise<void> {
 
     // Ensure extra columns exist if upgrading from older schemas
     try {
-      await db.execute(sql`ALTER TABLE "user_account" ADD COLUMN IF NOT EXISTS "active_event_id" text;`);
-      await db.execute(sql`ALTER TABLE "template_settings" ADD COLUMN IF NOT EXISTS "orientation" text DEFAULT 'portrait';`);
-      await db.execute(sql`ALTER TABLE "guests" ADD COLUMN IF NOT EXISTS "custom_fields" jsonb;`);
-      await db.execute(sql`ALTER TABLE "guests" ADD COLUMN IF NOT EXISTS "tags" jsonb;`);
+      await db.execute(sql`
+        ALTER TABLE "user_account" ADD COLUMN IF NOT EXISTS "active_event_id" text;
+        ALTER TABLE "template_settings" ADD COLUMN IF NOT EXISTS "orientation" text DEFAULT 'portrait';
+        ALTER TABLE "guests" ADD COLUMN IF NOT EXISTS "custom_fields" jsonb;
+        ALTER TABLE "guests" ADD COLUMN IF NOT EXISTS "tags" jsonb;
+        ALTER TABLE "events" ADD COLUMN IF NOT EXISTS "admin_alert_whatsapp_phone" text;
+        ALTER TABLE "sms_gateway_settings" ADD COLUMN IF NOT EXISTS "admin_alert_whatsapp_phone" text;
+        ALTER TABLE "sms_gateway_settings" ADD COLUMN IF NOT EXISTS "admin_whatsapp_phone" text;
+        ALTER TABLE "sms_gateway_settings" ADD COLUMN IF NOT EXISTS "auto_rsvp_alerts_enabled" boolean DEFAULT true;
+        ALTER TABLE "sms_gateway_settings" ADD COLUMN IF NOT EXISTS "guest_rsvp_confirm_enabled" boolean DEFAULT true;
+      `);
     } catch (colErr) {
       console.warn("[CloudSQL] Column migration notice:", colErr);
     }
@@ -522,19 +522,46 @@ export async function seedFromBackupFile(): Promise<boolean> {
 
 // 2. State Reconstruction function
 export async function fetchFullStateFromDB(): Promise<any> {
-  return await executeQuery("fetchFullStateFromDB", async () => {
-    // Load tables sequentially or in smaller batches to avoid overwhelming the Render free-tier pool
-    const sqlEvents = await db.select().from(schema.events);
-    const sqlGuests = await db.select().from(schema.guests);
-    const sqlSaveTheDates = await db.select().from(schema.saveTheDates);
-    const sqlRecipients = await db.select().from(schema.saveTheDateRecipients);
-    const sqlTemplates = await db.select().from(schema.templateSettings);
-    const sqlSmsSettings = await db.select().from(schema.smsGatewaySettings);
-    const sqlCommitteeMembers = await db.select().from(schema.committeeMembers);
-    const sqlCommitteeRoles = await db.select().from(schema.committeeRoles);
-    const sqlAuditLogs = await db.select().from(schema.auditLogs);
-    const sqlUserAcc = await db.select().from(schema.userAccount);
-    const sqlUwalemi = await db.select().from(schema.uwalemiStateTable);
+  try {
+    return await executeQuery("fetchFullStateFromDB", async () => {
+    let sqlEvents: any[] = [];
+    let sqlGuests: any[] = [];
+    let sqlSaveTheDates: any[] = [];
+    let sqlRecipients: any[] = [];
+    let sqlTemplates: any[] = [];
+    let sqlSmsSettings: any[] = [];
+    let sqlCommitteeMembers: any[] = [];
+    let sqlCommitteeRoles: any[] = [];
+    let sqlAuditLogs: any[] = [];
+    let sqlUserAcc: any[] = [];
+    let sqlUwalemi: any[] = [];
+
+    const loadTables = async () => {
+      sqlEvents = await db.select().from(schema.events);
+      sqlGuests = await db.select().from(schema.guests);
+      sqlSaveTheDates = await db.select().from(schema.saveTheDates);
+      sqlRecipients = await db.select().from(schema.saveTheDateRecipients);
+      sqlTemplates = await db.select().from(schema.templateSettings);
+      sqlSmsSettings = await db.select().from(schema.smsGatewaySettings);
+      sqlCommitteeMembers = await db.select().from(schema.committeeMembers);
+      sqlCommitteeRoles = await db.select().from(schema.committeeRoles);
+      sqlAuditLogs = await db.select().from(schema.auditLogs);
+      sqlUserAcc = await db.select().from(schema.userAccount);
+      sqlUwalemi = await db.select().from(schema.uwalemiStateTable);
+    };
+
+    try {
+      await loadTables();
+    } catch (err: any) {
+      const msg = String(err?.message || "").toLowerCase();
+      if (msg.includes("does not exist") || msg.includes("relation") || msg.includes("undefined_table")) {
+        console.log("[CloudSQL] Table missing detected. Running ensureTablesExist()...");
+        await ensureTablesExist();
+        await loadTables();
+      } else {
+        throw err;
+      }
+    }
 
     // Reconstruct lists and nested formats
     const eventsList = sqlEvents.map(e => ({
@@ -563,6 +590,7 @@ export async function fetchFullStateFromDB(): Promise<any> {
       fundraisingGoal: e.fundraisingGoal || 0,
       autoRsvpRemindersEnabled: e.autoRsvpRemindersEnabled || false,
       contributionDeadline: e.contributionDeadline || "",
+      adminAlertWhatsAppPhone: (e as any).adminAlertWhatsAppPhone || "",
     }));
 
     // Find active event details (based on userAccount's activeEventId, falling back to first non-starter event)
@@ -641,16 +669,32 @@ export async function fetchFullStateFromDB(): Promise<any> {
     }
 
     const firstSms = sqlSmsSettings.find(s => s.id === "settings") || sqlSmsSettings[0];
+    let resolvedSenderId = firstSms?.senderId || "";
+    if (resolvedSenderId === "00420892-38bd-47b0-9a5f-ea55bef5d2d1" || (firstSms?.provider === "ehub" && resolvedSenderId === "EVENT CARD")) {
+      resolvedSenderId = "339330f1-4e6a-4bf7-a9f8-eaae2a9dd397";
+    }
+    const isEhub = firstSms?.provider === "ehub";
+    const resolvedApiKey = (isEhub && (!firstSms?.apiKey || firstSms.apiKey.startsWith("zs_")))
+      ? "sk_Y8rB4E2PzMMOQZ3LyCbf8xYKw1tjniyhae85NX3IxKgLx6GD"
+      : (firstSms?.apiKey || "");
+    const resolvedApiSecret = (isEhub && !firstSms?.apiSecret)
+      ? "CDWwiiKKTa44Ql6R4uOO4jZgHVnhmnRivl7SrIYgdbeRSKJ3Z8Q7JoaSqe07miWf"
+      : (firstSms?.apiSecret || "");
+
     const smsGatewaySettings = firstSms ? {
       provider: firstSms.provider || "simulation",
-      url: firstSms.url || "",
-      apiKey: firstSms.apiKey || "",
-      apiSecret: firstSms.apiSecret || "",
-      senderId: firstSms.senderId || "",
+      url: firstSms.url || (isEhub ? "https://sms.ehub.co.tz/api/v1/sms/send" : ""),
+      apiKey: resolvedApiKey,
+      apiSecret: resolvedApiSecret,
+      senderId: resolvedSenderId,
       senderIdStatus: firstSms.senderIdStatus || "approved",
       whatsappUrl: firstSms.whatsappUrl || "",
       customHeaders: firstSms.customHeaders || "{}",
       customBody: firstSms.customBody || "{\n  \"to\": \"{to}\",\n  \"message\": \"{message}\"\n}",
+      adminAlertWhatsAppPhone: (firstSms as any).adminAlertWhatsAppPhone || (firstSms as any).adminWhatsAppPhone || "",
+      adminWhatsAppPhone: (firstSms as any).adminWhatsAppPhone || (firstSms as any).adminAlertWhatsAppPhone || "",
+      autoRsvpAlertsEnabled: (firstSms as any).autoRsvpAlertsEnabled !== false,
+      guestRsvpConfirmEnabled: (firstSms as any).guestRsvpConfirmEnabled !== false,
     } : {
       provider: "simulation",
       url: "",
@@ -661,6 +705,10 @@ export async function fetchFullStateFromDB(): Promise<any> {
       whatsappUrl: "",
       customHeaders: "{}",
       customBody: "{\n  \"to\": \"{to}\",\n  \"message\": \"{message}\"\n}",
+      adminAlertWhatsAppPhone: "",
+      adminWhatsAppPhone: "",
+      autoRsvpAlertsEnabled: true,
+      guestRsvpConfirmEnabled: true,
     };
 
     const committee_members = sqlCommitteeMembers.map(m => ({
@@ -706,9 +754,29 @@ export async function fetchFullStateFromDB(): Promise<any> {
       activeEventId: "",
     };
 
-    const uwalemiState = (sqlUwalemi && sqlUwalemi.length > 0 && sqlUwalemi[0].data) 
-      ? sqlUwalemi[0].data 
+    const rawUwalemiState = (sqlUwalemi && sqlUwalemi.length > 0 && sqlUwalemi[0].data) 
+      ? (sqlUwalemi[0].data as any)
       : null;
+
+    let uwalemiState = rawUwalemiState;
+    if (uwalemiState && typeof uwalemiState === "object") {
+      if (!uwalemiState.groupSettings) {
+        uwalemiState.groupSettings = {};
+      }
+      const uSms = uwalemiState.groupSettings.smsConfig;
+      if (!uSms || !uSms.provider) {
+        uwalemiState.groupSettings.smsConfig = {
+          provider: "ehub",
+          apiKey: "sk_Y8rB4E2PzMMOQZ3LyCbf8xYKw1tjniyhae85NX3IxKgLx6GD",
+          secretKey: "CDWwiiKKTa44Ql6R4uOO4jZgHVnhmnRivl7SrIYgdbeRSKJ3Z8Q7JoaSqe07miWf",
+          senderId: "19f41b59-19d0-4f98-b8c9-9d5b1ac31308",
+          baseUrl: "https://sms.ehub.co.tz/api/v1/sms/send",
+          autoSendReceipts: uSms?.autoSendReceipts !== undefined ? uSms.autoSendReceipts : true,
+          autoSendMeetingAlerts: uSms?.autoSendMeetingAlerts !== undefined ? uSms.autoSendMeetingAlerts : false,
+          autoSendMonthlyReminder: uSms?.autoSendMonthlyReminder !== undefined ? uSms.autoSendMonthlyReminder : false,
+        };
+      }
+    }
 
     return {
       eventsList,
@@ -716,6 +784,7 @@ export async function fetchFullStateFromDB(): Promise<any> {
       guests,
       templateSettings: templateSettingsMap,
       smsGatewaySettings,
+      adminAlertWhatsAppPhone: smsGatewaySettings.adminAlertWhatsAppPhone || smsGatewaySettings.adminWhatsAppPhone || "",
       committee_members,
       committee_roles,
       saveTheDates,
@@ -725,6 +794,19 @@ export async function fetchFullStateFromDB(): Promise<any> {
       uwalemiState,
     };
   });
+  } catch (dbErr: any) {
+    console.warn("[CloudSQL Core] fetchFullStateFromDB notice: SQL query unavailable, using local database.json store:", dbErr?.message || dbErr);
+    if (fs.existsSync(DB_PATH)) {
+      try {
+        const raw = fs.readFileSync(DB_PATH, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          return parsed;
+        }
+      } catch (e) {}
+    }
+    throw dbErr;
+  }
 }
 
 // 3. Robust Relational Upsert function
@@ -743,9 +825,9 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
     }
 
     if (eventsToSync.length > 0) {
-      const values = eventsToSync
-        .filter((ev: any) => ev.id)
-        .map((ev: any) => ({
+      for (const ev of eventsToSync) {
+        if (!ev || !ev.id) continue;
+        await db.insert(schema.events).values({
           id: String(ev.id),
           senderId: ev.senderId ? String(ev.senderId) : null,
           name: String(ev.name || "Sherehe"),
@@ -771,10 +853,8 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
           fundraisingGoal: typeof ev.fundraisingGoal === "number" ? ev.fundraisingGoal : 0,
           autoRsvpRemindersEnabled: ev.autoRsvpRemindersEnabled === true,
           contributionDeadline: ev.contributionDeadline ? String(ev.contributionDeadline) : null,
-        }));
-
-      if (values.length > 0) {
-        await db.insert(schema.events).values(values).onConflictDoUpdate({
+          adminAlertWhatsAppPhone: ev.adminAlertWhatsAppPhone ? String(ev.adminAlertWhatsAppPhone) : null,
+        }).onConflictDoUpdate({
           target: schema.events.id,
           set: {
             senderId: sql`EXCLUDED.sender_id`,
@@ -801,6 +881,7 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
             fundraisingGoal: sql`EXCLUDED.fundraising_goal`,
             autoRsvpRemindersEnabled: sql`EXCLUDED.auto_rsvp_reminders_enabled`,
             contributionDeadline: sql`EXCLUDED.contribution_deadline`,
+            adminAlertWhatsAppPhone: sql`EXCLUDED.admin_alert_whatsapp_phone`,
           },
         });
       }
@@ -809,14 +890,14 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
     // 3.2. Save Guests (BATCHED)
     if (data.guests && Array.isArray(data.guests) && data.guests.length > 0) {
       const guestChunks = [];
-      const CHUNK_SIZE = 1000;
+      const CHUNK_SIZE = 50;
       for (let i = 0; i < data.guests.length; i += CHUNK_SIZE) {
         guestChunks.push(data.guests.slice(i, i + CHUNK_SIZE));
       }
 
-      const guestPromises = guestChunks.map(async (chunk) => {
+      for (const chunk of guestChunks) {
         const values = chunk
-          .filter((g: any) => g.id)
+          .filter((g: any) => g && g.id)
           .map((g: any) => ({
             id: String(g.id),
             eventId: g.eventId ? String(g.eventId) : null,
@@ -880,8 +961,7 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
             },
           });
         }
-      });
-      await Promise.all(guestPromises);
+      }
     }
 
     // 3.3. Delete explicitly requested guests if client sends deletedGuestIds
@@ -1027,6 +1107,7 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
     // 3.7. Save SMS Settings
     if (data.smsGatewaySettings && typeof data.smsGatewaySettings === "object") {
       const s = data.smsGatewaySettings;
+      const adminPhone = data.adminAlertWhatsAppPhone || s.adminAlertWhatsAppPhone || s.adminWhatsAppPhone || null;
       await db.insert(schema.smsGatewaySettings).values({
         id: "settings",
         provider: s.provider ? String(s.provider) : "simulation",
@@ -1038,6 +1119,10 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
         whatsappUrl: s.whatsappUrl ? String(s.whatsappUrl) : null,
         customHeaders: s.customHeaders ? String(s.customHeaders) : "{}",
         customBody: s.customBody ? String(s.customBody) : "{}",
+        adminAlertWhatsAppPhone: adminPhone ? String(adminPhone) : null,
+        adminWhatsAppPhone: adminPhone ? String(adminPhone) : null,
+        autoRsvpAlertsEnabled: s.autoRsvpAlertsEnabled !== false,
+        guestRsvpConfirmEnabled: s.guestRsvpConfirmEnabled !== false,
       }).onConflictDoUpdate({
         target: schema.smsGatewaySettings.id,
         set: {
@@ -1050,6 +1135,10 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
           whatsappUrl: s.whatsappUrl ? String(s.whatsappUrl) : null,
           customHeaders: s.customHeaders ? String(s.customHeaders) : "{}",
           customBody: s.customBody ? String(s.customBody) : "{}",
+          adminAlertWhatsAppPhone: adminPhone ? String(adminPhone) : null,
+          adminWhatsAppPhone: adminPhone ? String(adminPhone) : null,
+          autoRsvpAlertsEnabled: s.autoRsvpAlertsEnabled !== false,
+          guestRsvpConfirmEnabled: s.guestRsvpConfirmEnabled !== false,
         }
       });
     }
@@ -1177,9 +1266,10 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
 
     // 3.12. Save UWALEMI Community State to PostgreSQL
     if (data.uwalemiState && typeof data.uwalemiState === "object") {
+      const uState = { ...data.uwalemiState };
       await db.insert(schema.uwalemiStateTable).values({
         id: "state",
-        data: data.uwalemiState,
+        data: uState,
       }).onConflictDoUpdate({
         target: schema.uwalemiStateTable.id,
         set: {

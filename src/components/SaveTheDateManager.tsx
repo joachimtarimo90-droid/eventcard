@@ -453,6 +453,8 @@ Karibu sana!`);
         .replace(/{contact_1_phone}/g, eventDetails.contact1 || "")
         .replace(/{contact_2_name}/g, eventDetails.contact2Name || "")
         .replace(/{contact_2_phone}/g, eventDetails.contact2 || "")
+        .replace(/{contact_3_name}/g, eventDetails.contact3Name || "")
+        .replace(/{contact_3_phone}/g, eventDetails.contact3 || "")
         .replace(/{venue}/g, eventDetails.eventHallName || "")
         .replace(/{time}/g, timeVal)
         .replace(/{card_number}/g, guestObj?.code || "[Code]")
@@ -618,17 +620,19 @@ Karibu sana!`);
 
   // Get active filtered guests list based on RSVP status
   const getFilteredGuests = () => {
-    return guests.filter(g => {
-      // First, ensure they are on this active event
-      const isCorrectEvent = g.eventId === eventDetails.id || (!g.eventId && eventDetails.id === 'event-starter');
-      if (!isCorrectEvent) return false;
+    return guests
+      .filter(g => {
+        // First, ensure they are on this active event
+        const isCorrectEvent = g.eventId === eventDetails.id || (!g.eventId && eventDetails.id === 'event-starter');
+        if (!isCorrectEvent) return false;
 
-      // Filter by RSVP
-      if (rsvpFilter === 'confirmed') return g.rsvpStatus === 'Atahudhuria';
-      if (rsvpFilter === 'pending') return !g.rsvpStatus || g.rsvpStatus === 'Bado';
-      if (rsvpFilter === 'declined') return g.rsvpStatus === 'Hatahudhuria';
-      return true; // 'all'
-    });
+        // Filter by RSVP
+        if (rsvpFilter === 'confirmed') return g.rsvpStatus === 'Atahudhuria';
+        if (rsvpFilter === 'pending') return !g.rsvpStatus || g.rsvpStatus === 'Bado';
+        if (rsvpFilter === 'declined') return g.rsvpStatus === 'Hatahudhuria';
+        return true; // 'all'
+      })
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'sw'));
   };
 
   const activeFilteredGuests = getFilteredGuests();

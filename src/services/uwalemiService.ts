@@ -67,7 +67,7 @@ export const INITIAL_UWALEMI_SETTINGS: UwalemiGroupSettings = {
       provider: 'M-Koba / Vodacom M-Pesa',
       type: 'Mobile',
       number: '0758 219 298',
-      accountName: 'Eva Lema (M-Koba)'
+      accountName: 'Eva O Lema (M-Koba)'
     },
     {
       id: 'pm-2',
@@ -104,6 +104,7 @@ export const INITIAL_UWALEMI_STATE: UwalemiState & { initialized: boolean } = {
   expenses: [],
   meetings: [],
   finePayments: [],
+  accruedFines: [],
   messageLogs: [],
   lastUpdated: new Date().toISOString()
 };
@@ -122,6 +123,9 @@ export async function fetchUwalemiState(): Promise<UwalemiState> {
   const sanitizeState = (s: UwalemiState): UwalemiState => {
     if (!s.finePayments) {
       s.finePayments = [];
+    }
+    if (!s.accruedFines) {
+      s.accruedFines = [];
     }
     if (s.groupSettings) {
       if (!s.groupSettings.slogan || s.groupSettings.slogan.includes('Shida na Raha')) {
@@ -220,13 +224,14 @@ export interface UwalemiMemberFeeDebtInfo {
   status: string;
   monthlyFee: number;
   feeDebt: number; // Pure monthly fee debt
-  lateFeePenalty: number; // 5,000 TZS per month exceeding 3 months of arrears
-  penaltyMonthsCount: number; // Number of months exceeding 3
+  lateFeePenalty: number; // 5,000 TZS per month exceeding 3 months of arrears starting from Month 6 (June 2026)
+  penaltyMonthsCount: number; // Number of months exceeding 3 starting from Month 6 (June 2026)
+  unpaidFromJuneCount: number; // Total unpaid months on or after Month 6 (June 2026)
   otherFinesDebt: number; // Meeting or other group fines
   otherFinesPaid: number;
   totalFinesDebt: number; // lateFeePenalty + otherFinesDebt
   totalDebt: number; // feeDebt + totalFinesDebt
-  unpaidCount: number; // total unpaid monthly fees
+  unpaidCount: number; // total unpaid monthly fees across all time
   startYear?: number;
   startMonth?: number;
   startMonthName: string;
@@ -263,14 +268,16 @@ export function getDefaultFeeForMonth(year: number, month: number, memberFeeAmou
 
 /**
  * Calculates late fee penalty for monthly fee debt.
- * Rule: If unpaid months <= 3, penalty is 0 (grace period).
- * If unpaid months > 3, penalty is (unpaid months - 3) * 5,000 TZS.
+ * Kanuni ya Kikundi: Faini ya ada inaanza rasmi kuhesabiwa kuanzia Mwezi wa 6 (Juni 2026).
+ * Mwanachama anayedaiwa zaidi ya miezi 3 kuanzia mwezi huo wa 6 (Juni 2026) na kuendelea
+ * hutozwa faini ya TZS 5,000 kwa kila mwezi unaozidi miezi 3 ya kwanza.
+ * (Ikiwa inadaiwa miezi <= 3 kuanzia mwezi wa 6, faini ni TZS 0).
  */
-export function calculateLateFeePenalty(unpaidMonthsCount: number): { penalty: number; penaltyMonths: number } {
-  if (unpaidMonthsCount <= 3) {
+export function calculateLateFeePenalty(unpaidMonthsFromJuneCount: number): { penalty: number; penaltyMonths: number } {
+  if (unpaidMonthsFromJuneCount <= 3) {
     return { penalty: 0, penaltyMonths: 0 };
   }
-  const penaltyMonths = unpaidMonthsCount - 3;
+  const penaltyMonths = unpaidMonthsFromJuneCount - 3;
   return { penalty: penaltyMonths * 5000, penaltyMonths };
 }
 
@@ -358,7 +365,11 @@ export function calculateMemberFeeDebt(
     const endM = y === endYear ? endMonth : 12;
 
     for (let m = startM; m <= endM; m++) {
-      const p = payments.find(pay => pay.memberId === member.id && pay.year === y && pay.month === m);
+      const p = payments.find(pay => 
+        (pay.memberId === member.id || (member.memberNo && pay.memberNo === member.memberNo)) && 
+        Number(pay.year) === y && 
+        Number(pay.month) === m
+      );
       const paidAmount = p ? (Number(p.paidAmount) || 0) : 0;
       const expectedAmount = getDefaultFeeForMonth(y, m, member.monthlyFeeAmount);
       const debt = Math.max(0, expectedAmount - paidAmount);
@@ -378,7 +389,28 @@ export function calculateMemberFeeDebt(
   }
 
   const unpaidCount = unpaidItems.length;
-  const { penalty: lateFeePenalty, penaltyMonths: penaltyMonthsCount } = calculateLateFeePenalty(unpaidCount);
+
+  // Faini ya kuchelewesha ada: Huhesabiwa kuanzia Mwezi wa 6 (Juni 2026) pekee
+  // Kanuni ya Kikundi: Faini ya ada inaanza rasmi kuhesabiwa kuanzia Mwezi wa 6 (Juni 2026).
+  // Mwanachama anayedaiwa zaidi ya miezi 3 kuanzia Mwezi wa 6 (Juni 2026)
+  // hutozwa faini ya TZS 5,000 kwa kila mwezi unaozidi miezi 3 ya kwanza kuanzia mwezi huo wa 6.
+  // Hadi sasa (Septemba 2026), miezi iliyopita kuanzia Juni 2026 ni 4 pekee (Juni, Julai, Agosti, Septemba).
+  // Hivyo hakuna mwanachama anayeweza kudaiwa faini ya ada inayozidi TZS 5,000 (4 - 3 = mwezi 1 wa faini = TZS 5,000).
+  // Mwanachama akilipa mwezi wowote kati ya hiyo kwenye Matrix, miezi kuanzia Juni inakuwa <= 3, na faini inashuka papo hapo kuwa TZS 0.
+  const unpaidFromJuneItems = unpaidItems.filter(item => item.year > 2026 || (item.year === 2026 && item.month >= 6));
+  const unpaidFromJuneCount = unpaidFromJuneItems.length;
+  const { penalty: currentUnpaidPenalty, penaltyMonths } = calculateLateFeePenalty(unpaidFromJuneCount);
+
+  // Faini za ada zilizokwisha lipwa na mwanachama huyu
+  const lateFinesPaid = (state.finePayments || [])
+    .filter(p => (p.memberId === member.id || (member.memberNo && p.memberNo === member.memberNo)) && p.fineType === 'ada_late_fee')
+    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+  // Salio la Faini ya Kuchelewa Ada (Haliwezi kuwa chini ya 0)
+  // Badiliko lolote katika Matrix ya Miezi 12 huathiri mara moja idadi ya miezi inayodaiwa na faini inavyohesabiwa
+  const lateFeePenalty = Math.max(0, currentUnpaidPenalty - lateFinesPaid);
+  const penaltyMonthsCount = lateFeePenalty > 0 ? Math.ceil(lateFeePenalty / 5000) : 0;
+
   const { finesPaid: otherFinesPaid, finesDebt: otherFinesDebt } = calculateMemberOtherFines(member.id, state);
   const totalFinesDebt = lateFeePenalty + otherFinesDebt;
   const totalDebt = feeDebt + totalFinesDebt;
@@ -414,6 +446,7 @@ export function calculateMemberFeeDebt(
     feeDebt,
     lateFeePenalty,
     penaltyMonthsCount,
+    unpaidFromJuneCount,
     otherFinesDebt,
     otherFinesPaid,
     totalFinesDebt,
@@ -529,8 +562,8 @@ export function formatPersonalizedUwalemiSms(
     .replace(/{idadi_ya_miezi}/g, `${debtInfo.unpaidCount} miezi`)
     .replace(/{periodSummary}/g, debtInfo.periodSummary)
     .replace(/{monthlyFee}/g, `TZS ${debtInfo.monthlyFee.toLocaleString()}`)
-    .replace(/{lipaNamba}/g, 'M-Koba au 0758 219 298 Eva Lema')
-    .replace(/{lipaNumber}/g, 'M-Koba au 0758 219 298 Eva Lema');
+    .replace(/{lipaNamba}/g, 'M Koba au 0758 219 298 Eva O Lema')
+    .replace(/{lipaNumber}/g, 'M Koba au 0758 219 298 Eva O Lema');
 }
 
 export async function sendUwalemiSms(payload: {
@@ -553,36 +586,190 @@ export async function sendUwalemiSms(payload: {
   }[];
   message: string;
   messageType: 'receipt' | 'reminder' | 'emergency' | 'meeting' | 'broadcast';
-}): Promise<{ success: boolean; deliveredCount: number; message: string }> {
+}): Promise<{ success: boolean; deliveredCount: number; message: string; isBalanceError?: boolean; error?: string }> {
   try {
     const res = await fetch('/api/uwalemi/send-sms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (res.ok) {
-      return await res.json();
-    }
-    const err = await res.json();
-    return { success: false, deliveredCount: 0, message: err.error || 'Imeshindwa kutuma SMS' };
+    const data = await res.json();
+    return {
+      success: !!data.success,
+      deliveredCount: data.deliveredCount || 0,
+      message: data.message || data.error || (data.success ? 'Ujumbe umetumwa' : 'Imeshindwa kutuma SMS'),
+      isBalanceError: !!data.isBalanceError,
+      error: data.error
+    };
   } catch (e: any) {
-    return { success: false, deliveredCount: 0, message: e.message || 'Hitilafu ya mtandao' };
+    return { success: false, deliveredCount: 0, message: e.message || 'Hitilafu ya mtandao', isBalanceError: false };
   }
+}
+
+/**
+ * Huandaa mchanganuo kamili wa madeni ya mwanachama (Ada na Faini zote) kwa ajili ya Stakabadhi (Mfano B).
+ * Huonesha wazi:
+ * 1. Salio la Ada (na miezi husika)
+ * 2. Salio la Faini (Faini za Vikao visivyohudhuriwa, tarehe zake, na Faini ya Kuchelewa Ada)
+ * 3. Jumla Kuu ya Madeni Yote
+ */
+export function formatMemberReceiptDebtLines(
+  member: { id?: string; memberNo?: string; fullName?: string },
+  state: UwalemiState,
+  options?: { totalDebtAfter?: number }
+): {
+  feeDebt: number;
+  otherFinesDebt: number;
+  lateFeePenalty: number;
+  totalFinesDebt: number;
+  grandTotalDebt: number;
+  hasAnyDebt: boolean;
+  debtLines: string[];
+  fullSummaryText: string;
+} {
+  const fullMember = (state.members || []).find(
+    m => (member.id && m.id === member.id) || (member.memberNo && m.memberNo === member.memberNo)
+  ) || (member as UwalemiMember);
+
+  if (!fullMember || !fullMember.id) {
+    return {
+      feeDebt: 0,
+      otherFinesDebt: 0,
+      lateFeePenalty: 0,
+      totalFinesDebt: 0,
+      grandTotalDebt: 0,
+      hasAnyDebt: false,
+      debtLines: [],
+      fullSummaryText: ''
+    };
+  }
+
+  const feeDebtInfo = calculateMemberFeeDebt(fullMember, state);
+  const otherFinesInfo = calculateMemberOtherFines(fullMember.id, state);
+
+  const unpaidFinesList = (otherFinesInfo.finesList || []).filter(f => !f.paid);
+  const otherFinesDebt = otherFinesInfo.finesDebt;
+  const lateFeePenalty = feeDebtInfo.lateFeePenalty;
+  const totalFinesDebt = otherFinesDebt + lateFeePenalty;
+
+  // Fee debt value (subtracting fines if totalDebtAfter includes them)
+  let feeDebtVal = feeDebtInfo.feeDebt;
+  if (typeof options?.totalDebtAfter === 'number') {
+    feeDebtVal = Math.max(0, options.totalDebtAfter - totalFinesDebt);
+  }
+
+  const grandTotalDebt = feeDebtVal + totalFinesDebt;
+
+  // 1. Mchanganuo wa Ada ya Mwezi
+  let feeDebtDetail = '';
+  if (feeDebtVal > 0 && feeDebtInfo.breakdown && feeDebtInfo.breakdown.length > 0) {
+    if (feeDebtInfo.breakdown.length === 1) {
+      const single = feeDebtInfo.breakdown[0];
+      const mName = `${MONTH_NAMES_SW[single.month - 1]} ${single.year}`;
+      if (single.paid > 0) {
+        feeDebtDetail = ` (${mName}: Salio TZS ${single.debt.toLocaleString()})`;
+      } else {
+        feeDebtDetail = ` (Mwezi wa ${mName})`;
+      }
+    } else if (feeDebtInfo.breakdown.length <= 4) {
+      const itemsStr = feeDebtInfo.breakdown.map(item => {
+        const mName = `${MONTH_NAMES_SW[item.month - 1]} ${item.year}`;
+        if (item.paid > 0) {
+          return `${mName}: Salio TZS ${item.debt.toLocaleString()}`;
+        }
+        return `${mName}: TZS ${item.debt.toLocaleString()}`;
+      }).join(', ');
+      feeDebtDetail = ` (${itemsStr})`;
+    } else {
+      const first = feeDebtInfo.breakdown[0];
+      const last = feeDebtInfo.breakdown[feeDebtInfo.breakdown.length - 1];
+      const firstName = `${MONTH_NAMES_SW[first.month - 1]} ${first.year}`;
+      const lastName = `${MONTH_NAMES_SW[last.month - 1]} ${last.year}`;
+      feeDebtDetail = ` (${feeDebtInfo.breakdown.length} Miezi: ${firstName} hadi ${lastName})`;
+    }
+  }
+
+  // 2. Mchanganuo wa Faini Zote (Vikao visivyohudhuriwa & Faini ya kuchelewa ada)
+  const finesItemDescriptions: string[] = [];
+  unpaidFinesList.forEach(fine => {
+    const dStr = fine.date ? ` cha ${fine.date}` : '';
+    const titleStr = fine.meetingTitle ? ` - ${fine.meetingTitle}` : '';
+    finesItemDescriptions.push(`Kutohudhuria Kikao${dStr}${titleStr}: TZS ${fine.amount.toLocaleString()}`);
+  });
+  if (lateFeePenalty > 0) {
+    const pMonths = feeDebtInfo.penaltyMonthsCount;
+    finesItemDescriptions.push(`Faini ya Kuchelewa Ada: TZS ${lateFeePenalty.toLocaleString()} (${pMonths} ${pMonths === 1 ? 'mwezi wa ziada kuanzia Juni 2026' : 'miezi ya ziada kuanzia Juni 2026'})`);
+  }
+
+  const debtLines: string[] = [];
+
+  if (grandTotalDebt === 0) {
+    debtLines.push('Salio la Deni: TZS 0 (Hongera, huna deni lolote la Ada wala Faini!)');
+  } else if (feeDebtVal > 0 && totalFinesDebt > 0) {
+    // Both monthly fee debt AND fines exist -> Example B structure
+    debtLines.push(`Salio la Ada: TZS ${feeDebtVal.toLocaleString()}${feeDebtDetail}`);
+    debtLines.push(`Salio la Faini: TZS ${totalFinesDebt.toLocaleString()} (${finesItemDescriptions.join(', ')})`);
+    debtLines.push(`Jumla ya Madeni Yote: TZS ${grandTotalDebt.toLocaleString()}`);
+  } else if (feeDebtVal > 0 && totalFinesDebt === 0) {
+    // Only monthly fee debt exists
+    debtLines.push(`Salio la Deni Lililobaki: TZS ${feeDebtVal.toLocaleString()}${feeDebtDetail}`);
+  } else if (feeDebtVal === 0 && totalFinesDebt > 0) {
+    // Only fines exist (fee is up to date)
+    debtLines.push(`Salio la Ada: TZS 0 (Umekamilisha Ada zote)`);
+    debtLines.push(`Salio la Faini: TZS ${totalFinesDebt.toLocaleString()} (${finesItemDescriptions.join(', ')})`);
+    debtLines.push(`Jumla ya Madeni Yote: TZS ${grandTotalDebt.toLocaleString()}`);
+  }
+
+  return {
+    feeDebt: feeDebtVal,
+    otherFinesDebt,
+    lateFeePenalty,
+    totalFinesDebt,
+    grandTotalDebt,
+    hasAnyDebt: grandTotalDebt > 0,
+    debtLines,
+    fullSummaryText: debtLines.join('\n')
+  };
 }
 
 /**
  * Utumaji wa stakabadhi kiotomatiki mara tu ada au mchango unaporekodiwa.
  * Hukagua kama autoSendReceipts imewashwa kwenye Mipangilio ya SMS.
+ * Inasaidia stakabadhi za miezi mingi na malipo ya sehemu (partial payment).
  */
 export async function triggerAutoReceiptSms(params: {
   state: UwalemiState;
   member: { id?: string; memberNo?: string; fullName?: string; phone?: string };
-  paymentType: 'ada' | 'emergency' | 'fine';
+  paymentType: 'ada' | 'emergency' | 'fine' | 'split' | 'combo';
   amount: number;
+  feeAmount?: number;
+  fineAmount?: number;
+  fineType?: string;
   purpose: string;
   receiptNo: string;
   paymentDate?: string;
   paymentMethod?: string;
+  isPartial?: boolean;
+  expectedAmount?: number;
+  monthBalance?: number;
+  monthsCovered?: string[];
+  multiMonthBreakdown?: {
+    monthName: string;
+    year: number;
+    paid: number;
+    expected: number;
+    isPartial: boolean;
+    balance: number;
+  }[];
+  fineBreakdown?: {
+    title: string;
+    amount: number;
+    status?: string;
+  }[];
+  remainingFeeDebt?: number;
+  remainingFineDebt?: number;
+  totalDebtAfter?: number;
+  customMessage?: string;
 }): Promise<{ triggered: boolean; success: boolean; message: string }> {
   const autoSend = params.state.groupSettings?.smsConfig?.autoSendReceipts;
   if (!autoSend) {
@@ -595,16 +782,128 @@ export async function triggerAutoReceiptSms(params: {
   }
 
   const dateStr = params.paymentDate || new Date().toISOString().split('T')[0];
-  const methodStr = params.paymentMethod || 'M-Pesa / M-Koba';
   
-  const customMessage = `STAKABADHI YA MALIPO - UWALEMI
-Habari ${params.member.fullName || 'Mwanachama'}, tumepokea malipo yako ya TZS ${params.amount.toLocaleString()} ya ${params.purpose}.
+  let customMessage = params.customMessage;
+
+  if (!customMessage) {
+    const memberName = params.member.fullName || 'Mwanachama';
+    const amountStr = `TZS ${params.amount.toLocaleString()}`;
+    
+    // Compute comprehensive remaining debts (Ada, Faini za Vikao, Faini za Kuchelewa Ada)
+    const debtSummary = formatMemberReceiptDebtLines(
+      params.member,
+      params.state,
+      { totalDebtAfter: params.totalDebtAfter }
+    );
+    const debtSummaryBlock = debtSummary.fullSummaryText;
+
+    const isSplitOrCombo = params.paymentType === 'split' || 
+      params.paymentType === 'combo' || 
+      (typeof params.fineAmount === 'number' && params.fineAmount > 0 && typeof params.feeAmount === 'number' && params.feeAmount > 0) ||
+      (typeof params.fineAmount === 'number' && params.fineAmount > 0 && params.multiMonthBreakdown && params.multiMonthBreakdown.length > 0);
+
+    if (isSplitOrCombo) {
+      const feeAmt = params.feeAmount ?? (params.amount - (params.fineAmount || 0));
+      const fineAmt = params.fineAmount ?? 0;
+      
+      let monthsList = '';
+      if (params.multiMonthBreakdown && params.multiMonthBreakdown.length > 0) {
+        monthsList = params.multiMonthBreakdown.map(m => {
+          if (m.isPartial) {
+            return `- ${m.monthName} ${m.year}: TZS ${m.paid.toLocaleString()} (Nusu, salio TZS ${m.balance.toLocaleString()})`;
+          }
+          return `- ${m.monthName} ${m.year}: TZS ${m.paid.toLocaleString()} (Kamili)`;
+        }).join('\n');
+      } else {
+        monthsList = `- Ada: TZS ${feeAmt.toLocaleString()}`;
+      }
+
+      let finesList = '';
+      if (params.fineBreakdown && params.fineBreakdown.length > 0) {
+        finesList = params.fineBreakdown.map(f => `- ${f.title}: TZS ${f.amount.toLocaleString()} (${f.status || 'Imelipwa'})`).join('\n');
+      } else {
+        finesList = `- Faini ya Kuchelewa Ada / Vikao: TZS ${fineAmt.toLocaleString()} (Imelipwa)`;
+      }
+
+      const countStr = params.multiMonthBreakdown?.length ? `Miezi ${params.multiMonthBreakdown.length}` : 'Ada';
+
+      customMessage = `STAKABADHI YA MALIPO YA PAMOJA (ADA + FAINI) - UWALEMI
+Habari ${memberName}, tumepokea malipo yako ya Jumla ${amountStr}:
+
+1. ADA YA MIEZI (${countStr}) - TZS ${feeAmt.toLocaleString()}:
+${monthsList}
+
+2. FAINI ILIYOLIPWA - TZS ${fineAmt.toLocaleString()}:
+${finesList}
+
 Risiti: ${params.receiptNo}
-Tarehe: ${dateStr}
-Njia: ${methodStr}
+Tarehe: ${dateStr}${debtSummaryBlock ? `\n${debtSummaryBlock}` : ''}
+
+Asante kwa kutimiza wajibu wako.
+Lema, Nguvu Moja!`;
+    } else if (params.paymentType === 'ada') {
+      if (params.multiMonthBreakdown && params.multiMonthBreakdown.length > 1) {
+        // Multi-Month payment message (No non-ASCII bullets or checkmarks, No Njia)
+        const monthsList = params.multiMonthBreakdown.map(m => {
+          if (m.isPartial) {
+            return `- ${m.monthName} ${m.year}: TZS ${m.paid.toLocaleString()} (Nusu, salio TZS ${m.balance.toLocaleString()})`;
+          }
+          return `- ${m.monthName} ${m.year}: TZS ${m.paid.toLocaleString()} (Kamili)`;
+        }).join('\n');
+
+        customMessage = `STAKABADHI YA MALIPO YA ADA - UWALEMI
+Habari ${memberName}, tumepokea malipo yako ya ${amountStr} ya Ada ya Miezi (${params.multiMonthBreakdown.length}):
+${monthsList}
+
+Risiti: ${params.receiptNo}
+Tarehe: ${dateStr}${debtSummaryBlock ? `\n${debtSummaryBlock}` : ''}
+
+Asante kwa kutimiza wajibu wako.
+Lema, Nguvu Moja!`;
+      } else if (params.isPartial) {
+        // Single Partial Payment message (No bullets, No checkmarks, No Njia)
+        const expStr = params.expectedAmount ? `TZS ${params.expectedAmount.toLocaleString()}` : '';
+        const balStr = params.monthBalance ? `TZS ${params.monthBalance.toLocaleString()}` : '';
+        customMessage = `STAKABADHI YA MALIPO YA NUSU - UWALEMI
+Habari ${memberName}, tumepokea malipo yako ya ${amountStr} kwa ajili ya ${params.purpose}.
+Kiasi Kilicholipwa: ${amountStr}
+${expStr ? `Ada Inayotakiwa: ${expStr}\n` : ''}${balStr ? `Salio Linalobaki la Mwezi: ${balStr}\n` : ''}Risiti: ${params.receiptNo}
+Tarehe: ${dateStr}${debtSummaryBlock ? `\n${debtSummaryBlock}` : ''}
+
+Asante kwa kuendelea kulipia ada yako.
+Lema, Nguvu Moja!`;
+      } else {
+        // Standard Full Payment message (No Njia)
+        customMessage = `STAKABADHI YA MALIPO YA ADA - UWALEMI
+Habari ${memberName}, tumepokea malipo yako ya ${amountStr} kwa ajili ya ${params.purpose}.
+Risiti: ${params.receiptNo}
+Tarehe: ${dateStr}${debtSummaryBlock ? `\n${debtSummaryBlock}` : ''}
 
 Asante kwa kutimiza wajibu wako kwa UWALEMI.
 Lema, Nguvu Moja!`;
+      }
+    } else if (params.paymentType === 'fine') {
+      // Fine Payment Receipt
+      const fineDesc = params.purpose || 'Faini ya UWALEMI';
+      customMessage = `STAKABADHI YA MALIPO YA FAINI - UWALEMI
+Habari ${memberName}, tumepokea malipo yako ya ${amountStr} ya ${fineDesc}.
+Kiasi Kilicholipwa: ${amountStr} (Faini Imelipwa)
+Risiti: ${params.receiptNo}
+Tarehe: ${dateStr}${debtSummaryBlock ? `\n${debtSummaryBlock}` : ''}
+
+Asante kwa kutimiza wajibu wako kwa UWALEMI.
+Lema, Nguvu Moja!`;
+    } else {
+      // Emergency fund or contribution receipt
+      customMessage = `STAKABADHI YA MCHANGO WA DHARURA - UWALEMI
+Habari ${memberName}, tumepokea mchango wako wa ${amountStr} kwa ajili ya ${params.purpose}.
+Risiti: ${params.receiptNo}
+Tarehe: ${dateStr}${debtSummaryBlock ? `\n${debtSummaryBlock}` : ''}
+
+Asante kwa moyo wako wa kujitolea na kusaidiana.
+Lema, Nguvu Moja!`;
+    }
+  }
 
   const result = await sendUwalemiSms({
     recipients: [{

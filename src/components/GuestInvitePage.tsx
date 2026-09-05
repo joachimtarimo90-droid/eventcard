@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
+import { Phone, MessageCircle } from 'lucide-react';
 import { EventDetails, TemplateSettings, Guest } from '../types';
 import { drawCardToCanvas } from '../utils/canvasHelper';
 import { useLanguage } from '../context/LanguageContext';
@@ -167,6 +168,8 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
       return;
     }
 
+    const nowIso = new Date().toISOString();
+
     fetch('/api/rsvp-update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -183,7 +186,7 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
       return res.json();
     })
     .then(() => {
-      setRsvpStatus(status);
+      setRsvpStatus(status as any);
       setRsvpGuestsCount(finalCount);
       setSelectedTable(finalTable);
       onRsvpSubmit({
@@ -191,16 +194,21 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
         rsvpStatus: status as any,
         rsvpGuestsCount: finalCount,
         rsvpComment: rsvpComment,
+        rsvpUpdatedAt: nowIso,
+        rsvpSeen: false,
         customFields: {
           ...(guest.customFields || {}),
           tableNumber: finalTable
         }
       });
-      setRsvpFeedback(isEn 
-        ? "Thank you! Your RSVP response and table selection have been recorded." 
-        : "Ahsante sana! Ushiriki wako na uchaguzi wako wa meza umerekodiwa kikamilifu."
+      setRsvpFeedback(
+        status === 'Atahudhuria' 
+          ? (isEn ? "🎉 Thank you! Your attendance has been confirmed!" : "🎉 Ahsante sana! Ushiriki wako umethibitishwa kikamilifu!")
+          : status === 'Hatahudhuria'
+            ? (isEn ? "✓ Your response has been recorded. Thank you for notifying us." : "✓ Udhuru wako umerekodiwa. Ahsante sana kwa kututaarifu.")
+            : (isEn ? "✓ Your response (Maybe) has been recorded. You can update it anytime!" : "✓ Jibu lako (Labda) limerekodiwa. Unaweza kubadilisha wakati wowote!")
       );
-      setTimeout(() => setRsvpFeedback(null), 5000);
+      setTimeout(() => setRsvpFeedback(null), 6000);
     })
     .catch(err => {
       console.error(err);
@@ -416,30 +424,86 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
           <div className="space-y-6">
           <div className={`bg-neutral-900/60 border border-white/5 rounded-3xl shadow-2xl backdrop-blur-md ${hideRSVP ? 'p-4' : 'p-6'}`}>
             {!hideRSVP && (
-              <div className="text-center mb-6 space-y-2">
+              <div className="text-center mb-6 space-y-3">
                 <p className="text-[12.5px] text-emerald-400 font-extrabold tracking-wider uppercase">
                   {isEn ? "🎟️ RSVP - CONFIRMATION" : "🎟️ RSVP - THIBITISHA USHIRIKI"}
                 </p>
                 <p className="text-xs text-neutral-300">
-                  {rsvpStatus === 'Bado'
-                    ? (isEn 
-                      ? "Please select your option below to let the hosts know if you can make it:" 
-                      : "Tafadhali chagua ushiriki wako hapa chini ili kumjulisha mualikaji:")
-                    : (isEn 
-                      ? "Fill in your RSVP details below to complete your response:" 
-                      : "Jaza maelezo yako ya ushiriki hapa chini ili kukamilisha usajili:")}
+                  {isEn 
+                    ? "Please choose your attendance status below:" 
+                    : "Tafadhali chagua hali yako ya ushiriki hapa chini:"}
                 </p>
+
+                {/* 3 RSVP Interactive Option Buttons */}
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  {/* Option 1: Atahudhuria */}
+                  <button
+                    type="button"
+                    onClick={() => setRsvpStatus('Atahudhuria')}
+                    className={`py-3 px-1.5 rounded-2xl flex flex-col items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                      rsvpStatus === 'Atahudhuria'
+                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.2)] scale-[1.02]'
+                        : 'bg-white/5 border-white/10 text-neutral-400 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <span className="text-base">🟢</span>
+                    <span className="text-[11px] font-extrabold leading-tight text-center">
+                      {isEn ? "Attending" : "Nitafika"}
+                    </span>
+                    <span className="text-[9px] opacity-75 font-semibold">
+                      {isEn ? "Yes, I'll come" : "Ndio nitakuja"}
+                    </span>
+                  </button>
+
+                  {/* Option 2: Hatahudhuria */}
+                  <button
+                    type="button"
+                    onClick={() => setRsvpStatus('Hatahudhuria')}
+                    className={`py-3 px-1.5 rounded-2xl flex flex-col items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                      rsvpStatus === 'Hatahudhuria'
+                        ? 'bg-rose-500/20 border-rose-500 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.2)] scale-[1.02]'
+                        : 'bg-white/5 border-white/10 text-neutral-400 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <span className="text-base">🔴</span>
+                    <span className="text-[11px] font-extrabold leading-tight text-center">
+                      {isEn ? "Declined" : "Sitafika"}
+                    </span>
+                    <span className="text-[9px] opacity-75 font-semibold">
+                      {isEn ? "Can't make it" : "Sitakuja / Udhuru"}
+                    </span>
+                  </button>
+
+                  {/* Option 3: Labda */}
+                  <button
+                    type="button"
+                    onClick={() => setRsvpStatus('Labda')}
+                    className={`py-3 px-1.5 rounded-2xl flex flex-col items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                      rsvpStatus === 'Labda'
+                        ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)] scale-[1.02]'
+                        : 'bg-white/5 border-white/10 text-neutral-400 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <span className="text-base">🟡</span>
+                    <span className="text-[11px] font-extrabold leading-tight text-center">
+                      {isEn ? "Maybe" : "Labda"}
+                    </span>
+                    <span className="text-[9px] opacity-75 font-semibold">
+                      {isEn ? "Not sure yet" : "Sina uhakika"}
+                    </span>
+                  </button>
+                </div>
               </div>
             )}
 
             {(hideRSVP || rsvpStatus === 'Atahudhuria') ? (
               <div className="space-y-6">
                 {!hideRSVP && (
-                  <div className="text-center bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl">
+                  <div className="text-center bg-emerald-500/10 border border-emerald-500/20 p-3.5 rounded-2xl">
                     <p className="text-xs text-emerald-400 font-bold">
                       {guest.rsvpStatus === 'Atahudhuria' 
-                        ? (isEn ? "🎉 Your attendance is confirmed!" : "🎉 Ushiriki wako umethibitishwa!")
-                        : (isEn ? "Confirming your attendance..." : "Unathibitisha ushiriki wako...")}
+                        ? (isEn ? "🎉 Your attendance is currently confirmed!" : "🎉 Ushiriki wako umethibitishwa!")
+                        : (isEn ? "Great! Please complete your table and attendance details below:" : "Vizuri sana! Tafadhali kamilisha maelezo ya meza na wageni hapa chini:")}
                     </p>
                   </div>
                 )}
@@ -654,66 +718,88 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
                   disabled={rsvpUpdating}
                   className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl transition active:scale-95 disabled:opacity-50 text-[13px] cursor-pointer shadow-lg flex items-center justify-center gap-2"
                 >
-                  {rsvpUpdating ? (isEn ? 'Saving...' : 'Inahifadhi...') : (hideRSVP ? (isEn ? 'Confirm Seating Selection ✓' : 'Thibitisha Chaguo la Meza ✓') : (isEn ? 'Confirm RSVP ✓' : 'Thibitisha RSVP ✓'))}
+                  {rsvpUpdating ? (isEn ? 'Saving...' : 'Inahifadhi...') : (hideRSVP ? (isEn ? 'Confirm Seating Selection ✓' : 'Thibitisha Chaguo la Meza ✓') : (isEn ? 'Confirm Attendance (Atahudhuria) ✓' : 'Thibitisha Nitahudhuria ✓'))}
                 </button>
 
-                {!hideRSVP && (
-                  <div className="flex gap-2 justify-between">
-                    {effectiveMapsLink && (
-                      <a 
-                        href={effectiveMapsLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 py-3 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 font-bold rounded-xl transition text-[11px] text-center border border-rose-500/20 flex items-center justify-center cursor-pointer"
-                      >
-                        📍 {isEn ? "View Location" : "Ramani"}
-                      </a>
-                    )}
-                    <button
-                      onClick={() => setRsvpStatus('Bado')}
-                      className="flex-1 py-3 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white font-bold rounded-xl transition text-[11px]"
+                {!hideRSVP && effectiveMapsLink && (
+                  <div className="pt-1">
+                    <a 
+                      href={effectiveMapsLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 font-bold rounded-xl transition text-[11px] text-center border border-rose-500/20 flex items-center justify-center cursor-pointer"
                     >
-                      🔄 {isEn ? "Change Status" : "Badili Chaguo"}
-                    </button>
+                      📍 {isEn ? "View Venue on Google Maps" : "Angalia Ukumbi Kwenye Ramani"}
+                    </a>
                   </div>
                 )}
               </div>
-            ) : (
+            ) : rsvpStatus === 'Hatahudhuria' ? (
               <div className="space-y-4">
                 <div className="text-center bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl">
                   <p className="text-xs text-rose-400 font-bold">
                     {guest.rsvpStatus === 'Hatahudhuria'
-                      ? (isEn ? "😔 You declined this invitation." : "😔 Ulighairi kuhudhuria tukio hili.")
-                      : (isEn ? "Confirming you won't attend..." : "Unasajili udhuru wako...")}
+                      ? (isEn ? "😔 You previously recorded that you cannot attend." : "😔 Ulirekodi kuwa hutaweza kuhudhuria.")
+                      : (isEn ? "Confirming you won't attend this event:" : "Unathibitisha kuwa hutaweza kuhudhuria sherehe hii:")}
                   </p>
                 </div>
 
                 <div className="space-y-1.5 text-left">
                   <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">
-                    {isEn ? "✍️ Leave a note (Optional)" : "✍️ Ujumbe wako kwa wahusika (Sio lazima)"}
+                    {isEn ? "✍️ Leave a note for the hosts (Optional)" : "✍️ Ujumbe wako / Sababu (Sio lazima)"}
                   </label>
                   <textarea
                     value={rsvpComment}
                     onChange={(e) => setRsvpComment(e.target.value)}
                     placeholder={isEn ? "I'm sorry I can't attend..." : "Samahani sitaweza kuhudhuria..."}
                     rows={3}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40 text-xs resize-none"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-white focus:outline-none focus:ring-2 focus:ring-rose-500/40 text-xs resize-none"
                   />
                 </div>
 
                 <button 
                   onClick={() => performRsvpUpdate('Hatahudhuria', 0)}
                   disabled={rsvpUpdating}
-                  className="w-full py-4 bg-neutral-800 hover:bg-neutral-700 text-white font-extrabold rounded-xl transition active:scale-95 disabled:opacity-50 text-[13px] cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-xl transition active:scale-95 disabled:opacity-50 text-[13px] cursor-pointer flex items-center justify-center gap-2 shadow-lg"
                 >
-                  {rsvpUpdating ? (isEn ? 'Saving...' : 'Inahifadhi...') : (isEn ? 'Confirm Decline ✓' : 'Thibitisha Udhuru ✓')}
+                  {rsvpUpdating ? (isEn ? 'Saving...' : 'Inahifadhi...') : (isEn ? 'Confirm Decline (Not Attending) ✓' : 'Thibitisha Udhuru (Sitahudhuria) ✓')}
                 </button>
+              </div>
+            ) : (
+              /* rsvpStatus === 'Labda' or default/undecided */
+              <div className="space-y-4">
+                <div className="text-center bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl">
+                  <p className="text-xs text-amber-400 font-bold">
+                    {guest.rsvpStatus === 'Labda'
+                      ? (isEn ? "🟡 You recorded that you are not sure yet." : "🟡 Ulirekodi kuwa hujaweka uhakika bado.")
+                      : (isEn ? "You are not sure if you will attend yet:" : "Hujaweka uhakika kama utaweza kufika:")}
+                  </p>
+                  <p className="text-[11px] text-neutral-300 mt-1">
+                    {isEn 
+                      ? "This helps the committee with planning. You can update your choice anytime before the event!" 
+                      : "Hii inasaidia kamati kujipanga. Unaweza kubadilisha chaguo lako kuwa 'Nitafika' au 'Sitafika' wakati wowote!"}
+                  </p>
+                </div>
 
-                <button
-                  onClick={() => setRsvpStatus('Bado')}
-                  className="w-full py-3 bg-neutral-900 hover:bg-neutral-800 text-neutral-500 hover:text-white font-bold rounded-xl transition text-[11px]"
+                <div className="space-y-1.5 text-left">
+                  <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">
+                    {isEn ? "✍️ Note / Comment (Optional)" : "✍️ Ujumbe wako (Sio lazima)"}
+                  </label>
+                  <textarea
+                    value={rsvpComment}
+                    onChange={(e) => setRsvpComment(e.target.value)}
+                    placeholder={isEn ? "I will let you know soon..." : "Nitaweka wazi hivi karibuni..."}
+                    rows={3}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-3 text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40 text-xs resize-none"
+                  />
+                </div>
+
+                <button 
+                  onClick={() => performRsvpUpdate('Labda', 0)}
+                  disabled={rsvpUpdating}
+                  className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-xl transition active:scale-95 disabled:opacity-50 text-[13px] cursor-pointer flex items-center justify-center gap-2 shadow-lg"
                 >
-                  🔄 {isEn ? "Change RSVP Option" : "Badilisha Chaguo la RSVP"}
+                  {rsvpUpdating ? (isEn ? 'Saving...' : 'Inahifadhi...') : (isEn ? 'Record Response (Maybe / Undecided) ✓' : 'Wasilisha Kuwa Huna Uhakika (Labda) ✓')}
                 </button>
               </div>
             )}
@@ -727,6 +813,107 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
           
           {rsvpUpdating && (
               <div className="text-[11px] text-center text-neutral-500 mt-4">{isEn ? "Submitting..." : "Inatuma..."}</div>
+          )}
+
+          {/* RSVP Hotlines (RSVP 1, RSVP 2, RSVP 3) */}
+          {(event.contact1 || event.contact2 || event.contact3) && (
+            <div className="bg-neutral-900/60 border border-white/5 rounded-3xl p-5 shadow-2xl backdrop-blur-md space-y-3 mt-4">
+              <div className="text-center">
+                <p className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center justify-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5" />
+                  <span>{isEn ? "RSVP & Assistance Contacts" : "Mawasiliano ya Maswali au RSVP"}</span>
+                </p>
+                <p className="text-[10.5px] text-neutral-400 mt-0.5">
+                  {isEn ? "Need assistance? Reach out to the committee organizers:" : "Je, una swali au unahitaji msaada? Wasiliana na wasimamizi wa sherehe:"}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                {event.contact1 && (
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-3 flex flex-col justify-between gap-2">
+                    <div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-400 block">RSVP 1</span>
+                      <p className="text-xs font-bold text-white truncate">{event.contact1Name || (isEn ? "Contact 1" : "Msimamizi 1")}</p>
+                      <p className="text-[11px] font-mono text-neutral-300">{event.contact1}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <a 
+                        href={`tel:${event.contact1.replace(/\s+/g, '')}`} 
+                        className="flex-1 py-1.5 px-2 bg-emerald-600/80 hover:bg-emerald-600 text-white text-[10px] font-bold rounded-lg text-center flex items-center justify-center gap-1 transition"
+                      >
+                        <Phone className="w-2.5 h-2.5" />
+                        <span>{isEn ? "Call" : "Piga"}</span>
+                      </a>
+                      <a 
+                        href={`https://wa.me/${event.contact1.replace(/[^0-9]/g, '').replace(/^0/, '255')}`} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="flex-1 py-1.5 px-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold rounded-lg text-center flex items-center justify-center gap-1 transition"
+                      >
+                        <MessageCircle className="w-2.5 h-2.5" />
+                        <span>Chat</span>
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {event.contact2 && (
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-3 flex flex-col justify-between gap-2">
+                    <div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-blue-400 block">RSVP 2</span>
+                      <p className="text-xs font-bold text-white truncate">{event.contact2Name || (isEn ? "Contact 2" : "Msimamizi 2")}</p>
+                      <p className="text-[11px] font-mono text-neutral-300">{event.contact2}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <a 
+                        href={`tel:${event.contact2.replace(/\s+/g, '')}`} 
+                        className="flex-1 py-1.5 px-2 bg-blue-600/80 hover:bg-blue-600 text-white text-[10px] font-bold rounded-lg text-center flex items-center justify-center gap-1 transition"
+                      >
+                        <Phone className="w-2.5 h-2.5" />
+                        <span>{isEn ? "Call" : "Piga"}</span>
+                      </a>
+                      <a 
+                        href={`https://wa.me/${event.contact2.replace(/[^0-9]/g, '').replace(/^0/, '255')}`} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="flex-1 py-1.5 px-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 text-[10px] font-bold rounded-lg text-center flex items-center justify-center gap-1 transition"
+                      >
+                        <MessageCircle className="w-2.5 h-2.5" />
+                        <span>Chat</span>
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {event.contact3 && (
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-3 flex flex-col justify-between gap-2">
+                    <div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-purple-400 block">RSVP 3</span>
+                      <p className="text-xs font-bold text-white truncate">{event.contact3Name || (isEn ? "Contact 3" : "Msimamizi 3")}</p>
+                      <p className="text-[11px] font-mono text-neutral-300">{event.contact3}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <a 
+                        href={`tel:${event.contact3.replace(/\s+/g, '')}`} 
+                        className="flex-1 py-1.5 px-2 bg-purple-600/80 hover:bg-purple-600 text-white text-[10px] font-bold rounded-lg text-center flex items-center justify-center gap-1 transition"
+                      >
+                        <Phone className="w-2.5 h-2.5" />
+                        <span>{isEn ? "Call" : "Piga"}</span>
+                      </a>
+                      <a 
+                        href={`https://wa.me/${event.contact3.replace(/[^0-9]/g, '').replace(/^0/, '255')}`} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="flex-1 py-1.5 px-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-[10px] font-bold rounded-lg text-center flex items-center justify-center gap-1 transition"
+                      >
+                        <MessageCircle className="w-2.5 h-2.5" />
+                        <span>Chat</span>
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </div>
         )}
