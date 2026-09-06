@@ -441,10 +441,18 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
 
       let updatedAccruedFines = [...(state.accruedFines || [])];
       if (selectedMemberDebtInfo && selectedMemberDebtInfo.lateFeePenalty > 0) {
-        const existing = updatedAccruedFines.find(
+        const existingIdx = updatedAccruedFines.findIndex(
           f => (f.memberId === member.id || f.memberNo === member.memberNo) && f.fineType === 'ada_late_fee'
         );
-        if (!existing) {
+        if (existingIdx >= 0) {
+          const ex = updatedAccruedFines[existingIdx];
+          const newAmt = Math.max(Number(ex.amount) || 0, selectedMemberDebtInfo.lateFeePenalty);
+          updatedAccruedFines[existingIdx] = {
+            ...ex,
+            amount: newAmt,
+            status: (ex.paidAmount || 0) >= newAmt ? 'paid' : (ex.paidAmount || 0) > 0 ? 'partial' : 'unpaid'
+          };
+        } else {
           updatedAccruedFines.push({
             id: `accrued-fine-${member.id}-${Date.now()}`,
             memberId: member.id,
@@ -567,10 +575,18 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
 
       let updatedAccruedFines = [...(state.accruedFines || [])];
       if (selectedMemberDebtInfo && selectedMemberDebtInfo.lateFeePenalty > 0) {
-        const existing = updatedAccruedFines.find(
+        const existingIdx = updatedAccruedFines.findIndex(
           f => (f.memberId === member.id || f.memberNo === member.memberNo) && f.fineType === 'ada_late_fee'
         );
-        if (!existing) {
+        if (existingIdx >= 0) {
+          const ex = updatedAccruedFines[existingIdx];
+          const newAmt = Math.max(Number(ex.amount) || 0, selectedMemberDebtInfo.lateFeePenalty);
+          updatedAccruedFines[existingIdx] = {
+            ...ex,
+            amount: newAmt,
+            status: (ex.paidAmount || 0) >= newAmt ? 'paid' : (ex.paidAmount || 0) > 0 ? 'partial' : 'unpaid'
+          };
+        } else {
           updatedAccruedFines.push({
             id: `accrued-fine-${member.id}-${Date.now()}`,
             memberId: member.id,
