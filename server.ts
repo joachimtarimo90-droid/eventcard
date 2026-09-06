@@ -620,6 +620,16 @@ async function processWhatsAppBotLogic(
   let actionTaken = false;
   const eventName = event.name || 'sherehe';
   const venueName = event.eventHallName || event.venue || 'FIMBO SOCIAL HALL';
+  
+  // Dynamically resolve Google Maps link (custom mapsLink, coordinates, or venue query)
+  const resolvedMapsLink = (event.mapsLink && event.mapsLink.trim().length > 0)
+    ? (event.mapsLink.trim().startsWith('http://') || event.mapsLink.trim().startsWith('https://') 
+        ? event.mapsLink.trim() 
+        : `https://${event.mapsLink.trim()}`)
+    : (event.coordinates && event.coordinates.trim().length > 0)
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.coordinates.trim())}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venueName + " Dar es Salaam")}`;
+  
   const ai = getGenAI();
 
   // -------------------------------------------------------------
@@ -830,14 +840,36 @@ Respond strictly in JSON format:
 
   // -------------------------------------------------------------
   // FEATURE 3: GOOGLE MAPS PIN & VENUE DIRECTIONS INTEGRATION
+  // (Instant response on clicking 'View Location' button or asking about location)
   // -------------------------------------------------------------
-  if (!actionTaken && (
-    lowerText.includes("ukumbi") || lowerText.includes("mahali") || lowerText.includes("sehemu") || 
-    lowerText.includes("ramani") || lowerText.includes("maps") || lowerText.includes("location") || 
-    lowerText.includes("pin") || lowerText.includes("nafikaje") || lowerText.includes("route") || 
-    lowerText.includes("hall") || lowerText.includes("mwelekeo") || lowerText.includes("venue")
-  )) {
-    const mapsPinUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venueName)}`;
+  const isLocationButtonOrPrompt = (
+    lowerText.includes("view location") ||
+    lowerText.includes("view_location") ||
+    lowerText.includes("angalia ramani") ||
+    lowerText.includes("angalia ukumbi") ||
+    lowerText.includes("fungua ramani") ||
+    lowerText.includes("fungua location") ||
+    lowerText.includes("ramani ya ukumbi") ||
+    lowerText.includes("location link") ||
+    lowerText.includes("location") ||
+    lowerText.includes("ramani") ||
+    lowerText.includes("maps") ||
+    lowerText.includes("google maps") ||
+    lowerText.includes("ukumbi") ||
+    lowerText.includes("mahali") ||
+    lowerText.includes("sehemu") ||
+    lowerText.includes("pin") ||
+    lowerText.includes("gps") ||
+    lowerText.includes("nafikaje") ||
+    lowerText.includes("route") ||
+    lowerText.includes("hall") ||
+    lowerText.includes("venue") ||
+    lowerText.includes("mwelekeo") ||
+    lowerText.includes("directions")
+  );
+
+  if (!actionTaken && isLocationButtonOrPrompt) {
+    const mapsPinUrl = resolvedMapsLink;
     const guestNameHeader = matchedGuest ? `Habari *${matchedGuest.name}*! 👋📍` : `Habari! 👋📍`;
 
     actionReply = `${guestNameHeader}\n\n*MAELEKEZO YA UKUMBI NA RAMANI (GOOGLE MAPS PIN)* 🗺️✨\n\n• *Ukumbi wa Sherehe:* *${venueName}*\n• *Tarehe:* ${event.date || '2026-08-08'}\n• *Muda:* ${event.time || '19:00'} ${event.period || 'Usiku'}\n\n📍 *Fungua Ramani ya Google (Google Maps Pin) hapa:* \n${mapsPinUrl}\n\nBofya kiungo hapo juu ili kupata maelekezo ya moja kwa moja ya kusafiri kuelekea ukumbini siku ya sherehe! Karibu sana. 🎉`;
@@ -1022,7 +1054,7 @@ Respond strictly in JSON format:
     ? `Mgeni anayeuliza: ${matchedGuest.name}, Ahadi: TZS ${(Number(matchedGuest.pledgeAmount) || 0).toLocaleString()}, Paid: TZS ${(Number(matchedGuest.paidAmount) || 0).toLocaleString()}, Salio: TZS ${Math.max(0, (Number(matchedGuest.pledgeAmount) || 0) - (Number(matchedGuest.paidAmount) || 0)).toLocaleString()}, RSVP: ${matchedGuest.rsvpStatus || 'Bado'}, Meza: ${matchedGuest.tableNumber || matchedGuest.table || 'Haijatengwa'}`
     : `Mgeni anayeuliza (Simu: ${fromPhone}) hajasajiliwa rasmi kwa jina.`;
 
-  const mapsPinUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venueName)}`;
+  const mapsPinUrl = resolvedMapsLink;
 
   const aiContext = `
 Tukio: ${event.name || 'Harusi ya Josephat Kimaro'}
@@ -2114,7 +2146,9 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
                              lowerCombined.includes("invalid parameters for button") ||
                              lowerCombined.includes("no parameters allowed for button") ||
                              lowerCombined.includes("must be of type quickreply") ||
+                             lowerCombined.includes("does not contain url button") ||
                              lowerCombined.includes("quickreply") ||
+                             lowerCombined.includes("quick_reply") ||
                              lowerCombined.includes("quick reply")) {
                     if (btnCompIdx !== -1) {
                       // Remove ALL button components to be safe
@@ -2319,7 +2353,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
   const APPROVED_EHUB_IDS = ["339330f1-4e6a-4bf7-a9f8-eaae2a9dd397", "19f41b59-19d0-4f98-b8c9-9d5b1ac31308"];
   if (isSwala) {
     if (!senderId || senderId.includes("-") || senderId === "00420892-38bd-47b0-9a5f-ea55bef5d2d1" || senderId === "339330f1-4e6a-4bf7-a9f8-eaae2a9dd397") {
-      senderId = (text && (text.includes("UWALEMI") || text.includes("Uwalemi"))) ? "EVENT CARD" : "EVENT CARD";
+      senderId = (text && (text.includes("UWALEMI") || text.includes("Uwalemi") || text.includes("ada") || text.includes("kikao") || text.includes("UWL-"))) ? "UWALEMI" : "EVENT CARD";
     }
   } else if (isEhub) {
     // Resolve approved UUID for eHub (EVENT CARD: 339330f1-4e6a-4bf7-a9f8-eaae2a9dd397, UWALEMI: 19f41b59-19d0-4f98-b8c9-9d5b1ac31308)
@@ -2556,8 +2590,11 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     console.log(`[SMS] Notify Africa Dispatch: ${requestUrl}, Recipient: ${formattedPhone}, SenderID: ${senderId}`);
   } else if (effectiveProvider === "swalasms") {
     requestUrl = settings.url || "https://swalasms.com/api/v1/sms/quick-message";
-    const effectiveKey = apiKey || "swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3";
-    const effectiveSenderId = senderId || "EVENT CARD";
+    const effectiveKey = (apiKey && apiKey.startsWith("swl_")) ? apiKey : "swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3";
+    const isUwalemiMsg = text && (text.includes("UWALEMI") || text.includes("Uwalemi") || text.includes("ada") || text.includes("kikao") || text.includes("UWL-"));
+    const effectiveSenderId = (senderId && !senderId.includes("-") && senderId !== "00420892-38bd-47b0-9a5f-ea55bef5d2d1")
+      ? senderId
+      : (isUwalemiMsg ? "UWALEMI" : "EVENT CARD");
 
     fetchOptions.headers = {
       ...fetchOptions.headers,
@@ -2733,31 +2770,18 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     }
 
     if (isAuthError) {
-      if (settings.provider === "meseji" || isMeseji || effectiveProvider === "meseji") {
+      if (settings.provider === "meseji" || isMeseji || effectiveProvider === "meseji" || settings.provider === "ehub" || isEhub) {
         try {
-          console.log(`[SMS-Fallback] Meseji auth issue detected. Automatically attempting delivery via configured eHub SMS gateway...`);
-          const db = await readDBLatest();
-          const fallbackKey = (db.smsGatewaySettings?.apiKey && !db.smsGatewaySettings.apiKey.startsWith("zs_"))
-            ? db.smsGatewaySettings.apiKey
-            : "sk_Y8rB4E2PzMMOQZ3LyCbf8xYKw1tjniyhae85NX3IxKgLx6GD";
-          const fallbackSecret = db.smsGatewaySettings?.apiSecret || "CDWwiiKKTa44Ql6R4uOO4jZgHVnhmnRivl7SrIYgdbeRSKJ3Z8Q7JoaSqe07miWf";
-
-          let fallbackSenderId = "339330f1-4e6a-4bf7-a9f8-eaae2a9dd397";
-          if (text && (text.includes("UWALEMI") || text.includes("Uwalemi") || text.includes("ada") || text.includes("Ada") || text.includes("kikao") || text.includes("kikundi"))) {
-            fallbackSenderId = "19f41b59-19d0-4f98-b8c9-9d5b1ac31308";
-          }
-
+          console.log(`[SMS-Fallback] Provider auth issue detected. Automatically attempting delivery via configured SwalaSMS gateway...`);
           const fallbackSettings = {
-            provider: "ehub",
-            apiKey: fallbackKey,
-            apiSecret: fallbackSecret,
-            senderId: fallbackSenderId,
-            url: "https://sms.ehub.co.tz/api/v1/sms/send"
+            provider: "swalasms",
+            apiKey: "swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3",
+            senderId: (text && (text.includes("UWALEMI") || text.includes("Uwalemi") || text.includes("ada") || text.includes("kikao") || text.includes("UWL-"))) ? "UWALEMI" : "EVENT CARD",
+            url: "https://swalasms.com/api/v1/sms/quick-message"
           };
-
           return await dispatchSMS(formattedPhone, text, channel, fallbackSettings, scheduleTime, templateParams, guestId, appOrigin, reqEventId, reqTemplateName, reqImageUrl, lang);
         } catch (fbErr: any) {
-          console.warn("[SMS-Fallback] Failover to eHub failed:", fbErr.message);
+          console.warn("[SMS-Fallback] Failover to SwalaSMS failed:", fbErr.message);
         }
       }
 
@@ -3589,7 +3613,7 @@ async function startServer() {
       const uwalemiState = db.uwalemiState || {};
       const globalSmsSettings = db.smsGatewaySettings || {};
       const configuredSms = uwalemiState.groupSettings?.smsConfig;
-      const effectiveProvider = configuredSms?.provider || globalSmsSettings?.provider || 'ehub';
+      const effectiveProvider = configuredSms?.provider || globalSmsSettings?.provider || 'swalasms';
 
       let resolvedSenderId = (configuredSms?.senderId || globalSmsSettings?.senderId || '').trim();
       let activeApiKey = configuredSms?.apiKey || globalSmsSettings?.apiKey || '';
@@ -3610,8 +3634,8 @@ async function startServer() {
         }
         activeBaseUrl = activeBaseUrl || 'https://sms.ehub.co.tz/api/v1/sms/send';
       } else if (effectiveProvider === 'swalasms') {
-        activeApiKey = activeApiKey || 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3';
-        resolvedSenderId = resolvedSenderId || 'EVENT CARD';
+        activeApiKey = (activeApiKey && activeApiKey.startsWith('swl_')) ? activeApiKey : 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3';
+        resolvedSenderId = (resolvedSenderId && !resolvedSenderId.includes('-') && resolvedSenderId !== '00420892-38bd-47b0-9a5f-ea55bef5d2d1') ? resolvedSenderId : 'UWALEMI';
         activeBaseUrl = activeBaseUrl || 'https://swalasms.com/api/v1/sms/quick-message';
       } else if (effectiveProvider === 'meseji') {
         resolvedSenderId = resolvedSenderId || 'MESEJI';
@@ -3891,8 +3915,8 @@ async function startServer() {
         }
         activeBaseUrl = activeBaseUrl || 'https://sms.ehub.co.tz/api/v1/sms/send';
       } else if (effectiveProvider === 'swalasms') {
-        activeApiKey = activeApiKey || 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3';
-        resolvedSenderId = resolvedSenderId || 'EVENT CARD';
+        activeApiKey = (activeApiKey && activeApiKey.startsWith('swl_')) ? activeApiKey : 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3';
+        resolvedSenderId = (resolvedSenderId && !resolvedSenderId.includes('-') && resolvedSenderId !== '00420892-38bd-47b0-9a5f-ea55bef5d2d1') ? resolvedSenderId : 'UWALEMI';
         activeBaseUrl = activeBaseUrl || 'https://swalasms.com/api/v1/sms/quick-message';
       } else if (effectiveProvider === 'meseji') {
         resolvedSenderId = resolvedSenderId || 'MESEJI';
