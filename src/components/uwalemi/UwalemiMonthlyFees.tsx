@@ -650,7 +650,10 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
         fineTypeCategory = 'ada_late_fee';
       } else if (paymentForm.fineType === 'kikao') {
         const mtg = (state.meetings || []).find(m => m.id === paymentForm.meetingId);
-        fineTitle = mtg?.title ? `Faini ya Kikao (${mtg.title})` : 'Faini ya Kikao / Kutohudhuria';
+        const att = (mtg?.attendees || []).find(a => a.memberId === member.id || a.memberNo === member.memberNo);
+        const isLate = att?.status === 'late' || (fineAmt > 0 && fineAmt < 10000 && fineAmt % 2000 === 0);
+        const fineCategoryLabel = isLate ? 'Kuchelewa Kikao' : 'Utoro Kikao';
+        fineTitle = mtg?.title ? `Faini ya ${fineCategoryLabel} (${mtg.title})` : `Faini ya ${fineCategoryLabel}`;
         fineTypeCategory = 'kikao';
       } else if (paymentForm.fineType === 'all_fines') {
         fineTitle = 'Faini Zote (Kuchelewa Ada & Vikao)';

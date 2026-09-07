@@ -168,7 +168,10 @@ export const UwalemiFinePaymentModal: React.FC<Props> = ({
     if (fineType === 'kikao') {
       const mtg = (state.meetings || []).find(m => m.id === selectedMeetingId);
       targetMeetingTitle = mtg?.title || 'Kikao cha UWALEMI';
-      fineTitle = `Faini ya Kikao (${targetMeetingTitle})`;
+      const att = (mtg?.attendees || []).find(a => a.memberId === selectedMember.id || a.memberNo === selectedMember.memberNo);
+      const isLate = att?.status === 'late' || (Number(amount) > 0 && Number(amount) < 10000 && Number(amount) % 2000 === 0);
+      const categoryName = isLate ? 'Kuchelewa Kikao' : 'Utoro Kikao';
+      fineTitle = `Faini ya ${categoryName} (${targetMeetingTitle})`;
     } else if (fineType === 'ada_late_fee') {
       fineTitle = `Faini ya Kuchelewa Ada (>Miezi 3)`;
     } else {

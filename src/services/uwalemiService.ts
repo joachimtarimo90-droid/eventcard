@@ -1,4 +1,4 @@
-import { UwalemiState, UwalemiMember, UwalemiGroupSettings, UwalemiMemberRole } from '../types/uwalemi';
+import { UwalemiState, UwalemiMember, UwalemiGroupSettings, UwalemiMemberRole, UwalemiFinePayment } from '../types/uwalemi';
 
 export const UWALEMI_ROLE_PRIORITY: Record<string, number> = {
   'Mwenyekiti': 1,
@@ -123,6 +123,17 @@ export async function fetchUwalemiState(): Promise<UwalemiState> {
   const sanitizeState = (s: UwalemiState): UwalemiState => {
     if (!s.finePayments) {
       s.finePayments = [];
+    } else {
+      // Remove any known duplicate or corrupted fine payment IDs
+      s.finePayments = s.finePayments.filter(fp => fp.id !== 'fine-pay-1788768387595');
+      // Deduplicate fine payments with identical receipt numbers or IDs
+      const seen = new Set<string>();
+      s.finePayments = s.finePayments.filter(fp => {
+        const key = fp.id || fp.receiptNo || `${fp.memberId}-${fp.meetingId}-${fp.amount}-${fp.paymentDate}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     }
     if (!s.accruedFines) {
       s.accruedFines = [];
@@ -229,6 +240,10 @@ export interface UwalemiMemberFeeDebtInfo {
   unpaidFromJuneCount: number; // Total unpaid months on or after Month 6 (June 2026)
   otherFinesDebt: number; // Meeting or other group fines
   otherFinesPaid: number;
+  meetingLateDebt?: number;
+  meetingLatePaid?: number;
+  meetingAbsentDebt?: number;
+  meetingAbsentPaid?: number;
   totalFinesDebt: number; // lateFeePenalty + otherFinesDebt
   totalDebt: number; // feeDebt + totalFinesDebt
   unpaidCount: number; // total unpaid monthly fees across all time
@@ -244,7 +259,7 @@ export interface UwalemiMemberFeeDebtInfo {
   meetingFinesText?: string;
   meetingFinesDatesText?: string;
   meetingFinesTitlesText?: string;
-  meetingFinesList?: { meetingTitle: string; date: string; amount: number; paid: boolean; reason: string; status: 'absent' | 'late' }[];
+  meetingFinesList?: { id?: string; meetingId?: string; meetingTitle: string; date: string; amount: number; paid: boolean; reason: string; status: 'absent' | 'late' | 'other' }[];
   breakdown: {
     year: number;
     month: number;
@@ -286,7 +301,8 @@ export function calculateLateFeePenalty(unpaidMonthsFromJuneCount: number): { pe
 }
 
 /**
- * Calculates other fines (e.g. meeting absence fines) for a specific member.
+ * Calculates other fines (e.g. meeting absence fines, late arrival fines, and constitutional fines) for a specific member.
+ * Reconciles meeting attendee statuses with fine payment receipts and accrued fines.
  */
 export function calculateMemberOtherFines(
   memberId: string,
@@ -294,21 +310,46 @@ export function calculateMemberOtherFines(
 ): {
   finesPaid: number;
   finesDebt: number;
-  finesList: { meetingTitle: string; date: string; amount: number; paid: boolean; reason: string; status: 'absent' | 'late' }[];
+  meetingLateDebt: number;
+  meetingLatePaid: number;
+  meetingAbsentDebt: number;
+  meetingAbsentPaid: number;
+  otherDebt: number;
+  otherPaid: number;
+  finesList: { id?: string; meetingId?: string; meetingTitle: string; date: string; amount: number; paid: boolean; reason: string; status: 'absent' | 'late' | 'other' }[];
   unpaidFinesSummary: string;
   unpaidDatesSummary: string;
   unpaidTitlesSummary: string;
 } {
-  let finesPaid = 0;
-  let finesDebt = 0;
-  const finesList: { meetingTitle: string; date: string; amount: number; paid: boolean; reason: string; status: 'absent' | 'late' }[] = [];
-
   const member = (state.members || []).find(m => m.id === memberId || m.memberNo === memberId);
   const targetMemberId = member?.id || memberId;
   const targetMemberNo = member?.memberNo || memberId;
 
   const defaultAbsentFine = state.groupSettings?.meetingFineDefault || 10000;
   const defaultLateFine = state.groupSettings?.meetingFineLateDefault || 2000;
+
+  // 1. Gather all fine payments for this member from finePayments receipts
+  const memberFinePayments = (state.finePayments || []).filter(fp =>
+    (fp.memberId === targetMemberId || (targetMemberNo && fp.memberNo === targetMemberNo))
+  );
+
+  let receiptsMeetingLatePaid = 0;
+  let receiptsMeetingAbsentPaid = 0;
+  let receiptsOtherPaid = 0;
+
+  memberFinePayments.forEach(fp => {
+    const decomp = decomposeFinePaymentAmounts(fp, state);
+    receiptsMeetingLatePaid += decomp.meetingLate;
+    receiptsMeetingAbsentPaid += decomp.meetingAbsent;
+    receiptsOtherPaid += decomp.other;
+  });
+
+  const finesList: { id?: string; meetingId?: string; meetingTitle: string; date: string; amount: number; paid: boolean; reason: string; status: 'absent' | 'late' | 'other' }[] = [];
+
+  let attendeeLateAssessed = 0;
+  let attendeeLateExplicitPaid = 0;
+  let attendeeAbsentAssessed = 0;
+  let attendeeAbsentExplicitPaid = 0;
 
   (state.meetings || []).forEach(mtg => {
     const att = (mtg.attendees || []).find(a =>
@@ -325,27 +366,85 @@ export function calculateMemberOtherFines(
       }
 
       if (amt > 0) {
-        if (att.finePaid) {
-          finesPaid += amt;
+        const isLate = att.status === 'late';
+        if (isLate) {
+          attendeeLateAssessed += amt;
+          if (att.finePaid) attendeeLateExplicitPaid += amt;
         } else {
-          finesDebt += amt;
+          attendeeAbsentAssessed += amt;
+          if (att.finePaid) attendeeAbsentExplicitPaid += amt;
         }
-        const reason = att.fineReason || (att.status === 'late' ? 'Kuchelewa kikao' : 'Kutohudhuria kikao');
+
+        // Check if explicitly paid via meetingId in finePayments or finePaid flag
+        const hasMatchingReceipt = memberFinePayments.some(fp => fp.meetingId === mtg.id);
+        const isPaid = !!att.finePaid || hasMatchingReceipt;
+
+        const reason = att.fineReason || (isLate ? 'Kuchelewa kikao' : 'Kutohudhuria kikao');
         finesList.push({
+          id: `mtg-fine-${mtg.id}-${targetMemberId}`,
+          meetingId: mtg.id,
           meetingTitle: mtg.title || 'Kikao',
           date: mtg.date,
           amount: amt,
-          paid: !!att.finePaid,
+          paid: isPaid,
           reason,
-          status: att.status === 'late' ? 'late' : 'absent'
+          status: isLate ? 'late' : 'absent'
         });
       }
     }
   });
 
+  // Reconcile total paid amounts: Max of explicit attendee toggles vs receipt totals
+  const totalMeetingLatePaid = Math.max(attendeeLateExplicitPaid, receiptsMeetingLatePaid);
+  const totalMeetingLateDebt = Math.max(0, attendeeLateAssessed - totalMeetingLatePaid);
+
+  const totalMeetingAbsentPaid = Math.max(attendeeAbsentExplicitPaid, receiptsMeetingAbsentPaid);
+  const totalMeetingAbsentDebt = Math.max(0, attendeeAbsentAssessed - totalMeetingAbsentPaid);
+
+  // General accrued fines (non-ada, non-meeting)
+  let otherAssessed = 0;
+  let otherPaidExplicit = 0;
+  (state.accruedFines || []).forEach(af => {
+    if ((af.memberId === targetMemberId || (targetMemberNo && af.memberNo === targetMemberNo)) && af.fineType === 'nyingine') {
+      const amt = Number(af.amount) || 0;
+      otherAssessed += amt;
+      otherPaidExplicit += (Number(af.paidAmount) || 0);
+      finesList.push({
+        id: af.id,
+        meetingTitle: 'Adhabu ya Kikatiba',
+        date: af.assessedDate || '',
+        amount: amt,
+        paid: af.status === 'paid' || (af.paidAmount || 0) >= amt,
+        reason: af.reason || 'Faini ya Kikatiba',
+        status: 'other'
+      });
+    }
+  });
+
+  const totalOtherPaid = Math.max(otherPaidExplicit, receiptsOtherPaid);
+  const totalOtherDebt = Math.max(0, otherAssessed - totalOtherPaid);
+
+  // Update `paid` boolean in finesList if aggregate payment covers items
+  let latePaidPool = totalMeetingLatePaid;
+  let absentPaidPool = totalMeetingAbsentPaid;
+  finesList.forEach(item => {
+    if (!item.paid) {
+      if (item.status === 'late' && latePaidPool >= item.amount) {
+        item.paid = true;
+        latePaidPool -= item.amount;
+      } else if (item.status === 'absent' && absentPaidPool >= item.amount) {
+        item.paid = true;
+        absentPaidPool -= item.amount;
+      }
+    }
+  });
+
+  const finesPaid = totalMeetingLatePaid + totalMeetingAbsentPaid + totalOtherPaid;
+  const finesDebt = totalMeetingLateDebt + totalMeetingAbsentDebt + totalOtherDebt;
+
   const unpaidFines = finesList.filter(f => !f.paid);
   const unpaidFinesSummary = unpaidFines.map(f => {
-    const reasonText = f.status === 'late' ? 'Kuchelewa' : 'Kutohudhuria';
+    const reasonText = f.status === 'late' ? 'Kuchelewa' : f.status === 'absent' ? 'Kutohudhuria' : 'Faini';
     const dateText = f.date ? ` tarehe ${f.date}` : '';
     return `${reasonText} ${f.meetingTitle}${dateText} (TZS ${f.amount.toLocaleString()})`;
   }).join(', ');
@@ -353,7 +452,20 @@ export function calculateMemberOtherFines(
   const unpaidDatesSummary = unpaidFines.map(f => f.date).filter(Boolean).join(', ');
   const unpaidTitlesSummary = unpaidFines.map(f => f.meetingTitle).filter(Boolean).join(', ');
 
-  return { finesPaid, finesDebt, finesList, unpaidFinesSummary, unpaidDatesSummary, unpaidTitlesSummary };
+  return {
+    finesPaid,
+    finesDebt,
+    meetingLateDebt: totalMeetingLateDebt,
+    meetingLatePaid: totalMeetingLatePaid,
+    meetingAbsentDebt: totalMeetingAbsentDebt,
+    meetingAbsentPaid: totalMeetingAbsentPaid,
+    otherDebt: totalOtherDebt,
+    otherPaid: totalOtherPaid,
+    finesList,
+    unpaidFinesSummary,
+    unpaidDatesSummary,
+    unpaidTitlesSummary
+  };
 }
 
 /**
@@ -434,7 +546,7 @@ export function calculateMemberFeeDebt(
 
   // Faini za ada zilizokwisha lipwa na mwanachama huyu (kupitia finePayments)
   const lateFinesPaid = (state.finePayments || [])
-    .filter(p => (p.memberId === member.id || (member.memberNo && p.memberNo === member.memberNo)) && p.fineType === 'ada_late_fee')
+    .filter(p => (p.memberId === member.id || (member.memberNo && p.memberNo === member.memberNo)) && classifyFinePaymentType(p, state) === 'ada_late_fee')
     .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
   // Salio la Faini ya Kuchelewa Ada (Haliwezi kuwa chini ya 0 na HALIONDOKI hadi ilipwe kupitia finePayments)
@@ -444,6 +556,10 @@ export function calculateMemberFeeDebt(
   const {
     finesPaid: otherFinesPaid,
     finesDebt: otherFinesDebt,
+    meetingLateDebt,
+    meetingLatePaid,
+    meetingAbsentDebt,
+    meetingAbsentPaid,
     finesList: meetingFinesList,
     unpaidFinesSummary: meetingFinesText,
     unpaidDatesSummary: meetingFinesDatesText,
@@ -486,6 +602,10 @@ export function calculateMemberFeeDebt(
     unpaidFromJuneCount,
     otherFinesDebt,
     otherFinesPaid,
+    meetingLateDebt,
+    meetingLatePaid,
+    meetingAbsentDebt,
+    meetingAbsentPaid,
     totalFinesDebt,
     totalDebt,
     unpaidCount,
@@ -973,6 +1093,105 @@ Lema, Nguvu Moja!`;
     success: result.success,
     message: result.message
   };
+}
+
+export interface DecomposedFineAmounts {
+  adaLateFee: number;
+  meetingLate: number;
+  meetingAbsent: number;
+  other: number;
+}
+
+/**
+ * Hubainisha na kutenganisha viwango vya malipo ya faini (Ada, Kuchelewa, Utoro na Nyingine).
+ * Hutenganisha malipo mseto (k.m. TZS 22,000 => TZS 20,000 Utoro + TZS 2,000 Kuchelewa).
+ */
+export function decomposeFinePaymentAmounts(
+  fp: UwalemiFinePayment,
+  state?: UwalemiState
+): DecomposedFineAmounts {
+  const amt = Number(fp.amount) || 0;
+  if (amt <= 0) {
+    return { adaLateFee: 0, meetingLate: 0, meetingAbsent: 0, other: 0 };
+  }
+
+  const titleLower = (fp.fineTitle || '').toLowerCase();
+  const notesLower = (fp.notes || '').toLowerCase();
+
+  // 1. Faini ya Ada (>Miezi 3 Mwezi wa 6+)
+  if (
+    fp.fineType === 'ada_late_fee' ||
+    (titleLower.includes('ada') && (titleLower.includes('kuchelewa') || titleLower.includes('>miezi') || titleLower.includes('miezi 3')))
+  ) {
+    return { adaLateFee: amt, meetingLate: 0, meetingAbsent: 0, other: 0 };
+  }
+
+  // 2. Faini ya Kuchelewa kiasi halisi cha 2,000 (au 4,000 / 6,000 / 8,000)
+  if (amt > 0 && amt % 2000 === 0 && amt < 10000) {
+    return { adaLateFee: 0, meetingLate: amt, meetingAbsent: 0, other: 0 };
+  }
+
+  // 3. Faini ya Utoro kiasi cha 10,000 (au mafungu ya 10,000)
+  if (amt >= 10000 && amt % 10000 === 0) {
+    return { adaLateFee: 0, meetingLate: 0, meetingAbsent: amt, other: 0 };
+  }
+
+  // 4. Malipo Mseto (Combined Fine Payment, k.m. TZS 12,000 = 10,000 Utoro + 2,000 Kuchelewa)
+  if (amt >= 12000 && amt % 2000 === 0 && amt % 10000 !== 0) {
+    const lateRemainder = amt % 10000;
+    const absentPart = amt - lateRemainder;
+    return { adaLateFee: 0, meetingLate: lateRemainder, meetingAbsent: absentPart, other: 0 };
+  }
+
+  // 5. Kikao maalum kimetajwa moja kwa moja (kwa viwango vingine visivyo vya kawaida)
+  if (fp.meetingId && state?.meetings) {
+    const mtg = state.meetings.find(m => m.id === fp.meetingId);
+    const att = (mtg?.attendees || []).find(a => a.memberId === fp.memberId || (fp.memberNo && a.memberNo === fp.memberNo));
+    if (att?.status === 'late') {
+      return { adaLateFee: 0, meetingLate: amt, meetingAbsent: 0, other: 0 };
+    }
+    if (att?.status === 'absent') {
+      return { adaLateFee: 0, meetingLate: 0, meetingAbsent: amt, other: 0 };
+    }
+  }
+
+  // 6. Kuchelewa kwa maelezo
+  const isLateOnly = (titleLower.includes('kuchelewa') || notesLower.includes('kuchelewa')) &&
+    !titleLower.includes('utoro') && !titleLower.includes('kutohudhuria') && !titleLower.includes('kutokuhudhuria') && !titleLower.includes('zote');
+
+  if (isLateOnly) {
+    return { adaLateFee: 0, meetingLate: amt, meetingAbsent: 0, other: 0 };
+  }
+
+  // 7. Utoro kwa maelezo
+  const isAbsentOnly = (titleLower.includes('utoro') || titleLower.includes('kutohudhuria') || titleLower.includes('kutokuhudhuria')) &&
+    !titleLower.includes('kuchelewa') && !titleLower.includes('zote');
+
+  if (isAbsentOnly) {
+    return { adaLateFee: 0, meetingLate: 0, meetingAbsent: amt, other: 0 };
+  }
+
+  if (fp.fineType === 'kikao') {
+    return { adaLateFee: 0, meetingLate: 0, meetingAbsent: amt, other: 0 };
+  }
+
+  return { adaLateFee: 0, meetingLate: 0, meetingAbsent: 0, other: amt };
+}
+
+/**
+ * Hubainisha aina kamili ya malipo ya faini (Faini ya Ada, Faini ya Kuchelewa Kikao, Faini ya Utoro/Kutohudhuria au Nyingine).
+ */
+export function classifyFinePaymentType(
+  fp: UwalemiFinePayment,
+  state?: UwalemiState
+): 'ada_late_fee' | 'meeting_late' | 'meeting_absent' | 'other' {
+  const decomposed = decomposeFinePaymentAmounts(fp, state);
+  if (decomposed.adaLateFee > 0 && decomposed.meetingLate === 0 && decomposed.meetingAbsent === 0) return 'ada_late_fee';
+  if (decomposed.meetingLate > 0 && decomposed.meetingAbsent === 0) return 'meeting_late';
+  if (decomposed.meetingAbsent > 0 && decomposed.meetingLate === 0) return 'meeting_absent';
+  if (decomposed.meetingAbsent > 0) return 'meeting_absent';
+  if (decomposed.meetingLate > 0) return 'meeting_late';
+  return 'other';
 }
 
 /**

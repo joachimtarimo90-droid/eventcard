@@ -3540,6 +3540,9 @@ async function startServer() {
             uState.groupSettings.meetingFineLateDefault = 2000;
           }
         }
+        if (Array.isArray(uState.finePayments)) {
+          uState.finePayments = uState.finePayments.filter((fp: any) => fp && fp.id !== 'fine-pay-1788768387595');
+        }
         if (Array.isArray(uState.meetings)) {
           uState.meetings.forEach((m: any) => {
             if (Array.isArray(m.attendees)) {

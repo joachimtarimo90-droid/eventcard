@@ -25,7 +25,10 @@ import {
   Plus,
   Share2,
   Trash2,
-  Coins
+  Coins,
+  Edit2,
+  Pencil,
+  Check
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { 
@@ -33,7 +36,9 @@ import {
   getDefaultFeeForMonth, 
   calculateMemberFeeDebt, 
   calculateAllMembersFeeDebts,
-  calculateLateFeePenalty
+  calculateLateFeePenalty,
+  classifyFinePaymentType,
+  decomposeFinePaymentAmounts
 } from '../../services/uwalemiService';
 import { UwalemiFinePaymentModal } from './UwalemiFinePaymentModal';
 import { 
@@ -87,6 +92,9 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
   const [finePaymentModalType, setFinePaymentModalType] = useState<'kikao' | 'ada_late_fee' | 'nyingine'>('kikao');
   const [finePaymentModalAmount, setFinePaymentModalAmount] = useState<number | undefined>(undefined);
 
+  // Edit Existing Fine Payment Modal state
+  const [editingFinePayment, setEditingFinePayment] = useState<any | null>(null);
+
   const [selectedEmergencyId, setSelectedEmergencyId] = useState<string>(
     state.emergencyFunds?.[0]?.id || ''
   );
@@ -111,21 +119,64 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
 
   const handleDeleteFinePaymentInReports = async (fp: any) => {
     const amt = (Number(fp.amount) || Number(fp.paidAmount) || 0).toLocaleString();
-    if (!window.confirm(`Je, una uhakika unataka kufuta rekodi hii ya malipo ya faini ya TZS ${amt} kwa mwanachama ${fp.memberName || fp.memberNo} (Risiti: ${fp.receiptNo || fp.id})? Malipo haya yataondolewa kabisa kwenye rekodi za kikundi.`)) {
+    if (!window.confirm(`Je, una uhakika unataka kufuta rekodi hii ya malipo ya faini ya TZS ${amt} kwa mwanachama ${fp.memberName || fp.memberNo} (Risiti: ${fp.receiptNo || fp.id})?\n\nMalipo haya yataondolewa kabisa kwenye mfumo mzima (Ripoti, PDF, na Daftari la Wanachama) na hali ya kikao itarejeshwa kama HAIJALIPWA.`)) {
       return;
     }
-    const updatedFinePayments = (state.finePayments || []).filter(p => p.id !== fp.id);
+    const updatedFinePayments = (state.finePayments || []).filter(p => p.id !== fp.id && p.receiptNo !== fp.receiptNo);
     const updatedAccruedFines = (state.accruedFines || []).filter(af => af.id !== fp.id && !(af.memberId === fp.memberId && af.fineType === fp.fineType));
     
+    let updatedMeetings = (state.meetings || []).map(m => {
+      const isTargetMeeting = fp.meetingId ? m.id === fp.meetingId : true;
+      if (isTargetMeeting) {
+        return {
+          ...m,
+          attendees: (m.attendees || []).map(a => {
+            if (a.memberId === fp.memberId || (fp.memberNo && a.memberNo === fp.memberNo)) {
+              return { ...a, finePaid: false };
+            }
+            return a;
+          })
+        };
+      }
+      return m;
+    });
+
+    if (onSaveState) {
+      await onSaveState({
+        ...state,
+        finePayments: updatedFinePayments,
+        accruedFines: updatedAccruedFines,
+        meetings: updatedMeetings
+      });
+    }
+  };
+
+  const handleSaveEditedFinePayment = async (edited: any) => {
+    const numAmt = Number(edited.amount) || 0;
+    const updatedFinePayments = (state.finePayments || []).map(p => {
+      if (p.id === edited.id || (edited.receiptNo && p.receiptNo === edited.receiptNo)) {
+        return {
+          ...p,
+          amount: numAmt,
+          paymentDate: edited.paymentDate || p.paymentDate,
+          paymentMethod: edited.paymentMethod || p.paymentMethod,
+          fineType: edited.fineType || p.fineType,
+          fineTitle: edited.fineTitle || p.fineTitle,
+          notes: edited.notes || p.notes
+        };
+      }
+      return p;
+    });
+
     let updatedMeetings = state.meetings;
-    if (fp.fineType === 'kikao' && fp.meetingId) {
+    if (edited.meetingId) {
       updatedMeetings = (state.meetings || []).map(m => {
-        if (m.id === fp.meetingId) {
+        if (m.id === edited.meetingId) {
           return {
             ...m,
             attendees: (m.attendees || []).map(a => {
-              if (a.memberId === fp.memberId || a.memberNo === fp.memberNo) {
-                return { ...a, finePaid: false };
+              if (a.memberId === edited.memberId || (edited.memberNo && a.memberNo === edited.memberNo)) {
+                return { ...a, fineAmount: numAmt, finePaid: true };
               }
               return a;
             })
@@ -139,10 +190,10 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
       await onSaveState({
         ...state,
         finePayments: updatedFinePayments,
-        accruedFines: updatedAccruedFines,
         meetings: updatedMeetings
       });
     }
+    setEditingFinePayment(null);
   };
 
   const getReportPeriodFilter = (): ReportPeriodFilter => {
@@ -278,22 +329,21 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
   });
 
   let totalLateFeePaidInPeriod = 0;
-  let totalKikaoReceiptsPeriod = 0;
+  let totalMeetingLateReceiptsPeriod = 0;
+  let totalMeetingAbsentReceiptsPeriod = 0;
+  let totalOtherFinesReceiptsPeriod = 0;
+
   periodFinePayments.forEach(fp => {
-    const amt = Number(fp.amount) || 0;
-    if (fp.fineType === 'ada_late_fee') {
-      totalLateFeePaidInPeriod += amt;
-    } else {
-      totalKikaoReceiptsPeriod += amt;
-    }
+    const decomp = decomposeFinePaymentAmounts(fp, state);
+    totalLateFeePaidInPeriod += decomp.adaLateFee;
+    totalMeetingLateReceiptsPeriod += decomp.meetingLate;
+    totalMeetingAbsentReceiptsPeriod += decomp.meetingAbsent;
+    totalOtherFinesReceiptsPeriod += decomp.other;
   });
 
-  const totalMeetingLatePaidInPeriod = Math.max(
-    totalMeetingLatePeriodCollected,
-    totalKikaoReceiptsPeriod > totalMeetingAbsentPeriodCollected ? (totalKikaoReceiptsPeriod - totalMeetingAbsentPeriodCollected) : totalMeetingLatePeriodCollected
-  );
-  const totalMeetingAbsentPaidInPeriod = totalMeetingAbsentPeriodCollected;
-  const totalMeetingFinesPeriodCollected = Math.max(totalMeetingLatePeriodCollected + totalMeetingAbsentPeriodCollected, totalKikaoReceiptsPeriod);
+  const totalMeetingLatePaidInPeriod = totalMeetingLateReceiptsPeriod > 0 ? totalMeetingLateReceiptsPeriod : totalMeetingLatePeriodCollected;
+  const totalMeetingAbsentPaidInPeriod = totalMeetingAbsentReceiptsPeriod > 0 ? totalMeetingAbsentReceiptsPeriod : totalMeetingAbsentPeriodCollected;
+  const totalMeetingFinesPeriodCollected = totalMeetingLatePaidInPeriod + totalMeetingAbsentPaidInPeriod + totalOtherFinesReceiptsPeriod;
   const totalMeetingFinesPeriodUnpaid = totalMeetingLatePeriodUnpaid + totalMeetingAbsentPeriodUnpaid;
 
   const totalAllFinesPeriodCollected = totalLateFeePaidInPeriod + totalMeetingFinesPeriodCollected;
@@ -1629,26 +1679,30 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
             });
 
             let memLateFeePaid = 0;
-            let memKikaoReceipts = 0;
+            let memMeetingLatePaidFromReceipts = 0;
+            let memMeetingAbsentPaidFromReceipts = 0;
+            let memOtherFinesPaid = 0;
+
             memberFinePayments.forEach(fp => {
-              const amt = Number(fp.amount) || 0;
-              if (fp.fineType === 'ada_late_fee') {
-                memLateFeePaid += amt;
-              } else {
-                memKikaoReceipts += amt;
-              }
+              const decomp = decomposeFinePaymentAmounts(fp, state);
+              memLateFeePaid += decomp.adaLateFee;
+              memMeetingLatePaidFromReceipts += decomp.meetingLate;
+              memMeetingAbsentPaidFromReceipts += decomp.meetingAbsent;
+              memOtherFinesPaid += decomp.other;
             });
 
-            if (memKikaoReceipts > 0) {
-              const totalMeetingAttPaid = memMeetingLatePaid + memMeetingAbsentPaid;
-              if (memKikaoReceipts > totalMeetingAttPaid) {
-                const extra = memKikaoReceipts - totalMeetingAttPaid;
-                memMeetingLatePaid += extra;
-              }
+            memMeetingLatePaid = Math.max(memMeetingLatePaid, memMeetingLatePaidFromReceipts);
+            memMeetingAbsentPaid = Math.max(memMeetingAbsentPaid, memMeetingAbsentPaidFromReceipts);
+
+            if (memMeetingLatePaid > 0 && memMeetingLateDebt > 0) {
+              memMeetingLateDebt = Math.max(0, memMeetingLateDebt - memMeetingLatePaidFromReceipts);
+            }
+            if (memMeetingAbsentPaid > 0 && memMeetingAbsentDebt > 0) {
+              memMeetingAbsentDebt = Math.max(0, memMeetingAbsentDebt - memMeetingAbsentPaidFromReceipts);
             }
 
             const totalMemberFineDebt = lateFeeDebt + memMeetingLateDebt + memMeetingAbsentDebt;
-            const totalMemberFinePaid = memLateFeePaid + memMeetingLatePaid + memMeetingAbsentPaid;
+            const totalMemberFinePaid = memLateFeePaid + memMeetingLatePaid + memMeetingAbsentPaid + memOtherFinesPaid;
             const totalMemberFines = totalMemberFineDebt + totalMemberFinePaid;
 
             if (totalMemberFineDebt > 0) {
@@ -2223,33 +2277,69 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/60">
-                        {(state.finePayments || []).map((fp) => (
-                          <tr key={fp.id} className="hover:bg-slate-900/40">
-                            <td className="p-3 font-mono font-bold text-emerald-400">{fp.receiptNo || fp.id}</td>
-                            <td className="p-3 text-slate-400">{fp.paymentDate}</td>
-                            <td className="p-3 font-mono text-slate-300">{fp.memberNo || '-'}</td>
-                            <td className="p-3 font-semibold text-white">{fp.memberName || '-'}</td>
-                            <td className="p-3 text-slate-300">
-                              {fp.fineType === 'kikao' ? 'Faini ya Kikao' : fp.fineType === 'ada_late_fee' ? 'Faini ya Kuchelewa Ada' : 'Faini Nyingine'}
-                            </td>
-                            <td className="p-3 text-right font-bold text-emerald-400">
-                              {formatTZS(Number(fp.amount) || Number((fp as any).paidAmount) || 0)}
-                            </td>
-                            <td className="p-3 text-slate-400">{fp.paymentMethod}</td>
-                            <td className="p-3 text-center">
-                              {onSaveState && (
-                                <button
-                                  onClick={() => handleDeleteFinePaymentInReports(fp)}
-                                  className="p-1.5 rounded-lg text-rose-400 hover:text-white hover:bg-rose-500/30 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px]"
-                                  title="Futa / Ondoa rekodi hii ya malipo ya faini"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Futa</span>
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
+                        {(state.finePayments || []).map((fp) => {
+                          const decomp = decomposeFinePaymentAmounts(fp, state);
+                          return (
+                            <tr key={fp.id} className="hover:bg-slate-900/40">
+                              <td className="p-3 font-mono font-bold text-emerald-400">{fp.receiptNo || fp.id}</td>
+                              <td className="p-3 text-slate-400">{fp.paymentDate}</td>
+                              <td className="p-3 font-mono text-slate-300">{fp.memberNo || '-'}</td>
+                              <td className="p-3 font-semibold text-white">{fp.memberName || '-'}</td>
+                              <td className="p-3 text-slate-300">
+                                <div className="flex flex-wrap gap-1">
+                                  {decomp.meetingAbsent > 0 && (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                                      Utoro ({formatTZS(decomp.meetingAbsent)})
+                                    </span>
+                                  )}
+                                  {decomp.meetingLate > 0 && (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                                      Kuchelewa ({formatTZS(decomp.meetingLate)})
+                                    </span>
+                                  )}
+                                  {decomp.adaLateFee > 0 && (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                      Kuchelewa Ada ({formatTZS(decomp.adaLateFee)})
+                                    </span>
+                                  )}
+                                  {decomp.other > 0 && (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-500/10 text-slate-300 border border-slate-500/20">
+                                      Faini Nyingine ({formatTZS(decomp.other)})
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-3 text-right font-bold text-emerald-400">
+                                {formatTZS(Number(fp.amount) || Number((fp as any).paidAmount) || 0)}
+                              </td>
+                              <td className="p-3 text-slate-400">{fp.paymentMethod}</td>
+                              <td className="p-3 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  {onSaveState && (
+                                    <button
+                                      onClick={() => setEditingFinePayment({ ...fp })}
+                                      className="p-1.5 rounded-lg text-emerald-400 hover:text-white hover:bg-emerald-500/30 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px]"
+                                      title="Hariri taarifa za risiti / kiasi cha faini hii"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                      <span>Hariri</span>
+                                    </button>
+                                  )}
+                                  {onSaveState && (
+                                    <button
+                                      onClick={() => handleDeleteFinePaymentInReports(fp)}
+                                      className="p-1.5 rounded-lg text-rose-400 hover:text-white hover:bg-rose-500/30 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px]"
+                                      title="Futa / Ondoa rekodi hii ya malipo ya faini kwenye mfumo mzima"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <span>Futa</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -2486,6 +2576,162 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
           initialAmount={finePaymentModalAmount}
           onOpenSmsWithTemplate={onOpenSmsWithTemplate}
         />
+      )}
+
+      {/* Edit Fine Payment Modal */}
+      {editingFinePayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950">
+              <div className="flex items-center gap-2">
+                <Edit2 className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h3 className="text-sm font-bold text-white">Hariri Malipo ya Faini / Risiti</h3>
+                  <p className="text-[11px] text-slate-400">
+                    Mwanachama: <span className="text-emerald-400 font-semibold">{editingFinePayment.memberName}</span> ({editingFinePayment.memberNo || 'Bila Namba'})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingFinePayment(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSaveEditedFinePayment(editingFinePayment);
+              }}
+              className="p-6 space-y-4 text-xs"
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Namba ya Risiti</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={editingFinePayment.receiptNo || editingFinePayment.id}
+                    className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2 text-slate-400 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Tarehe ya Malipo</label>
+                  <input
+                    type="date"
+                    required
+                    value={editingFinePayment.paymentDate || ''}
+                    onChange={(e) => setEditingFinePayment({ ...editingFinePayment, paymentDate: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">Kiasi Kilicholipwa (TZS)</label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="500"
+                  value={editingFinePayment.amount || ''}
+                  onChange={(e) => setEditingFinePayment({ ...editingFinePayment, amount: Number(e.target.value) })}
+                  className="w-full bg-slate-950 border border-emerald-500/50 rounded-xl px-3 py-2.5 text-base font-bold text-emerald-400 focus:outline-none focus:border-emerald-500 font-mono"
+                />
+                {/* Quick Presets */}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingFinePayment({ ...editingFinePayment, amount: 2000, fineType: 'kikao', fineTitle: 'Faini ya Kuchelewa Kikao' })}
+                    className="px-2.5 py-1 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 text-[11px] font-semibold cursor-pointer"
+                  >
+                    TZS 2,000 (Kuchelewa)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingFinePayment({ ...editingFinePayment, amount: 10000, fineType: 'kikao', fineTitle: 'Faini ya Utoro Kikao' })}
+                    className="px-2.5 py-1 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/30 hover:bg-blue-500/30 text-[11px] font-semibold cursor-pointer"
+                  >
+                    TZS 10,000 (Utoro)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingFinePayment({ ...editingFinePayment, amount: 12000, fineType: 'kikao', fineTitle: 'Faini ya Kikao (Utoro + Kuchelewa)' })}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 text-[11px] font-semibold cursor-pointer"
+                  >
+                    TZS 12,000 (Zote Mbili)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingFinePayment({ ...editingFinePayment, amount: 5000, fineType: 'ada_late_fee', fineTitle: 'Faini ya Kuchelewa Ada' })}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 text-[11px] font-semibold cursor-pointer"
+                  >
+                    TZS 5,000 (Ada)
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Aina ya Faini</label>
+                  <select
+                    value={editingFinePayment.fineType || 'kikao'}
+                    onChange={(e) => setEditingFinePayment({ ...editingFinePayment, fineType: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="kikao">Faini ya Kikao</option>
+                    <option value="ada_late_fee">Faini ya Kuchelewa Ada</option>
+                    <option value="nyingine">Faini Nyingine</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Njia ya Malipo</label>
+                  <select
+                    value={editingFinePayment.paymentMethod || 'Pesa Taslimu (Cash)'}
+                    onChange={(e) => setEditingFinePayment({ ...editingFinePayment, paymentMethod: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="Pesa Taslimu (Cash)">Pesa Taslimu (Cash)</option>
+                    <option value="M-Pesa">M-Pesa</option>
+                    <option value="TigoPesa">TigoPesa</option>
+                    <option value="Airtel Money">Airtel Money</option>
+                    <option value="Benki">Benki (NMB/CRDB)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">Maelezo / Sababu ya Faini</label>
+                <input
+                  type="text"
+                  value={editingFinePayment.fineTitle || editingFinePayment.notes || ''}
+                  onChange={(e) => setEditingFinePayment({ ...editingFinePayment, fineTitle: e.target.value, notes: e.target.value })}
+                  placeholder="Mfano: Faini ya Utoro Kikao cha Tarehe 15/02/2026"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingFinePayment(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer"
+                >
+                  Ghairi
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-950/40"
+                >
+                  <Check className="w-4 h-4" />
+                  Hifadhi Mabadiliko
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

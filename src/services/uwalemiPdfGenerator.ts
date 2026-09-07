@@ -12,7 +12,9 @@ import {
   getDefaultFeeForMonth, 
   calculateMemberFeeDebt, 
   calculateLateFeePenalty,
-  calculateMemberOtherFines 
+  calculateMemberOtherFines,
+  classifyFinePaymentType,
+  decomposeFinePaymentAmounts
 } from './uwalemiService';
 
 const MONTH_NAMES_SW = [
@@ -752,19 +754,21 @@ export const generateFinancialReportPDF = (
   });
 
   let totalLateFeePaidInPeriod = 0;
-  let totalKikaoReceiptsInPeriod = 0;
+  let totalMeetingLateReceiptsInPeriod = 0;
+  let totalMeetingAbsentReceiptsInPeriod = 0;
+  let totalOtherFinesReceiptsInPeriod = 0;
+
   finePaymentsInPeriod.forEach(fp => {
-    const amt = Number(fp.amount) || 0;
-    if (fp.fineType === 'ada_late_fee') {
-      totalLateFeePaidInPeriod += amt;
-    } else {
-      totalKikaoReceiptsInPeriod += amt;
-    }
+    const decomp = decomposeFinePaymentAmounts(fp, state);
+    totalLateFeePaidInPeriod += decomp.adaLateFee;
+    totalMeetingLateReceiptsInPeriod += decomp.meetingLate;
+    totalMeetingAbsentReceiptsInPeriod += decomp.meetingAbsent;
+    totalOtherFinesReceiptsInPeriod += decomp.other;
   });
 
-  const totalMeetingLatePaid = Math.max(totalMeetingLateCollected, totalKikaoReceiptsInPeriod > totalMeetingAbsentCollected ? (totalKikaoReceiptsInPeriod - totalMeetingAbsentCollected) : totalMeetingLateCollected);
-  const totalMeetingAbsentPaid = totalMeetingAbsentCollected;
-  const totalMeetingFinesPaid = Math.max(totalMeetingLateCollected + totalMeetingAbsentCollected, totalKikaoReceiptsInPeriod);
+  const totalMeetingLatePaid = totalMeetingLateReceiptsInPeriod > 0 ? totalMeetingLateReceiptsInPeriod : totalMeetingLateCollected;
+  const totalMeetingAbsentPaid = totalMeetingAbsentReceiptsInPeriod > 0 ? totalMeetingAbsentReceiptsInPeriod : totalMeetingAbsentCollected;
+  const totalMeetingFinesPaid = totalMeetingLatePaid + totalMeetingAbsentPaid + totalOtherFinesReceiptsInPeriod;
   const totalMeetingFinesUnpaid = totalMeetingLateUnpaid + totalMeetingAbsentUnpaid;
   const totalFinesCollected = totalLateFeePaidInPeriod + totalMeetingFinesPaid;
 
@@ -1822,26 +1826,30 @@ export const generateFinesReportPDF = (
     });
 
     let lateFeePaid = 0;
-    let receiptsKikaoPaid = 0;
+    let receiptsMeetingLatePaid = 0;
+    let receiptsMeetingAbsentPaid = 0;
+    let receiptsOtherPaid = 0;
+
     memberFinePayments.forEach(fp => {
-      const amt = Number(fp.amount) || 0;
-      if (fp.fineType === 'ada_late_fee') {
-        lateFeePaid += amt;
-      } else {
-        receiptsKikaoPaid += amt;
-      }
+      const decomp = decomposeFinePaymentAmounts(fp, state);
+      lateFeePaid += decomp.adaLateFee;
+      receiptsMeetingLatePaid += decomp.meetingLate;
+      receiptsMeetingAbsentPaid += decomp.meetingAbsent;
+      receiptsOtherPaid += decomp.other;
     });
 
-    // Reconcile meeting payments from receipts if attendee finePaid flag was not toggled
-    if (receiptsKikaoPaid > (meetingLatePaid + meetingAbsentPaid)) {
-      meetingLatePaid = receiptsKikaoPaid;
-      if (meetingLateDebt > 0) {
-        meetingLateDebt = Math.max(0, meetingLateDebt - receiptsKikaoPaid);
-      }
+    meetingLatePaid = Math.max(meetingLatePaid, receiptsMeetingLatePaid);
+    meetingAbsentPaid = Math.max(meetingAbsentPaid, receiptsMeetingAbsentPaid);
+
+    if (meetingLatePaid > 0 && meetingLateDebt > 0) {
+      meetingLateDebt = Math.max(0, meetingLateDebt - receiptsMeetingLatePaid);
+    }
+    if (meetingAbsentPaid > 0 && meetingAbsentDebt > 0) {
+      meetingAbsentDebt = Math.max(0, meetingAbsentDebt - receiptsMeetingAbsentPaid);
     }
 
     const totalMemberFineDebt = lateFee + meetingLateDebt + meetingAbsentDebt;
-    const totalMemberFinePaid = lateFeePaid + meetingLatePaid + meetingAbsentPaid;
+    const totalMemberFinePaid = lateFeePaid + meetingLatePaid + meetingAbsentPaid + receiptsOtherPaid;
     const totalMemberFines = totalMemberFineDebt + totalMemberFinePaid;
 
     if (totalMemberFineDebt > 0) {
