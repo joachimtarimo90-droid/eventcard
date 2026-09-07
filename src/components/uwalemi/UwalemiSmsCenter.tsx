@@ -531,7 +531,7 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
       setMessageText(`Habari {name} ({memberNo}), Taarifa ya UWALEMI: Unakumbushwa kuwa una faini ya ucheleweshaji wa ada ya miezi {fainiMiezi} (zaidi ya miezi 3 ya neema) kiasi cha {fainiAda}. Tafadhali kamilisha malipo kupitia {lipaNamba}. Lema, Nguvu Moja!`);
       setMessageType('reminder');
     } else if (type === 'meeting_fine_reminder') {
-      setMessageText(`Habari {name} ({memberNo}), Taarifa ya UWALEMI: Unakumbushwa kulipa faini ya kutohudhuria/kuchelewa kikao kiasi cha {fainiVikao}. Tafadhali kamilisha malipo kupitia {lipaNamba}. Lema, Nguvu Moja!`);
+      setMessageText(`Habari {name} ({memberNo}), Taarifa ya UWALEMI: Unakumbushwa kulipa faini ya kikao: {fainiVikao}. Tafadhali kamilisha malipo kupitia {lipaNamba}. Lema, Nguvu Moja!`);
       setMessageType('reminder');
     } else if (type === 'single_month_reminder') {
       setMessageText(`Habari {name}, hii ni taarifa ya kukumbusha ada yako ya kikundi cha UWALEMI ya mwezi huu ({monthlyFee}). Tafadhali kamilisha malipo kupitia {lipaNamba}. Lema, Nguvu Moja!`);
@@ -945,10 +945,34 @@ Lema, Nguvu Moja!`);
                 <button
                   type="button"
                   onClick={() => insertTag('{fainiVikao}')}
-                  title="Faini za Kutohudhuria Vikao"
-                  className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10.5px] font-mono border border-rose-500/40 cursor-pointer"
+                  title="Mchanganuo Kamili wa Faini za Vikao (Kutohudhuria/Kuchelewa, Jina la Kikao, Tarehe na Kiasi)"
+                  className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10.5px] font-mono border border-rose-500/40 cursor-pointer font-bold"
                 >
                   {"{fainiVikao}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{fainiVikaoTarehe}')}
+                  title="Tarehe ya Kikao Chenye Faini (mf. 15/05/2026)"
+                  className="px-2 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-[10.5px] font-mono border border-rose-500/30 cursor-pointer"
+                >
+                  {"{fainiVikaoTarehe}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{fainiVikaoJina}')}
+                  title="Jina la Kikao Chenye Faini (mf. Kikao cha Mei)"
+                  className="px-2 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-[10.5px] font-mono border border-rose-500/30 cursor-pointer"
+                >
+                  {"{fainiVikaoJina}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{fainiVikaoKiasi}')}
+                  title="Kiasi cha Pesa cha Faini ya Kikao Pekee (mf. TZS 10,000)"
+                  className="px-2 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-[10.5px] font-mono border border-rose-500/30 cursor-pointer"
+                >
+                  {"{fainiVikaoKiasi}"}
                 </button>
                 <button
                   type="button"
