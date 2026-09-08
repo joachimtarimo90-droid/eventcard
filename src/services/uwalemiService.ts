@@ -168,8 +168,9 @@ export async function fetchUwalemiState(): Promise<UwalemiState> {
       }));
     }
 
-    // Do NOT override member fee amounts or registration fees automatically.
-    // Preserve manual entries exactly as set by the user.
+    // Preserve accrued late fee fines so that paying Ada in matrix never wipes out incurred fines
+    s = autoAccrueLateFeeFines(s);
+
     return s;
   };
 
@@ -199,8 +200,88 @@ export async function fetchUwalemiState(): Promise<UwalemiState> {
   return INITIAL_UWALEMI_STATE;
 }
 
+export function autoAccrueLateFeeFines(s: UwalemiState): UwalemiState {
+  if (!s || !Array.isArray(s.members) || s.members.length === 0) {
+    return s;
+  }
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  const accruedFines = Array.isArray(s.accruedFines) ? [...s.accruedFines] : [];
+  let changed = false;
+
+  s.members.forEach(member => {
+    const payments = s.monthlyPayments || [];
+    let unpaidFromJuneCount = 0;
+
+    for (let y = 2026; y <= currentYear; y++) {
+      const startM = y === 2026 ? 6 : 1;
+      const endM = y === currentYear ? currentMonth : 12;
+      for (let m = startM; m <= endM; m++) {
+        const p = payments.find(pay => 
+          (pay.memberId === member.id || (member.memberNo && pay.memberNo === member.memberNo)) &&
+          Number(pay.year) === y &&
+          Number(pay.month) === m
+        );
+        const paidAmount = p ? (Number(p.paidAmount) || 0) : 0;
+        const expectedAmount = getDefaultFeeForMonth(y, m, member.monthlyFeeAmount);
+        if (expectedAmount - paidAmount > 0) {
+          unpaidFromJuneCount++;
+        }
+      }
+    }
+
+    const { penalty: calculatedPenalty } = calculateLateFeePenalty(unpaidFromJuneCount);
+
+    if (calculatedPenalty > 0) {
+      const existingIdx = accruedFines.findIndex(
+        af => (af.memberId === member.id || (member.memberNo && af.memberNo === member.memberNo)) && af.fineType === 'ada_late_fee'
+      );
+
+      if (existingIdx >= 0) {
+        const ex = accruedFines[existingIdx];
+        const newAmt = Math.max(Number(ex.amount) || 0, calculatedPenalty);
+        if (newAmt !== ex.amount) {
+          accruedFines[existingIdx] = {
+            ...ex,
+            amount: newAmt,
+            status: (ex.paidAmount || 0) >= newAmt ? 'paid' : (ex.paidAmount || 0) > 0 ? 'partial' : 'unpaid'
+          };
+          changed = true;
+        }
+      } else {
+        accruedFines.push({
+          id: `accrued-fine-${member.id}-auto`,
+          memberId: member.id,
+          memberNo: member.memberNo,
+          memberName: member.fullName,
+          fineType: 'ada_late_fee',
+          reason: 'Faini ya Kuchelewa Ada (>Miezi 3 kuanzia Juni 2026)',
+          amount: calculatedPenalty,
+          assessedDate: new Date().toISOString().split('T')[0],
+          status: 'unpaid',
+          paidAmount: 0
+        });
+        changed = true;
+      }
+    }
+  });
+
+  if (changed || !s.accruedFines) {
+    return {
+      ...s,
+      accruedFines
+    };
+  }
+
+  return s;
+}
+
 export async function saveUwalemiState(state: UwalemiState): Promise<boolean> {
-  const updatedState = { ...state, initialized: true, lastUpdated: new Date().toISOString() };
+  const reconciledState = autoAccrueLateFeeFines(state);
+  const updatedState = { ...reconciledState, initialized: true, lastUpdated: new Date().toISOString() };
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedState));
 
   try {

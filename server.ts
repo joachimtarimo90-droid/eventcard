@@ -2418,9 +2418,9 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
   const rawSenderId = (settings.senderId || "").trim();
   
   // Detect provider configurations
-  const isMesejiConfig = settings.provider === "meseji" || (apiKey && apiKey.startsWith("zs_"));
-  const isSwalaExplicit = !isMesejiConfig && (settings.provider === "swalasms" || (apiKey && apiKey.startsWith("swl_")));
-  const isEhubConfig = !isMesejiConfig && !isSwalaExplicit && settings.provider === "ehub";
+  const isSwalaExplicit = settings.provider === "swalasms" || (apiKey && apiKey.startsWith("swl_"));
+  const isMesejiConfig = !isSwalaExplicit && (settings.provider === "meseji" || (apiKey && apiKey.startsWith("zs_")));
+  const isEhubConfig = !isSwalaExplicit && !isMesejiConfig && (settings.provider === "ehub" || (apiKey && apiKey.startsWith("sk_")));
   
   // Notice: 'EVENT CARD' and 'UWALEMI' are registered and approved on SwalaSMS.
   const isEventCardOrUwalemi = rawSenderId.toUpperCase() === "EVENT CARD" || rawSenderId.toUpperCase() === "UWALEMI";
@@ -2476,12 +2476,14 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
 
     const mesejiHeaders: any = {
       ...fetchOptions.headers,
-      "Authorization": "Bearer " + apiKey,
       "x-api-key": apiKey,
       "api-key": apiKey,
       "Content-Type": "application/json",
       "Accept": "application/json"
     };
+    if (!apiKey.startsWith("zs_")) {
+      mesejiHeaders["Authorization"] = "Bearer " + apiKey;
+    }
     fetchOptions.headers = mesejiHeaders;
     
     // Strictly formatted recipient (no +, digits only, 255...)
@@ -2713,6 +2715,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
         const bodyData: any = {
           recipient,
           sender_id: effectiveSenderId,
+          message: text,
           body: text
         };
         const res = await fetch(requestUrl, {
@@ -3847,13 +3850,15 @@ async function startServer() {
       const uwalemiState = db.uwalemiState || {};
       const globalSmsSettings = db.smsGatewaySettings || {};
       const configuredSms = uwalemiState.groupSettings?.smsConfig;
-      let effectiveProvider = configuredSms?.provider || globalSmsSettings?.provider || 'swalasms';
-      if (effectiveProvider === 'meseji' && (!configuredSms?.apiKey || configuredSms.apiKey.startsWith('zs_58f969bdb643ffd53f419df5c85d67c2e61e45f955035b49'))) {
+      let activeApiKey = configuredSms?.apiKey || globalSmsSettings?.apiKey || '';
+      let effectiveProvider = configuredSms?.provider || globalSmsSettings?.provider || 'meseji';
+      if (activeApiKey.startsWith('swl_')) {
         effectiveProvider = 'swalasms';
+      } else if (activeApiKey.startsWith('sk_')) {
+        effectiveProvider = 'ehub';
       }
 
       let resolvedSenderId = (configuredSms?.senderId || globalSmsSettings?.senderId || '').trim();
-      let activeApiKey = configuredSms?.apiKey || globalSmsSettings?.apiKey || '';
       let activeSecretKey = configuredSms?.secretKey || globalSmsSettings?.apiSecret || '';
       let activeBaseUrl = configuredSms?.baseUrl || globalSmsSettings?.url || '';
 
@@ -3869,14 +3874,14 @@ async function startServer() {
         } else {
           resolvedSenderId = '19f41b59-19d0-4f98-b8c9-9d5b1ac31308';
         }
-        activeBaseUrl = activeBaseUrl || 'https://sms.ehub.co.tz/api/v1/sms/send';
+        activeBaseUrl = 'https://sms.ehub.co.tz/api/v1/sms/send';
       } else if (effectiveProvider === 'swalasms') {
         activeApiKey = (activeApiKey && activeApiKey.startsWith('swl_')) ? activeApiKey : 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3';
         resolvedSenderId = (resolvedSenderId && !resolvedSenderId.includes('-') && resolvedSenderId !== '00420892-38bd-47b0-9a5f-ea55bef5d2d1') ? resolvedSenderId : 'UWALEMI';
-        activeBaseUrl = activeBaseUrl || 'https://swalasms.com/api/v1/sms/quick-message';
+        activeBaseUrl = 'https://swalasms.com/api/v1/sms/quick-message';
       } else if (effectiveProvider === 'meseji') {
         resolvedSenderId = resolvedSenderId || 'MESEJI';
-        activeBaseUrl = activeBaseUrl || 'https://meseji.co.tz/api/v1/sms/send';
+        activeBaseUrl = 'https://meseji.co.tz/api/v1/sms/send';
       }
 
       const smsConfig = {
@@ -3958,7 +3963,19 @@ async function startServer() {
               monthsCountVal = unpaidArr.length;
               const unpaidFromJune = unpaidArr.filter(u => u.y > 2026 || (u.y === 2026 && u.m >= 6));
               const penaltyMonths = Math.max(0, unpaidFromJune.length - 3);
-              lateFeeVal = penaltyMonths * 5000;
+              const currentUnpaidPenalty = penaltyMonths * 5000;
+
+              const accruedLateFines = (uwalemiState.accruedFines || [])
+                .filter((af: any) => (af.memberId === matchedMember.id || (matchedMember.memberNo && af.memberNo === matchedMember.memberNo)) && af.fineType === 'ada_late_fee')
+                .reduce((sum: number, af: any) => sum + (Number(af.amount) || 0), 0);
+
+              const totalAssessedLatePenalty = Math.max(accruedLateFines, currentUnpaidPenalty);
+
+              const lateFinesPaid = (uwalemiState.finePayments || [])
+                .filter((p: any) => (p.memberId === matchedMember.id || (matchedMember.memberNo && p.memberNo === matchedMember.memberNo)) && (p.fineType === 'ada_late_fee' || (p.fineTitle && p.fineTitle.toLowerCase().includes('ada'))))
+                .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+
+              lateFeeVal = Math.max(0, totalAssessedLatePenalty - lateFinesPaid);
 
               // Meeting fines
               const meetings = uwalemiState.meetings || [];
@@ -4131,13 +4148,15 @@ async function startServer() {
 
       const globalSmsSettings = db.smsGatewaySettings || {};
       const configuredSms = uwalemiState.groupSettings?.smsConfig;
-      let effectiveProvider = configuredSms?.provider || globalSmsSettings?.provider || 'swalasms';
-      if (effectiveProvider === 'meseji' && (!configuredSms?.apiKey || configuredSms.apiKey.startsWith('zs_58f969bdb643ffd53f419df5c85d67c2e61e45f955035b49'))) {
+      let activeApiKey = configuredSms?.apiKey || globalSmsSettings?.apiKey || '';
+      let effectiveProvider = configuredSms?.provider || globalSmsSettings?.provider || 'meseji';
+      if (activeApiKey.startsWith('swl_')) {
         effectiveProvider = 'swalasms';
+      } else if (activeApiKey.startsWith('sk_')) {
+        effectiveProvider = 'ehub';
       }
 
       let resolvedSenderId = (configuredSms?.senderId || globalSmsSettings?.senderId || '').trim();
-      let activeApiKey = configuredSms?.apiKey || globalSmsSettings?.apiKey || '';
       let activeSecretKey = configuredSms?.secretKey || globalSmsSettings?.apiSecret || '';
       let activeBaseUrl = configuredSms?.baseUrl || globalSmsSettings?.url || '';
 
@@ -4153,14 +4172,14 @@ async function startServer() {
         } else {
           resolvedSenderId = '19f41b59-19d0-4f98-b8c9-9d5b1ac31308';
         }
-        activeBaseUrl = activeBaseUrl || 'https://sms.ehub.co.tz/api/v1/sms/send';
+        activeBaseUrl = 'https://sms.ehub.co.tz/api/v1/sms/send';
       } else if (effectiveProvider === 'swalasms') {
         activeApiKey = (activeApiKey && activeApiKey.startsWith('swl_')) ? activeApiKey : 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3';
         resolvedSenderId = (resolvedSenderId && !resolvedSenderId.includes('-') && resolvedSenderId !== '00420892-38bd-47b0-9a5f-ea55bef5d2d1') ? resolvedSenderId : 'UWALEMI';
-        activeBaseUrl = activeBaseUrl || 'https://swalasms.com/api/v1/sms/quick-message';
+        activeBaseUrl = 'https://swalasms.com/api/v1/sms/quick-message';
       } else if (effectiveProvider === 'meseji') {
         resolvedSenderId = resolvedSenderId || 'MESEJI';
-        activeBaseUrl = activeBaseUrl || 'https://meseji.co.tz/api/v1/sms/send';
+        activeBaseUrl = 'https://meseji.co.tz/api/v1/sms/send';
       }
 
       const smsConfig = {
