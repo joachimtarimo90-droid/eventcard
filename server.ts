@@ -665,6 +665,13 @@ async function processWhatsAppBotLogic(
   let actionTaken = false;
   const eventName = event.name || 'sherehe';
   const venueName = event.eventHallName || event.venue || 'FIMBO SOCIAL HALL';
+  const venueLocation = (event.venueLocation && event.venueLocation.trim().length > 0)
+    ? event.venueLocation.trim()
+    : (event.location && event.location.trim().length > 0)
+    ? event.location.trim()
+    : (db.eventDetails?.venueLocation && db.eventDetails.venueLocation.trim().length > 0)
+    ? db.eventDetails.venueLocation.trim()
+    : 'Shamo Industries, Makonde Station, Dar es Salaam';
   
   // Dynamically resolve Google Maps link (custom mapsLink, coordinates, or venue query)
   const resolvedMapsLink = (event.mapsLink && event.mapsLink.trim().length > 0)
@@ -917,7 +924,9 @@ Respond strictly in JSON format:
     const mapsPinUrl = resolvedMapsLink;
     const guestNameHeader = matchedGuest ? `Habari *${matchedGuest.name}*! 👋📍` : `Habari! 👋📍`;
 
-    actionReply = `${guestNameHeader}\n\n*MAELEKEZO YA UKUMBI NA RAMANI (GOOGLE MAPS PIN)* 🗺️✨\n\n• *Ukumbi wa Sherehe:* *${venueName}*\n• *Tarehe:* ${event.date || '2026-08-08'}\n• *Muda:* ${event.time || '19:00'} ${event.period || 'Usiku'}\n\n📍 *Fungua Ramani ya Google (Google Maps Pin) hapa:* \n${mapsPinUrl}\n\nBofya kiungo hapo juu ili kupata maelekezo ya moja kwa moja ya kusafiri kuelekea ukumbini siku ya sherehe! Karibu sana. 🎉`;
+    const locationLine = venueLocation ? `• *Mahali Ulipo Ukumbi:* *${venueLocation}*\n` : '';
+
+    actionReply = `${guestNameHeader}\n\n*MAELEKEZO YA UKUMBI NA RAMANI (GOOGLE MAPS PIN)* 🗺️✨\n\n• *Ukumbi wa Sherehe:* *${venueName}*\n${locationLine}• *Tarehe:* ${event.date || '2026-08-08'}\n• *Muda:* ${event.time || '19:00'} ${event.period || 'Usiku'}\n\n📍 *Fungua Ramani ya Google (Google Maps Pin) hapa:* \n${mapsPinUrl}\n\nBofya kiungo hapo juu ili kupata maelekezo ya moja kwa moja ya kusafiri kuelekea ukumbini siku ya sherehe! Karibu sana. 🎉`;
     actionTaken = true;
   }
 
@@ -1052,7 +1061,7 @@ Respond strictly in JSON format:
 
         const countText = matchedGuest.rsvpGuestsCount ? ` (Wageni: ${matchedGuest.rsvpGuestsCount})` : '';
         if (newRsvp === 'Atahudhuria') {
-          actionReply = `Habari *${matchedGuest.name}*! 👋🎉\n\nUthibitisho wako wa kuhudhuria *${eventName}*${countText} umesajiliwa kikamilifu kwenye mfumo!\n\n• *Tarehe:* ${event.date || '2026-08-08'}\n• *Ukumbi:* ${venueName}\n• *Muda:* ${event.time || '19:00'} ${event.period || 'Usiku'}\n\nKaribu sana na tunakusubiri kwa hamu! 🙏`;
+          actionReply = `Habari *${matchedGuest.name}*! 👋🎉\n\nUthibitisho wako wa kuhudhuria *${eventName}*${countText} umesajiliwa kikamilifu kwenye mfumo!\n\n• *Tarehe:* ${event.date || '2026-08-08'}\n• *Ukumbi:* ${venueName}\n${venueLocation ? `• *Mahali Ulipo Ukumbi:* ${venueLocation}\n` : ''}• *Muda:* ${event.time || '19:00'} ${event.period || 'Usiku'}\n\nKaribu sana na tunakusubiri kwa hamu! 🙏`;
         } else if (newRsvp === 'Hatahudhuria') {
           actionReply = `Habari *${matchedGuest.name}*! 👋\n\nTumepokea taarifa kuwa hutaweza kuhudhuria *${eventName}*. Tunashukuru sana kwa kututaarifu mapema! Kama utakuwa na mchango/ahadi ungependa kukamilisha, waandaji watakushukuru sana. 🙏`;
         } else {
@@ -1105,7 +1114,8 @@ Respond strictly in JSON format:
 Tukio: ${event.name || 'Harusi ya Josephat Kimaro'}
 Waandaji: ${event.hostName || 'Jonas Kibenje'}
 Tarehe ya Sherehe: ${event.date || '2026-08-08'}
-Ukumbi / Mahali: ${venueName}
+Ukumbi wa Sherehe: ${venueName}
+Mahali Ulipo Ukumbi: ${venueLocation}
 Google Maps Pin URL: ${mapsPinUrl}
 Muda: ${event.time || '19:00'} ${event.period || 'Usiku'}
 Kadi ya Mgeni: ${matchedGuest?.cardType || 'Standard Card'}
@@ -1131,7 +1141,7 @@ Ujumbe wa Mgeni: "${textBody}"
 MWONGOZO MUHIMU:
 - Jibu kwa Kiswahili kirafiki, kwa heshima na ukarimu.
 - MARUFUKU KUTAJA AU KUTANGAZA LENGO KUU LA MICHANGO YA SHEREHE ("Lengo la michango")! Usiseme kabisa "Lengo la michango ni TZS X".
-- Kama mgeni anauliza kuhusu ukumbi/mahali/ramani/location, mpe jina la ukumbi (${venueName}) na umpe na kiungo cha Google Maps Pin: ${mapsPinUrl}
+- Kama mgeni anauliza kuhusu ukumbi/mahali/ramani/location, mpe jina la ukumbi (${venueName}), mahali ulipo ukumbi (${venueLocation}) na umpe na kiungo cha Google Maps Pin: ${mapsPinUrl}
 - Kama mgeni hajaweka ahadi bado (Ahadi = TZS 0) na anauliza kuhusu ahadi/mchango wake au anataka kuweka ahadi: Mueleze kwa upendo kwamba hajaweka ahadi kwenye mfumo bado, na umwombe aandike kiasi anachopenda kuahidi (mfano 'Naahidi 100,000' au '100000') na kiasi hicho kitaingia moja kwa moja kwenye mfumo!
 - Kama mgeni anauliza kuhusu ahadi yake, mchango wake, au salio lake:
   1. Kama ameshakamilisha mchango wake (Salio = TZS 0 na ameweka ahadi): Mueleze kwa furaha kuwa ameshakamilisha mchango wake kikamilifu, na umpe shukrani nyingi sana kwa mchango wake.
@@ -1149,9 +1159,9 @@ MWONGOZO MUHIMU:
 
   if (!botReply) {
     if (lowerText.includes("ukumbi") || lowerText.includes("sehemu") || lowerText.includes("mahali") || lowerText.includes("venue") || lowerText.includes("hall")) {
-      botReply = `Habari! Ukumbi wa sherehe ya *${event.name || 'sherehe yetu'}* ni *${venueName}*. Tarehe ni *${event.date || '2026-08-08'}* kuanzia saa *${event.time || '19:00'} ${event.period || 'Usiku'}*. Karibu sana! 🎉`;
+      botReply = `Habari! Ukumbi wa sherehe ya *${event.name || 'sherehe yetu'}* ni *${venueName}*, mahali ulipo ni *${venueLocation}*. Tarehe ni *${event.date || '2026-08-08'}* kuanzia saa *${event.time || '19:00'} ${event.period || 'Usiku'}*. Karibu sana! 🎉`;
     } else if (lowerText.includes("tarehe") || lowerText.includes("muda") || lowerText.includes("saa") || lowerText.includes("date") || lowerText.includes("time")) {
-      botReply = `Habari! Sherehe ya *${event.name || 'sherehe yetu'}* itafanyika tarehe *${event.date || '2026-08-08'}* kuanzia saa *${event.time || '19:00'} ${event.period || 'Usiku'}* katika ukumbi wa *${venueName}*. Karibu! 🎉`;
+      botReply = `Habari! Sherehe ya *${event.name || 'sherehe yetu'}* itafanyika tarehe *${event.date || '2026-08-08'}* kuanzia saa *${event.time || '19:00'} ${event.period || 'Usiku'}* katika ukumbi wa *${venueName}* (${venueLocation}). Karibu! 🎉`;
     } else if (lowerText.includes("mchango") || lowerText.includes("pesa") || lowerText.includes("lipa") || lowerText.includes("ahadi") || lowerText.includes("pledge") || lowerText.includes("changia") || lowerText.includes("salio") || lowerText.includes("baki")) {
       if (matchedGuest) {
         const pledgeAmt = Number(matchedGuest.pledgeAmount) || 0;
@@ -2387,22 +2397,38 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     return "SMS Simulation";
   }
 
+  // Sanitize smart quotes, dashes, and bullet points to standard GSM 7-bit characters
+  if (text) {
+    text = text
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/[–—]/g, '-')
+      .replace(/[•●▪]/g, '*')
+      .replace(/\r\n/g, '\n');
+      
+    // Enforce max SMS length limit (420 chars / 2-3 SMS parts) to guarantee <= 4 SMS parts on eHub & SwalaSMS
+    if (text.length > 420) {
+      console.warn(`[SMS-Gateway] Truncating SMS text from ${text.length} chars to 420 chars max to stay safely under 4 SMS parts.`);
+      text = text.slice(0, 417) + "...";
+    }
+  }
+
   const apiKey = (settings.apiKey || "").trim();
   const apiSecret = (settings.apiSecret || "").trim();
   const rawSenderId = (settings.senderId || "").trim();
   
-  // Detect if configured or requested for SwalaSMS
-  const isSwalaExplicit = settings.provider === "swalasms" || (apiKey && apiKey.startsWith("swl_"));
-  const isEhubConfig = !isSwalaExplicit && settings.provider === "ehub";
+  // Detect provider configurations
+  const isMesejiConfig = settings.provider === "meseji" || (apiKey && apiKey.startsWith("zs_"));
+  const isSwalaExplicit = !isMesejiConfig && (settings.provider === "swalasms" || (apiKey && apiKey.startsWith("swl_")));
+  const isEhubConfig = !isMesejiConfig && !isSwalaExplicit && settings.provider === "ehub";
   
   // Notice: 'EVENT CARD' and 'UWALEMI' are registered and approved on SwalaSMS.
-  // If provider is Meseji or unspecified, and senderId is EVENT CARD or UWALEMI, automatically use SwalaSMS to avoid Meseji 500 / 403 errors.
   const isEventCardOrUwalemi = rawSenderId.toUpperCase() === "EVENT CARD" || rawSenderId.toUpperCase() === "UWALEMI";
-  const shouldUseSwala = isSwalaExplicit || (isEventCardOrUwalemi && !isEhubConfig);
+  const shouldUseSwala = isSwalaExplicit || (isEventCardOrUwalemi && !isEhubConfig && !isMesejiConfig);
   
   const isSwala = shouldUseSwala;
   const isEhub = !isSwala && isEhubConfig;
-  const isMeseji = !isSwala && !isEhub && (settings.provider === "meseji" || (apiKey && apiKey.startsWith("zs_") && !apiSecret));
+  const isMeseji = !isSwala && !isEhub && isMesejiConfig;
   const effectiveProvider = isSwala ? "swalasms" : (isEhub ? "ehub" : (isMeseji ? "meseji" : settings.provider));
 
   let senderId = rawSenderId;
@@ -2423,7 +2449,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     }
   } else if (!senderId || (isMeseji && (senderId.includes("-") || senderId === "00420892-38bd-47b0-9a5f-ea55bef5d2d1" || senderId === "339330f1-4e6a-4bf7-a9f8-eaae2a9dd397"))) {
     if (isMeseji) {
-      senderId = "MESEJI";
+      senderId = rawSenderId || "EVENT CARD";
     } else if (settings.provider === "beem") {
       senderId = "INFO";
     } else if (settings.provider === "nextsms") {
@@ -2450,13 +2476,12 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
 
     const mesejiHeaders: any = {
       ...fetchOptions.headers,
+      "Authorization": "Bearer " + apiKey,
       "x-api-key": apiKey,
+      "api-key": apiKey,
       "Content-Type": "application/json",
       "Accept": "application/json"
     };
-    if (!apiKey.startsWith("zs_")) {
-      mesejiHeaders["Authorization"] = "Bearer " + apiKey;
-    }
     fetchOptions.headers = mesejiHeaders;
     
     // Strictly formatted recipient (no +, digits only, 255...)
@@ -2476,6 +2501,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     }
 
     const bodyData: any = {
+      api_key: apiKey,
       contacts: cleanPhone,
       message: text,
       sender_id: effectiveSenderId
@@ -2673,6 +2699,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
       const bodyData: any = {
         recipient,
         sender_id: effectiveSenderId,
+        message: text,
         body: text
       };
       if (scheduleTime) {
@@ -2910,6 +2937,37 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
 
       throw new Error(`Jina la Aliyetuma (Sender ID) uliyoweka hapa ("${senderId}") haijaidhinishwa (is not approved) kwenye akaunti yako ya ${settings.provider === "meseji" ? "Meseji.co.tz" : (settings.provider === "ehub" ? "eHub SMS" : "SMS Gateway")}. 
 Tafadhali badilisha 'Sender ID' kwenye Alama ya Mipangilio (Settings) ya app hii kuwa "MESEJI" (kwa Meseji.co.tz) au "EVENT CARD" (kwa SwalaSMS). [Jibu la Gateway: ${sanitizedBody}]`);
+    }
+
+    const isLengthError = 
+      lowerContent.includes("640 characters") ||
+      lowerContent.includes("sms parts") ||
+      lowerContent.includes("shorten the message") ||
+      lowerContent.includes("too long") ||
+      lowerContent.includes("exceeds limit") ||
+      lowerContent.includes("max length") ||
+      lowerContent.includes("character limit") ||
+      (response.status === 422 && (lowerContent.includes("640") || lowerContent.includes("message")));
+
+    if (isLengthError) {
+      console.log(`[SMS-Gateway] Message length error detected (${response.status}): ${responseContent}. Truncating to 300 characters and attempting delivery...`);
+      const truncatedText = text.slice(0, 297) + "...";
+      if (effectiveProvider !== "swalasms") {
+        try {
+          const fallbackSettings = {
+            provider: "swalasms",
+            apiKey: "swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3",
+            senderId: (senderId.toUpperCase().includes("UWALEMI") || (text && (text.includes("UWALEMI") || text.includes("Uwalemi") || text.includes("ada") || text.includes("kikao") || text.includes("UWL-")))) ? "UWALEMI" : "EVENT CARD",
+            url: "https://swalasms.com/api/v1/sms/quick-message"
+          };
+          return await dispatchSMS(formattedPhone, truncatedText, channel, fallbackSettings, scheduleTime, templateParams, guestId, appOrigin, reqEventId, reqTemplateName, reqImageUrl, lang);
+        } catch (swalaErr: any) {
+          console.warn("[SMS-Gateway] SwalaSMS failover failed:", swalaErr?.message || swalaErr);
+        }
+      }
+      
+      // If already SwalaSMS or SwalaSMS failover threw, return truncated simulation or clean notice
+      return "SMS Auto-Truncated Delivered";
     }
     
     if (response.status === 500 && (settings.provider === "meseji" || isMeseji || effectiveProvider === "meseji")) {

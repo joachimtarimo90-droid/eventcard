@@ -8,6 +8,7 @@ export interface EventDetails {
   time: string;
   period: 'Asubuhi' | 'Mchana' | 'Jioni' | 'Usiku';
   eventHallName: string;
+  venueLocation?: string;
   coordinates: string;
   hostName: string;
   dressCode: string;

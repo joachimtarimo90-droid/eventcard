@@ -955,6 +955,11 @@ Karibu sana!`);
       '{ukumbi}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
       '{venue}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
       '{eventHall}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
+      '{mahali}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
+      '{mahali_ukumbi}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
+      '{location}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
+      '{venueLocation}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
+      '{{mahali}}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
       '{{6}}': `${event.time || "12:00"} ${formattedPeriod}`,
       '{6}': `${event.time || "12:00"} ${formattedPeriod}`,
       '{{time}}': `${event.time || "12:00"} ${formattedPeriod}`,
@@ -1057,7 +1062,17 @@ Karibu sana!`);
     // 4. Remove empty lines in contact section if they became empty
     text = text.replace(/\n-\s*\n/g, '\n');
 
-    return text.trim();
+    let finalText = text
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/[–—]/g, '-')
+      .replace(/[•●▪]/g, '*')
+      .trim();
+
+    if (isSms && finalText.length > 420) {
+      finalText = finalText.slice(0, 417) + "...";
+    }
+    return finalText;
   };
 
   const cleanPhoneForWhatsapp = (phoneStr: string) => {
@@ -1192,6 +1207,11 @@ Karibu sana!`);
           '{ukumbi}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
           '{venue}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
           '{eventHall}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
+          '{mahali}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
+          '{mahali_ukumbi}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
+          '{location}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
+          '{venueLocation}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
+          '{{mahali}}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
           '{{6}}': `${event.time || "12:00"} ${formattedPeriod}`,
           '{6}': `${event.time || "12:00"} ${formattedPeriod}`,
           '{{time}}': `${event.time || "12:00"} ${formattedPeriod}`,
@@ -1444,6 +1464,11 @@ Karibu sana!`);
         '{ukumbi}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
         '{venue}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
         '{eventHall}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
+        '{mahali}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
+        '{mahali_ukumbi}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
+        '{location}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
+        '{venueLocation}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
+        '{{mahali}}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
         '{{6}}': `${event.time || "12:00"} ${formattedPeriod}`,
         '{6}': `${event.time || "12:00"} ${formattedPeriod}`,
         '{{time}}': `${event.time || "12:00"} ${formattedPeriod}`,
@@ -2261,9 +2286,62 @@ Karibu sana!`);
               onChange={(e) => setActiveTemplateValue(e.target.value)}
               onBlur={handleSaveTemplate}
               rows={7}
-              className="w-full bg-[#070b13] border border-white/10 rounded-xl p-3 text-white font-mono text-[11px] focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/60 leading-relaxed resize-y scrollbar-thin select-all"
+              className={`w-full bg-[#070b13] border rounded-xl p-3 text-white font-mono text-[11px] focus:outline-none focus:ring-2 leading-relaxed resize-y scrollbar-thin select-all ${
+                activeTemplateValue.length > 420 
+                  ? 'border-amber-500/60 focus:ring-amber-500/40 focus:border-amber-500' 
+                  : 'border-white/10 focus:ring-blue-500/40 focus:border-blue-500/60'
+              }`}
               placeholder={messageType === 'thank-you' ? "Andika ujumbe wa shukrani..." : "Andika mwaliko wako wa mgeni..."}
             />
+
+            {/* SMS Length & Character Limit Counter Indicator */}
+            {(() => {
+              const charLen = activeTemplateValue.length;
+              const smsParts = charLen <= 160 ? 1 : (charLen <= 306 ? 2 : (charLen <= 459 ? 3 : Math.ceil(charLen / 153)));
+              const isOverLimit = charLen > 420;
+              return (
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center justify-between text-[10px] font-mono gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded-md font-bold ${
+                        isOverLimit 
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' 
+                          : charLen > 306 
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' 
+                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      }`}>
+                        {charLen} / 420 Herufi
+                      </span>
+                      <span className="text-slate-400 font-medium">
+                        (Sawa na SMS {smsParts} {smsParts === 1 ? 'part' : 'parts'})
+                      </span>
+                    </div>
+                    {isOverLimit ? (
+                      <span className="text-amber-400 font-bold flex items-center gap-1">
+                        ⚠️ Mfumo utaupunguza kiotomatiki ufikapo herufi 420
+                      </span>
+                    ) : (
+                      <span className="text-slate-500 text-[9px]">
+                        Kikomo cha eHub SMS ni herufi 420 (SMS 3-4 Max)
+                      </span>
+                    )}
+                  </div>
+
+                  {isOverLimit && (
+                    <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[10.5px] leading-relaxed flex items-start gap-2">
+                      <span className="text-base leading-none">⚠️</span>
+                      <div>
+                        <strong>Ujumbe wako umezidi herufi 420 ({charLen} herufi):</strong>
+                        <p className="mt-0.5 text-amber-300/90 text-[10px]">
+                          Watoa huduma wa SMS (kama eHub na SwalaSMS) wanakubali ujumbe wa SMS usiozidi sehemu 4 (SMS 4).
+                          Ili kuzuia hitilafu ya utumaji (Error 422), mfumo utaupunguza kiotomatiki uwe herufi 417 wakati wa kutuma. Unaweza pia kuupunguza hapa.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Custom Option: Conserve SMS Credits Toggle */}
             <div className="p-3.5 rounded-xl border border-white/5 bg-slate-950/40 space-y-2.5">

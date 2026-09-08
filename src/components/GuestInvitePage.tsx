@@ -310,9 +310,16 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
             <div className="bg-neutral-900/90 border border-white/10 rounded-3xl p-6 text-center space-y-5 shadow-2xl backdrop-blur-md">
               <div className="space-y-2">
                 {event.eventHallName && (
-                  <span className="inline-block px-3.5 py-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] font-black uppercase tracking-widest rounded-full">
-                    🏛️ {event.eventHallName}
-                  </span>
+                  <div className="space-y-1">
+                    <span className="inline-block px-3.5 py-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] font-black uppercase tracking-widest rounded-full">
+                      🏛️ {event.eventHallName}
+                    </span>
+                    {event.venueLocation && (
+                      <p className="text-[11px] text-amber-300/80 font-medium tracking-wide">
+                        📍 {event.venueLocation}
+                      </p>
+                    )}
+                  </div>
                 )}
                 <h2 className="text-xl font-black text-white uppercase tracking-tight">
                   {event.name}
