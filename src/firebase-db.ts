@@ -105,8 +105,26 @@ export async function initDB() {
 
   console.log("[CloudSQL Initializer] Preparing Cloud SQL connection parameters...");
   try {
-    // 1. Ensure all PostgreSQL tables and columns exist
-    await ensureTablesExist();
+    // 1. Ensure all PostgreSQL tables and columns exist (with retry for cold-boot sockets)
+    let retries = 4;
+    let tablesOk = false;
+    let lastErr = null;
+    while (retries > 0 && !tablesOk) {
+      try {
+        await ensureTablesExist();
+        tablesOk = true;
+      } catch (err: any) {
+        lastErr = err;
+        retries--;
+        if (retries > 0) {
+          console.log(`[CloudSQL Initializer] Socket initializing, waiting to verify tables (${retries} attempts remaining)...`);
+          await new Promise(r => setTimeout(r, 1200));
+        }
+      }
+    }
+    if (!tablesOk && lastErr) {
+      throw lastErr;
+    }
 
     // 2. If SQL database is empty, seed it from existing database.json
     // We wrap this in a timeout-like behavior or ensure it doesn't block forever

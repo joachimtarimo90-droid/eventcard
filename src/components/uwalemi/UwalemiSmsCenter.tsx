@@ -1580,7 +1580,7 @@ Lema, Nguvu Moja!`);
                 }}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
               >
-                <option value="swalasms">SwalaSMS (swalasms.com) - Salio 100 SMS (Inafanya Kazi)</option>
+                <option value="swalasms">SwalaSMS (swalasms.com) - Salio: {balanceInfo?.balance || 70} SMS (Inafanya Kazi)</option>
                 <option value="ehub">eHub SMS Tanzania (sms.ehub.co.tz) - Inapendekezwa</option>
                 <option value="meseji">Meseji API (Meseji.co.tz - Tanzania)</option>
                 <option value="beem">Beem Africa (apisms.beem.africa)</option>
@@ -1593,7 +1593,7 @@ Lema, Nguvu Moja!`);
               <div className="bg-emerald-950/40 border border-emerald-800/60 p-3 rounded-xl space-y-1 text-[11px] text-emerald-200">
                 <div className="font-bold flex items-center gap-1.5 text-emerald-300">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  SwalaSMS Live (Sender ID: EVENT CARD / Salio: 100 SMS)
+                  SwalaSMS Live (Sender ID: EVENT CARD / Salio: {balanceInfo?.balance || 70} SMS)
                 </div>
                 <p className="text-slate-300">
                   Akaunti ya SwalaSMS imeunganishwa moja kwa moja kwa ajili ya kutuma risiti, vikumbusho vya vikao na michango ya UWALEMI.

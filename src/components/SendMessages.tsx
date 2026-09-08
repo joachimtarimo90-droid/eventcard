@@ -72,8 +72,8 @@ export default function SendMessages({ event, settings, guests, language, onUpda
   const [currentSendingIndex, setCurrentSendingIndex] = useState(-1);
   const [sendLogs, setSendLogs] = useState<string[]>([]);
   const [sendingProgress, setSendingProgress] = useState(0);
-  const [messageType, setMessageType] = useState<'invitation' | 'reminder' | 'thank-you'>('invitation');
-  const [thankYouAudience, setThankYouAudience] = useState<'all' | 'confirmed' | 'attended'>('attended');
+  const [messageType, setMessageType] = useState<'invitation' | 'reminder' | 'thank-you'>('thank-you');
+  const [thankYouAudience, setThankYouAudience] = useState<'all' | 'confirmed' | 'attended'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending-sms' | 'pending-wa' | 'sent' | 'wa-only' | 'sms-only'>('all');
 
@@ -447,46 +447,106 @@ Karibu sana!`;
     safeLocalStorage.setItem('kadi_message_template_en', invitationTemplateEn);
   }, [invitationTemplateEn, event?.id]);
 
+  const isOldThankYouSw = (txt: string | null | undefined): boolean => {
+    if (!txt) return true;
+    if (txt.includes('kuhudhuria') || txt.includes('Mawasiliano:') || !txt.includes('0653578184')) return true;
+    if (txt.includes('SAMWELY ALEXANDER MLAY') || txt.includes('Manase Mlay') || txt.includes('Mwamakimbula')) return true;
+    return false;
+  };
+
+  // Utility to replace hardcoded names with dynamic placeholders {hostName} and {eventName}
+  const convertHardcodedNamesToPlaceholders = (text: string | null | undefined): string => {
+    if (!text) return "";
+    let res = text;
+    // Replace host name variations
+    res = res.replace(/BWANA NA BIBI\.?\s+SAMWELY ALEXANDER MLAY/gi, '{hostName}');
+    res = res.replace(/BWANA NA BIBI SAMWELY ALEXANDER MLAY/gi, '{hostName}');
+    res = res.replace(/SAMWELY ALEXANDER MLAY/gi, '{hostName}');
+
+    // Replace event title / couple names
+    res = res.replace(/Harusi\s+ya\s+vijana\s+wao\s+wapendwa\s+Manase\s+Mlay\s+(&|na)\s+Winfrida\s+Mwamakimbula/gi, '{eventName}');
+    res = res.replace(/Harusi\s+ya\s+Manase\s+Mlay\s+(&|na)\s+Winfrida\s+Mwamakimbula/gi, '{eventName}');
+    res = res.replace(/Manase\s+Mlay\s+(&|na)\s+Winfrida\s+Mwamakimbula/gi, '{eventName}');
+    res = res.replace(/Manase\s+Mlay/gi, '{eventName}');
+    res = res.replace(/Winfrida\s+Mwamakimbula/gi, '{eventName}');
+
+    // Clean up potential duplicate phrases
+    res = res.replace(/Familia\s+ya\s+Familia\s+ya/gi, 'Familia ya');
+    res = res.replace(/Familia\s+ya\s+Familia\s+yetu/gi, 'Familia yetu');
+    res = res.replace(/kufanikisha\s+kufanikisha/gi, 'kufanikisha');
+    res = res.replace(/The\s+family\s+of\s+The\s+family\s+of/gi, 'The family of');
+
+    return res;
+  };
+
+  const isOldThankYouEn = (txt: string | null | undefined): boolean => {
+    if (!txt) return true;
+    if (txt.includes('attending') || txt.includes('Contacts:') || !txt.includes('0653578184')) return true;
+    if (txt.includes('SAMWELY ALEXANDER MLAY') || txt.includes('Manase Mlay') || txt.includes('Mwamakimbula')) return true;
+    return false;
+  };
+
+  const defaultThankYouSwText = `Habari {name},
+
+Familia ya {hostName} inapenda kutoa shukrani za dhati kwa upendo, mchango, maombi na ushirikiano wako katika kufanikisha {eventName}. Ushiriki wako umefanya sherehe yetu kuwa ya kipekee na yenye mafanikio makubwa.
+
+Asante sana na Mungu akubariki!
+
+━━━━━━━━━━━━━━━
+✨ HUDUMA YA KADI ZA MIALIKO YA KIDIJITALI (DIGITAL CARDS)
+Kwa kadi za kisasa za kidijitali za harusi/sherehe, ujumbe wa mialiko (SMS) na usimamizi wa wageni kwa QR Code:
+📞 Piga / WhatsApp: 0653578184`;
+
+  const defaultThankYouEnText = `Hello {name},
+
+The family of {hostName} would like to express our deepest gratitude for your love, support, prayers, and contributions in making {eventName} a wonderful success. Your participation made our celebration truly special and blessed.
+
+Thank you very much and God bless you!
+
+━━━━━━━━━━━━━━━
+✨ DIGITAL INVITATION CARDS & SMS SERVICE
+For modern digital wedding cards, guest management with QR Codes & bulk SMS:
+📞 Call / WhatsApp: 0653578184`;
+
   const [thankYouTemplateSw, setThankYouTemplateSw] = useState<string>(() => {
-    if (event?.smsTemplates?.generalThanksSw) {
-      return event.smsTemplates.generalThanksSw;
+    if (event?.smsTemplates?.generalThanksSw && !isOldThankYouSw(event.smsTemplates.generalThanksSw)) {
+      return convertHardcodedNamesToPlaceholders(event.smsTemplates.generalThanksSw);
     }
     const key = event?.id ? `kadi_thanks_template_${event.id}_sw` : 'kadi_thanks_template_sw';
     const saved = safeLocalStorage.getItem(key);
-    if (saved) return saved;
-    return `Habari {name},
-Familia ya {host_name} inapenda kutoa shukrani za dhati kwa kuhudhuria {event_name}.
-Ushiriki wako umefanya sherehe yetu kuwa ya kipekee na yenye baraka.
-
-Mawasiliano:
-- {contact_1_name}: {contact_1_phone}
-- {contact_2_name}: {contact_2_phone}
-
-Asante sana na Mungu akubariki!`;
+    if (saved && !isOldThankYouSw(saved)) return convertHardcodedNamesToPlaceholders(saved);
+    return defaultThankYouSwText;
   });
 
   const [thankYouTemplateEn, setThankYouTemplateEn] = useState<string>(() => {
-    if (event?.smsTemplates?.generalThanksEn) {
-      return event.smsTemplates.generalThanksEn;
+    if (event?.smsTemplates?.generalThanksEn && !isOldThankYouEn(event.smsTemplates.generalThanksEn)) {
+      return convertHardcodedNamesToPlaceholders(event.smsTemplates.generalThanksEn);
     }
     const key = event?.id ? `kadi_thanks_template_${event.id}_en` : 'kadi_thanks_template_en';
     const saved = safeLocalStorage.getItem(key);
-    if (saved) return saved;
-    return `Hello {name},
-The family of {host_name} would like to express our deepest gratitude for attending {event_name}.
-Your presence made our event truly special and blessed.
-
-Contacts:
-- {contact_1_name}: {contact_1_phone}
-- {contact_2_name}: {contact_2_phone}
-
-Thank you very much and God bless you!`;
+    if (saved && !isOldThankYouEn(saved)) return convertHardcodedNamesToPlaceholders(saved);
+    return defaultThankYouEnText;
   });
+
+  useEffect(() => {
+    if (event?.smsTemplates?.generalThanksSw && !isOldThankYouSw(event.smsTemplates.generalThanksSw)) {
+      setThankYouTemplateSw(convertHardcodedNamesToPlaceholders(event.smsTemplates.generalThanksSw));
+    } else if (!event?.smsTemplates?.generalThanksSw || isOldThankYouSw(event?.smsTemplates?.generalThanksSw)) {
+      setThankYouTemplateSw(defaultThankYouSwText);
+    }
+  }, [event?.id, event?.smsTemplates?.generalThanksSw]);
+
+  useEffect(() => {
+    if (event?.smsTemplates?.generalThanksEn && !isOldThankYouEn(event.smsTemplates.generalThanksEn)) {
+      setThankYouTemplateEn(convertHardcodedNamesToPlaceholders(event.smsTemplates.generalThanksEn));
+    } else if (!event?.smsTemplates?.generalThanksEn || isOldThankYouEn(event?.smsTemplates?.generalThanksEn)) {
+      setThankYouTemplateEn(defaultThankYouEnText);
+    }
+  }, [event?.id, event?.smsTemplates?.generalThanksEn]);
 
   useEffect(() => {
     if (event?.id) {
       safeLocalStorage.setItem(`kadi_thanks_template_${event.id}_sw`, thankYouTemplateSw);
-
     }
     safeLocalStorage.setItem('kadi_thanks_template_sw', thankYouTemplateSw);
   }, [thankYouTemplateSw, event?.id]);
@@ -503,17 +563,19 @@ Thank you very much and God bless you!`;
     : (language === 'en' ? invitationTemplateEn : invitationTemplateSw);
     
   const setActiveTemplateValue = (val: string) => {
+    // If the text contains the specific hardcoded names, automatically convert them into dynamic placeholders {hostName} and {eventName}
+    const cleanVal = convertHardcodedNamesToPlaceholders(val);
     if (messageType === 'thank-you') {
       if (language === 'en') {
-        setThankYouTemplateEn(val);
+        setThankYouTemplateEn(cleanVal);
       } else {
-        setThankYouTemplateSw(val);
+        setThankYouTemplateSw(cleanVal);
       }
     } else {
       if (language === 'en') {
-        setInvitationTemplateEn(val);
+        setInvitationTemplateEn(cleanVal);
       } else {
-        setInvitationTemplateSw(val);
+        setInvitationTemplateSw(cleanVal);
       }
     }
   };
@@ -653,24 +715,26 @@ Thank you very much and God bless you!`;
       if (messageType === 'thank-you') {
       if (language === 'en') {
         setThankYouTemplateEn(`Hello {name},
-The family of {host_name} would like to express our deepest gratitude for attending {event_name}.
-Your presence made our event truly special and blessed.
 
-Contacts:
-- {contact_1_name}: {contact_1_phone}
-- {contact_2_name}: {contact_2_phone}
+The family of {host_name} would like to express our deepest gratitude for your love, support, prayers, and contribution in making {event_name} a wonderful success. Your participation made our celebration truly special and blessed.
 
-Thank you very much and God bless you!`);
+Thank you very much and God bless you!
+
+━━━━━━━━━━━━━━━
+✨ DIGITAL INVITATION CARDS & SMS SERVICE
+For modern digital wedding cards, guest management with QR Codes & bulk SMS:
+📞 Call / WhatsApp: 0653578184`);
       } else {
         setThankYouTemplateSw(`Habari {name},
-Familia ya {host_name} inapenda kutoa shukrani za dhati kwa kuhudhuria {event_name}.
-Ushiriki wako umefanya sherehe yetu kuwa ya kipekee na yenye baraka.
 
-Mawasiliano:
-- {contact_1_name}: {contact_1_phone}
-- {contact_2_name}: {contact_2_phone}
+Familia ya {host_name} inapenda kutoa shukrani za dhati kwa upendo, mchango, maombi na ushirikiano wako katika kufanikisha {event_name}. Ushiriki wako umefanya sherehe yetu kuwa ya kipekee na yenye mafanikio makubwa.
 
-Asante sana na Mungu akubariki!`);
+Asante sana na Mungu akubariki!
+
+━━━━━━━━━━━━━━━
+✨ HUDUMA YA KADI ZA MIALIKO YA KIDIJITALI (DIGITAL CARDS)
+Kwa kadi za kisasa za kidijitali za harusi/sherehe, ujumbe wa mialiko (SMS) na usimamizi wa wageni kwa QR Code:
+📞 Piga / WhatsApp: 0653578184`);
       }
     } else {
       if (language === 'en') {
@@ -848,6 +912,8 @@ Karibu sana!`);
     };
     const formattedPeriod = translatePeriod(event.period, language);
     const isEn = language === 'en';
+    const resolvedEventName = (event.title || event.name || (isEn ? "Our Event" : "Sherehe yetu")).trim();
+    const resolvedHostName = (event.hostName || (isEn ? "Our Family" : "Familia yetu")).trim();
 
     const replacements: { [key: string]: string } = {
       '{mgeni}': g.name,
@@ -858,18 +924,22 @@ Karibu sana!`);
       '{guestName}': g.name,
       '{jina_la_mgeni}': g.name,
       '(jina_la_mgeni)': g.name,
-      '{mwenyeji}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-      '{hostName}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-      '{host_name}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-      '{{2}}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-      '{2}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-      '{{host_name}}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-      '{sherehe}': event.name || (isEn ? "Our Event" : "Sherehe"),
-      '{event_name}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
-      '{eventName}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
-      '{{3}}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
-      '{3}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
-      '{{event_name}}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
+      '{mwenyeji}': resolvedHostName,
+      '{hostName}': resolvedHostName,
+      '{host_name}': resolvedHostName,
+      '{{2}}': resolvedHostName,
+      '{2}': resolvedHostName,
+      '{{host_name}}': resolvedHostName,
+      '{sherehe}': resolvedEventName,
+      '{event_name}': resolvedEventName,
+      '{eventName}': resolvedEventName,
+      '{eventTitle}': resolvedEventName,
+      '{title}': resolvedEventName,
+      '{tukio}': resolvedEventName,
+      '{Tukio}': resolvedEventName,
+      '{{3}}': resolvedEventName,
+      '{3}': resolvedEventName,
+      '{{event_name}}': resolvedEventName,
       '{tarehe}': event.date || "26/11/2026",
       '{date}': event.date || "26/11/2026",
       '{eventDate}': event.date || "26/11/2026",
@@ -964,6 +1034,12 @@ Karibu sana!`);
     Object.keys(replacements).forEach(key => {
       text = text.split(key).join(replacements[key]);
     });
+
+    // Clean up potential duplicate phrases if hostName or eventName already contains prefix words
+    text = text.replace(/Familia\s+ya\s+Familia\s+ya/gi, 'Familia ya');
+    text = text.replace(/Familia\s+ya\s+Familia\s+yetu/gi, 'Familia yetu');
+    text = text.replace(/The\s+family\s+of\s+The\s+family\s+of/gi, 'The family of');
+    text = text.replace(/The\s+family\s+of\s+Our\s+Family/gi, 'Our family');
 
     // Replace three or more consecutive newlines with two newlines to avoid huge gaps
     text = text.replace(/\n\s*\n\s*\n+/g, '\n\n').trim();
@@ -1073,6 +1149,8 @@ Karibu sana!`);
         };
         const formattedPeriod = translatePeriod(event.period, language);
         const isEn = language === 'en';
+        const resolvedEventName = (event.title || event.name || (isEn ? "Our Event" : "Sherehe yetu")).trim();
+        const resolvedHostName = (event.hostName || (isEn ? "Our Family" : "Familia yetu")).trim();
 
         const replacements: { [key: string]: string } = {
           '{mgeni}': target.name,
@@ -1083,18 +1161,22 @@ Karibu sana!`);
           '{guestName}': target.name,
           '{jina_la_mgeni}': target.name,
           '(jina_la_mgeni)': target.name,
-          '{mwenyeji}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-          '{hostName}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-          '{host_name}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-          '{{2}}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-          '{2}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-          '{{host_name}}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-          '{sherehe}': event.name || (isEn ? "Our Event" : "Sherehe"),
-          '{event_name}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
-          '{eventName}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
-          '{{3}}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
-          '{3}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
-          '{{event_name}}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
+          '{mwenyeji}': resolvedHostName,
+          '{hostName}': resolvedHostName,
+          '{host_name}': resolvedHostName,
+          '{{2}}': resolvedHostName,
+          '{2}': resolvedHostName,
+          '{{host_name}}': resolvedHostName,
+          '{sherehe}': resolvedEventName,
+          '{event_name}': resolvedEventName,
+          '{eventName}': resolvedEventName,
+          '{eventTitle}': resolvedEventName,
+          '{title}': resolvedEventName,
+          '{tukio}': resolvedEventName,
+          '{Tukio}': resolvedEventName,
+          '{{3}}': resolvedEventName,
+          '{3}': resolvedEventName,
+          '{{event_name}}': resolvedEventName,
           '{tarehe}': event.date || "26/11/2026",
           '{date}': event.date || "26/11/2026",
           '{eventDate}': event.date || "26/11/2026",
@@ -1319,6 +1401,8 @@ Karibu sana!`);
       };
       const formattedPeriod = translatePeriod(event.period, language);
       const isEn = language === 'en';
+      const resolvedEventName = (event.title || event.name || (isEn ? "Our Event" : "Sherehe yetu")).trim();
+      const resolvedHostName = (event.hostName || (isEn ? "Our Family" : "Familia yetu")).trim();
 
       const replacements: { [key: string]: string } = {
         '{mgeni}': guest.name,
@@ -1329,18 +1413,22 @@ Karibu sana!`);
         '{guestName}': guest.name,
         '{jina_la_mgeni}': guest.name,
         '(jina_la_mgeni)': guest.name,
-        '{mwenyeji}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-        '{hostName}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-        '{host_name}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-        '{{2}}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-        '{2}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-        '{{host_name}}': event.hostName || (isEn ? "Our Family" : "Familia yetu"),
-        '{sherehe}': event.name || (isEn ? "Our Event" : "Sherehe"),
-        '{event_name}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
-        '{eventName}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
-        '{{3}}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
-        '{3}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
-        '{{event_name}}': event.name || (isEn ? "Our Event" : "Sherehe yetu"),
+        '{mwenyeji}': resolvedHostName,
+        '{hostName}': resolvedHostName,
+        '{host_name}': resolvedHostName,
+        '{{2}}': resolvedHostName,
+        '{2}': resolvedHostName,
+        '{{host_name}}': resolvedHostName,
+        '{sherehe}': resolvedEventName,
+        '{event_name}': resolvedEventName,
+        '{eventName}': resolvedEventName,
+        '{eventTitle}': resolvedEventName,
+        '{title}': resolvedEventName,
+        '{tukio}': resolvedEventName,
+        '{Tukio}': resolvedEventName,
+        '{{3}}': resolvedEventName,
+        '{3}': resolvedEventName,
+        '{{event_name}}': resolvedEventName,
         '{tarehe}': event.date || "26/11/2026",
         '{date}': event.date || "26/11/2026",
         '{eventDate}': event.date || "26/11/2026",
@@ -2091,11 +2179,80 @@ Karibu sana!`);
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {/* Editor Area */}
           <div className="space-y-3">
-            <div className="flex justify-between items-center">
+            {/* Quick Mode Indicator & Banner */}
+            {messageType === 'thank-you' ? (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 text-emerald-300">
+                  <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <span className="font-semibold text-[11.5px]">Ujumbe Rasmi wa Shukrani & Tangazo la Kadi za Kidijitali (0653578184)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setThankYouTemplateSw(defaultThankYouSwText);
+                    setThankYouTemplateEn(defaultThankYouEnText);
+                    if (event?.id) {
+                      safeLocalStorage.setItem(`kadi_thanks_template_${event.id}_sw`, defaultThankYouSwText);
+                      safeLocalStorage.setItem(`kadi_thanks_template_${event.id}_en`, defaultThankYouEnText);
+                    }
+                    safeLocalStorage.setItem('kadi_thanks_template_sw', defaultThankYouSwText);
+                    safeLocalStorage.setItem('kadi_thanks_template_en', defaultThankYouEnText);
+                    if (onUpdateEvent && event) {
+                      onUpdateEvent({
+                        ...event,
+                        smsTemplates: {
+                          ...(event.smsTemplates || {}),
+                          generalThanksSw: defaultThankYouSwText,
+                          generalThanksEn: defaultThankYouEnText,
+                          thanks1Sw: defaultThankYouSwText,
+                          thanks2Sw: defaultThankYouSwText
+                        }
+                      });
+                    }
+                    setTemplateSavedSuccess(true);
+                    setTimeout(() => setTemplateSavedSuccess(false), 2000);
+                  }}
+                  className="text-[10px] px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition shrink-0 cursor-pointer shadow-sm"
+                >
+                  Weka Upya Ujumbe Huu
+                </button>
+              </div>
+            ) : (
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 text-blue-300">
+                  <MessageSquare className="w-4 h-4 shrink-0 text-blue-400" />
+                  <span className="text-[11px]">Ujumbe wa Shukrani umehifadhiwa (Unajaza majina ya tukio kiotomatiki).</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMessageType('thank-you')}
+                  className="text-[10px] px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition shrink-0 cursor-pointer"
+                >
+                  Badili kwenda Tab ya Shukrani →
+                </button>
+              </div>
+            )}
+
+            <div className="flex flex-wrap justify-between items-center gap-2">
               <label htmlFor="message-template-textarea" className="text-[10px] uppercase font-mono tracking-wider font-bold text-slate-400">
-                Ujumbe wa Mwaliko (Andika hapa)
+                {messageType === 'thank-you' ? 'Ujumbe wa Shukrani (Andika hapa)' : 'Ujumbe wa Mwaliko (Andika hapa)'}
               </label>
-              <span className="text-[9px] text-[#10b981] font-bold font-mono">● Auto-saves to storage</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cleaned = convertHardcodedNamesToPlaceholders(activeTemplateValue);
+                    setActiveTemplateValue(cleaned);
+                    setTemplateSavedSuccess(true);
+                    setTimeout(() => setTemplateSavedSuccess(false), 2000);
+                  }}
+                  className="text-[9.5px] px-2 py-0.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 rounded-lg font-mono flex items-center gap-1 transition cursor-pointer"
+                  title="Badilisha majina halisi (k.m. Manase na Winfrida, Samuel Mlay) kuwa vigezo vya {hostName} na {eventName} ili viweze kujazwa kiotomatiki kwa sherehe yoyote"
+                >
+                  <span>✨</span> Geuza Majina Kuwa Vigezo ({'{hostName}'}, {'{eventName}'})
+                </button>
+                <span className="text-[9px] text-[#10b981] font-bold font-mono">● Auto-saves to storage</span>
+              </div>
             </div>
             
             <textarea
@@ -2105,7 +2262,7 @@ Karibu sana!`);
               onBlur={handleSaveTemplate}
               rows={7}
               className="w-full bg-[#070b13] border border-white/10 rounded-xl p-3 text-white font-mono text-[11px] focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/60 leading-relaxed resize-y scrollbar-thin select-all"
-              placeholder="Andika mwaliko wako wa mgeni..."
+              placeholder={messageType === 'thank-you' ? "Andika ujumbe wa shukrani..." : "Andika mwaliko wako wa mgeni..."}
             />
 
             {/* Custom Option: Conserve SMS Credits Toggle */}
@@ -2138,15 +2295,15 @@ Karibu sana!`);
             </div>
 
             {/* Clickable Placeholders */}
-            <div className="hidden space-y-1.5">
+            <div className="space-y-1.5 pt-1">
               <span className="text-[9px] uppercase font-mono tracking-wider text-slate-500 block font-bold">
                 {isEn ? "Click placeholders to insert dynamic template fields:" : "Bofya vibandiko hivi kuweka taarifa zinazobadilika (Dynamic Placeholders):"}
               </span>
               <div className="flex flex-wrap gap-1.5">
                 {[
                   { tag: '{name}', label: 'Jina la Mgeni' },
-                  { tag: '{host_name}', label: 'Mwenyeji' },
-                  { tag: '{event_name}', label: 'Sherehe' },
+                  { tag: '{hostName}', label: 'Mwenyeji' },
+                  { tag: '{eventName}', label: 'Sherehe/Tukio' },
                   { tag: '{kiungo}', label: 'Kiungo cha Kadi' },
                   { tag: '{date}', label: 'Tarehe' },
                   { tag: '{venue}', label: 'Ukumbi' },

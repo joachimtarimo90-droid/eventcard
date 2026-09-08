@@ -2,6 +2,8 @@ export interface EventDetails {
   id: string;
   senderId: string;
   name: string;
+  title?: string;
+  eventType?: string;
   date: string;
   time: string;
   period: 'Asubuhi' | 'Mchana' | 'Jioni' | 'Usiku';
