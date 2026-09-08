@@ -492,9 +492,9 @@ Familia ya {hostName} inapenda kutoa shukrani za dhati kwa upendo, mchango, maom
 
 Asante sana na Mungu akubariki!
 
----------------
-* HUDUMA YA KADI ZA MIALIKO YA KIDIJITALI (DIGITAL CARDS)
-Kwa kadi za kisasa za kidijitali za harusi/sherehe, ujumbe wa mialiko (SMS) na usimamizi wa wageni kwa QR Code:
+----------------
+* HUDUMA YA KADI ZA KIDIJITALI & SMS
+Unatayarisha Harusi, Sendoff au Sherehe? Pata kadi za kisasa za kidijitali za QR Code, mfumo wa kukumbusha michango na kutuma SMS za mialiko kwa bei nafuu kabisa!
 Piga / WhatsApp: 0653578184`;
 
   const defaultThankYouEnText = `Hello {name},
@@ -503,9 +503,9 @@ The family of {hostName} would like to express our deepest gratitude for your lo
 
 Thank you very much and God bless you!
 
----------------
-* DIGITAL INVITATION CARDS & SMS SERVICE
-For modern digital wedding cards, guest management with QR Codes & bulk SMS:
+----------------
+* DIGITAL INVITATION CARDS & SMS
+Planning a Wedding, Sendoff, or Event? Get modern digital QR Code cards, contribution reminder system, and bulk SMS services at very affordable rates!
 Call / WhatsApp: 0653578184`;
 
   const [thankYouTemplateSw, setThankYouTemplateSw] = useState<string>(() => {
@@ -720,9 +720,9 @@ The family of {host_name} would like to express our deepest gratitude for your l
 
 Thank you very much and God bless you!
 
----------------
-* DIGITAL INVITATION CARDS & SMS SERVICE
-For modern digital wedding cards, guest management with QR Codes & bulk SMS:
+----------------
+* DIGITAL INVITATION CARDS & SMS
+Planning a Wedding, Sendoff, or Event? Get modern digital QR Code cards, contribution reminder system, and bulk SMS services at very affordable rates!
 Call / WhatsApp: 0653578184`);
       } else {
         setThankYouTemplateSw(`Habari {name},
@@ -731,9 +731,9 @@ Familia ya {host_name} inapenda kutoa shukrani za dhati kwa upendo, mchango, mao
 
 Asante sana na Mungu akubariki!
 
----------------
-* HUDUMA YA KADI ZA MIALIKO YA KIDIJITALI (DIGITAL CARDS)
-Kwa kadi za kisasa za kidijitali za harusi/sherehe, ujumbe wa mialiko (SMS) na usimamizi wa wageni kwa QR Code:
+----------------
+* HUDUMA YA KADI ZA KIDIJITALI & SMS
+Unatayarisha Harusi, Sendoff au Sherehe? Pata kadi za kisasa za kidijitali za QR Code, mfumo wa kukumbusha michango na kutuma SMS za mialiko kwa bei nafuu kabisa!
 Piga / WhatsApp: 0653578184`);
       }
     } else {
@@ -1069,8 +1069,8 @@ Karibu sana!`);
       .replace(/[•●▪]/g, '*')
       .trim();
 
-    if (isSms && finalText.length > 420) {
-      finalText = finalText.slice(0, 417) + "...";
+    if (isSms && finalText.length > 1600) {
+      finalText = finalText.slice(0, 1597) + "...";
     }
     return finalText;
   };
@@ -2287,7 +2287,7 @@ Karibu sana!`);
               onBlur={handleSaveTemplate}
               rows={7}
               className={`w-full bg-[#070b13] border rounded-xl p-3 text-white font-mono text-[11px] focus:outline-none focus:ring-2 leading-relaxed resize-y scrollbar-thin select-all ${
-                activeTemplateValue.length > 420 
+                activeTemplateValue.length > 1600 
                   ? 'border-amber-500/60 focus:ring-amber-500/40 focus:border-amber-500' 
                   : 'border-white/10 focus:ring-blue-500/40 focus:border-blue-500/60'
               }`}
@@ -2298,7 +2298,7 @@ Karibu sana!`);
             {(() => {
               const charLen = activeTemplateValue.length;
               const smsParts = charLen <= 160 ? 1 : (charLen <= 306 ? 2 : (charLen <= 459 ? 3 : Math.ceil(charLen / 153)));
-              const isOverLimit = charLen > 420;
+              const isOverLimit = charLen > 1600;
               return (
                 <div className="space-y-1.5">
                   <div className="flex flex-wrap items-center justify-between text-[10px] font-mono gap-2">
@@ -2306,11 +2306,11 @@ Karibu sana!`);
                       <span className={`px-2 py-0.5 rounded-md font-bold ${
                         isOverLimit 
                           ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' 
-                          : charLen > 306 
+                          : charLen > 1000 
                           ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' 
                           : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                       }`}>
-                        {charLen} / 420 Herufi
+                        {charLen} / 1600 Herufi
                       </span>
                       <span className="text-slate-400 font-medium">
                         (Sawa na SMS {smsParts} {smsParts === 1 ? 'part' : 'parts'})
@@ -2318,11 +2318,11 @@ Karibu sana!`);
                     </div>
                     {isOverLimit ? (
                       <span className="text-amber-400 font-bold flex items-center gap-1">
-                        ⚠️ Mfumo utaupunguza kiotomatiki ufikapo herufi 420
+                        ⚠️ Ujumbe umezidi kiwango cha juu cha SMS 10
                       </span>
                     ) : (
                       <span className="text-slate-500 text-[9px]">
-                        Kikomo cha eHub SMS ni herufi 420 (SMS 3-4 Max)
+                        Kikomo cha Meseji.co.tz ni herufi 1600
                       </span>
                     )}
                   </div>
@@ -2331,10 +2331,9 @@ Karibu sana!`);
                     <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[10.5px] leading-relaxed flex items-start gap-2">
                       <span className="text-base leading-none">⚠️</span>
                       <div>
-                        <strong>Ujumbe wako umezidi herufi 420 ({charLen} herufi):</strong>
+                        <strong>Ujumbe wako umezidi herufi 1600 ({charLen} herufi):</strong>
                         <p className="mt-0.5 text-amber-300/90 text-[10px]">
-                          Watoa huduma wa SMS (kama eHub na SwalaSMS) wanakubali ujumbe wa SMS usiozidi sehemu 4 (SMS 4).
-                          Ili kuzuia hitilafu ya utumaji (Error 422), mfumo utaupunguza kiotomatiki uwe herufi 417 wakati wa kutuma. Unaweza pia kuupunguza hapa.
+                          Meseji.co.tz inakubali SMS isiyozidi herufi 1600 (takriban kurasa 10 za SMS). Tafadhali punguza ujumbe wako kidogo ili uweze kutumwa salama.
                         </p>
                       </div>
                     </div>

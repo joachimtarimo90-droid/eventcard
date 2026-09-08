@@ -267,7 +267,7 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
       provider: 'swalasms',
       apiKey: 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3',
       secretKey: '',
-      senderId: 'EVENT CARD',
+      senderId: 'UWALEMI',
       baseUrl: 'https://swalasms.com/api/v1/sms/quick-message',
       autoSendReceipts: gatewayConfig.autoSendReceipts ?? true,
       autoSendMeetingAlerts: gatewayConfig.autoSendMeetingAlerts ?? true,
@@ -281,7 +281,7 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
     const updatedState = { ...state, groupSettings: updatedSettings };
     await onSaveState(updatedState);
     setSendResult(null);
-    alert('SwalaSMS (Sender ID: EVENT CARD) imewekwa na kuunganishwa kikamilifu!');
+    alert('SwalaSMS (Sender ID: UWALEMI) imewekwa na kuunganishwa kikamilifu!');
   };
 
   const handleSwitchToSimulation = async () => {
@@ -1499,7 +1499,7 @@ Lema, Nguvu Moja!`);
               Mipangilio ya Mtoa Huduma wa SMS (SMS Gateway)
             </h3>
             <p className="text-xs text-slate-400 mt-1">
-              Weka taarifa za API za Meseji.co.tz, Beem Africa, au NextSMS ili ujumbe wa kikundi cha UWALEMI uende moja kwa moja kwa simu za wajumbe kupitia mtandao wa simu.
+              Weka taarifa za API za Meseji.co.tz ili ujumbe wa kikundi cha UWALEMI uende moja kwa moja kwa simu za wajumbe kupitia mtandao wa simu.
             </p>
           </div>
 
@@ -1513,37 +1513,14 @@ Lema, Nguvu Moja!`);
             <div className="text-xs space-y-1">
               <div className="font-bold flex items-center gap-2">
                 Hali ya Sasa: {gatewayConfig.provider !== 'simulation' && gatewayConfig.apiKey
-                  ? `Imeunganishwa na ${gatewayConfig.provider.toUpperCase()} (SMS Halisi Zitatumwa)`
+                  ? `Imeunganishwa na MESEJI (SMS Halisi Zitatumwa)`
                   : 'Hali ya Majaribio (Simulation Mode)'}
               </div>
               <p className="text-slate-300 leading-relaxed">
                 {gatewayConfig.provider !== 'simulation' && gatewayConfig.apiKey
                   ? `Ujumbe na stakabadhi za kiotomatiki zitatumwa moja kwa moja kwenye simu za wajumbe kwa kutumia jina la "${gatewayConfig.senderId || 'UWALEMI'}".`
-                  : 'Kwa sasa mfumo unarekodi stakabadhi na jumbe zote kwenye tab ya "Kumbukumbu za Ujumbe (Logs)" bila kukata salio. Ili ujumbe ufike halisi kwenye simu ya mwanachama, chagua Mtoa Huduma (Meseji, Beem, au NextSMS) na uweke API Key & Secret.'}
+                  : 'Kwa sasa mfumo unarekodi stakabadhi na jumbe zote kwenye tab ya "Kumbukumbu za Ujumbe (Logs)" bila kukata salio. Ili ujumbe ufike halisi kwenye simu ya mwanachama, weka API Token na Sender ID yako ya Meseji.co.tz.'}
               </p>
-            </div>
-          </div>
-
-          {/* Quick sync suggestion banner if using Meseji with error or wanting eHub */}
-          <div className="p-3.5 bg-emerald-950/40 border border-emerald-800/60 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-            <div className="flex items-start gap-2.5 text-emerald-200">
-              <Zap className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-semibold text-white">eHub SMS Tanzania (Ina salio na inafanya kazi)</span>
-                <p className="text-[11px] text-emerald-300/90 mt-0.5">
-                  Akaunti ya eHub SMS yenye Sender ID ya "UWALEMI" imethibitishwa na inatuma ujumbe moja kwa moja.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => handleSetEhub('19f41b59-19d0-4f98-b8c9-9d5b1ac31308')}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shadow shrink-0"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Weka eHub (UWALEMI)
-              </button>
             </div>
           </div>
 
@@ -1551,40 +1528,21 @@ Lema, Nguvu Moja!`);
             <div>
               <label className="block text-slate-300 font-semibold mb-1">Mtoa Huduma (Provider):</label>
               <select
-                value={gatewayConfig.provider}
+                value={gatewayConfig.provider || 'meseji'}
                 onChange={(e) => {
                   const val = e.target.value as any;
                   const newConfig = { ...gatewayConfig, provider: val };
-                  if (val === 'swalasms') {
-                    newConfig.apiKey = newConfig.apiKey || 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3';
-                    newConfig.senderId = 'EVENT CARD';
-                    newConfig.baseUrl = 'https://swalasms.com/api/v1/sms/quick-message';
-                  } else if (val === 'meseji') {
+                  if (val === 'meseji') {
                     newConfig.baseUrl = 'https://meseji.co.tz/api/v1/sms/send';
                     if (!newConfig.senderId || newConfig.senderId.includes('-')) {
-                      newConfig.senderId = 'MESEJI';
+                      newConfig.senderId = 'UWALEMI';
                     }
-                  } else if (val === 'ehub') {
-                    newConfig.baseUrl = 'https://sms.ehub.co.tz/api/v1/sms/send';
-                    if (!newConfig.senderId || !newConfig.senderId.includes('-')) {
-                      newConfig.senderId = '19f41b59-19d0-4f98-b8c9-9d5b1ac31308';
-                    }
-                  } else if (val === 'beem') {
-                    newConfig.baseUrl = 'https://api.beem.africa/v1/send';
-                    if (!newConfig.senderId) newConfig.senderId = 'INFO';
-                  } else if (val === 'nextsms') {
-                    newConfig.baseUrl = 'https://messaging-service.co.tz/api/sms/v1/text/single';
-                    if (!newConfig.senderId) newConfig.senderId = 'NEXTSMS';
                   }
                   setGatewayConfig(newConfig);
                 }}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
               >
-                <option value="swalasms">SwalaSMS (swalasms.com) - Salio: {balanceInfo?.balance || 70} SMS (Inafanya Kazi)</option>
-                <option value="ehub">eHub SMS Tanzania (sms.ehub.co.tz) - Inapendekezwa</option>
                 <option value="meseji">Meseji API (Meseji.co.tz - Tanzania)</option>
-                <option value="beem">Beem Africa (apisms.beem.africa)</option>
-                <option value="nextsms">NextSMS Tanzania (messaging-service.co.tz)</option>
                 <option value="simulation">Mwigizo wa Kujaribu (Simulation Mode)</option>
               </select>
             </div>
@@ -1745,19 +1703,11 @@ Lema, Nguvu Moja!`);
                       <div className="pt-2 flex flex-wrap items-center gap-2">
                         <button
                           type="button"
-                          onClick={handleSyncGlobalEhub}
-                          className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-[11px] flex items-center gap-1.5 cursor-pointer transition-colors"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          Tumia eHub SMS (Salio Lililothibitishwa)
-                        </button>
-                        <button
-                          type="button"
                           onClick={handleSwitchToSimulation}
                           className="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-[11px] flex items-center gap-1.5 cursor-pointer transition-colors"
                         >
                           <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                          Badili kuwa Hali ya Majaribio (Simulation)
+                          Badili kuwa Simulation
                         </button>
                       </div>
                     </div>
