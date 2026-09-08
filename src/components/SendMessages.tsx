@@ -492,10 +492,10 @@ Familia ya {hostName} inapenda kutoa shukrani za dhati kwa upendo, mchango, maom
 
 Asante sana na Mungu akubariki!
 
-━━━━━━━━━━━━━━━
-✨ HUDUMA YA KADI ZA MIALIKO YA KIDIJITALI (DIGITAL CARDS)
+---------------
+* HUDUMA YA KADI ZA MIALIKO YA KIDIJITALI (DIGITAL CARDS)
 Kwa kadi za kisasa za kidijitali za harusi/sherehe, ujumbe wa mialiko (SMS) na usimamizi wa wageni kwa QR Code:
-📞 Piga / WhatsApp: 0653578184`;
+Piga / WhatsApp: 0653578184`;
 
   const defaultThankYouEnText = `Hello {name},
 
@@ -503,10 +503,10 @@ The family of {hostName} would like to express our deepest gratitude for your lo
 
 Thank you very much and God bless you!
 
-━━━━━━━━━━━━━━━
-✨ DIGITAL INVITATION CARDS & SMS SERVICE
+---------------
+* DIGITAL INVITATION CARDS & SMS SERVICE
 For modern digital wedding cards, guest management with QR Codes & bulk SMS:
-📞 Call / WhatsApp: 0653578184`;
+Call / WhatsApp: 0653578184`;
 
   const [thankYouTemplateSw, setThankYouTemplateSw] = useState<string>(() => {
     if (event?.smsTemplates?.generalThanksSw && !isOldThankYouSw(event.smsTemplates.generalThanksSw)) {
@@ -720,10 +720,10 @@ The family of {host_name} would like to express our deepest gratitude for your l
 
 Thank you very much and God bless you!
 
-━━━━━━━━━━━━━━━
-✨ DIGITAL INVITATION CARDS & SMS SERVICE
+---------------
+* DIGITAL INVITATION CARDS & SMS SERVICE
 For modern digital wedding cards, guest management with QR Codes & bulk SMS:
-📞 Call / WhatsApp: 0653578184`);
+Call / WhatsApp: 0653578184`);
       } else {
         setThankYouTemplateSw(`Habari {name},
 
@@ -731,10 +731,10 @@ Familia ya {host_name} inapenda kutoa shukrani za dhati kwa upendo, mchango, mao
 
 Asante sana na Mungu akubariki!
 
-━━━━━━━━━━━━━━━
-✨ HUDUMA YA KADI ZA MIALIKO YA KIDIJITALI (DIGITAL CARDS)
+---------------
+* HUDUMA YA KADI ZA MIALIKO YA KIDIJITALI (DIGITAL CARDS)
 Kwa kadi za kisasa za kidijitali za harusi/sherehe, ujumbe wa mialiko (SMS) na usimamizi wa wageni kwa QR Code:
-📞 Piga / WhatsApp: 0653578184`);
+Piga / WhatsApp: 0653578184`);
       }
     } else {
       if (language === 'en') {

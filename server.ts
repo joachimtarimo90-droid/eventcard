@@ -2397,13 +2397,22 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     return "SMS Simulation";
   }
 
-  // Sanitize smart quotes, dashes, and bullet points to standard GSM 7-bit characters
+  // Sanitize smart quotes, box-drawing characters, emojis, and bullet points to standard GSM 7-bit characters
   if (text) {
     text = text
+      .replace(/[\u2500-\u257F\u2010-\u2015]/g, '-')
       .replace(/[“”]/g, '"')
       .replace(/[‘’]/g, "'")
       .replace(/[–—]/g, '-')
       .replace(/[•●▪]/g, '*')
+      .replace(/✨/g, '*')
+      .replace(/📞/g, 'Piga/WhatsApp:')
+      .replace(/🗺️|🗺/g, '[Ramani]')
+      .replace(/📍/g, '[Mahali]')
+      .replace(/🎉/g, '!')
+      .replace(/👋/g, '')
+      .replace(/🙏/g, '')
+      .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '')
       .replace(/\r\n/g, '\n');
       
     // Enforce max SMS length limit (420 chars / 2-3 SMS parts) to guarantee <= 4 SMS parts on eHub & SwalaSMS
