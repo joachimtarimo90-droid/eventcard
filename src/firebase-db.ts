@@ -135,6 +135,10 @@ export async function initDB() {
     console.log("[CloudSQL Initializer] Fetching full state from PostgreSQL...");
     const state = await fetchFullStateFromDB();
     
+    // Load queueJobs from local file to prevent loss across cold boots
+    const localFallbackObj = getLocalDBFallback();
+    state.queueJobs = localFallbackObj?.queueJobs || [];
+    
     // If PostgreSQL doesn't have uwalemiState yet, seed from local database.json and sync to PostgreSQL
     if (!state.uwalemiState && fs.existsSync(DB_PATH)) {
       try {
@@ -204,7 +208,9 @@ export async function readDBLatest() {
     let attempts = 2;
     while (attempts > 0) {
       try {
+        const existingQueueJobs = inMemoryDB?.queueJobs || getLocalDBFallback()?.queueJobs || [];
         const state = await fetchFullStateFromDB();
+        state.queueJobs = existingQueueJobs;
         if (!state.uwalemiState) {
           const local = getLocalDBFallback();
           if (local && typeof local === 'object' && local.uwalemiState) {

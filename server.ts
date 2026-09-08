@@ -5707,6 +5707,27 @@ Lema, Nguvu Moja!`;
             task.error = err.message;
             if (!currentJob.logs) currentJob.logs = [];
             currentJob.logs.push(`[${new Date().toLocaleTimeString()}] ✗ Imeshindwa kwa namba ${task.phone}. Sababu: ${err.message}`);
+
+            // Detect systemic issues (e.g., token expired, out of balance, fetch failed, invalid credentials) to auto-pause remaining queue
+            const errMsg = (err.message || "").toLowerCase();
+            const isSystemicAuth = errMsg.includes("expired") || errMsg.includes("api key") || errMsg.includes("token") || errMsg.includes("unauthorized") || errMsg.includes("batili") || errMsg.includes("haipatikani") || errMsg.includes("credential");
+            const isSystemicBalance = errMsg.includes("balance") || errMsg.includes("salio") || errMsg.includes("credit") || errMsg.includes("payment required") || errMsg.includes("halitoshi");
+            const isNetworkError = errMsg.includes("fetch failed") || errMsg.includes("imeshindwa kufungua kiunganishi");
+
+            if (isSystemicAuth || isSystemicBalance || isNetworkError) {
+              currentJob.status = 'paused';
+              currentJob.logs.push(`[${new Date().toLocaleTimeString()}] ⚠️ Ujumbe umesitishwa (Paused) kwa sababu ya hitilafu ya kiufundi au salio: ${err.message}`);
+              currentJob.logs.push(`[${new Date().toLocaleTimeString()}] 👉 Tafadhali rekebisha Token au salio lako kisha bonyeza "Endelea" (Resume).`);
+              
+              if (!currentJob.tasks) currentJob.tasks = [];
+              currentJob.tasks[i] = task;
+              
+              const doneCount = currentJob.tasks.filter((t: any) => t && (t.status === 'sent' || t.status === 'failed')).length;
+              currentJob.processed = doneCount;
+              
+              await writeDB(freshDb);
+              break; // Stop loop immediately
+            }
           }
 
           if (!currentJob.tasks) currentJob.tasks = [];
