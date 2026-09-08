@@ -32,7 +32,10 @@ import {
   Play,
   ChevronDown,
   MessageSquare,
-  TrendingUp
+  TrendingUp,
+  Monitor,
+  Tablet,
+  Smartphone
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useLanguage } from './context/LanguageContext';
@@ -127,6 +130,7 @@ export default function App() {
 
   // App Navigation state
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
+  const [deviceViewMode, setDeviceViewMode] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [searchQuery, setSearchQuery] = useState('');
   const [guestListSearch, setGuestListSearch] = useState('');
   const [sentListSearch, setSentListSearch] = useState('');
@@ -2478,6 +2482,51 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-3.5">
+            {/* Device View Mode Switcher (Desktop, Tablet, Mobile) */}
+            <div className="hidden sm:flex items-center bg-white/5 p-1 rounded-xl border border-white/10 gap-0.5 shadow-inner">
+              <button
+                type="button"
+                onClick={() => setDeviceViewMode('desktop')}
+                className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  deviceViewMode === 'desktop' 
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md font-mono' 
+                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                }`}
+                title="Mwonekano wa Kompyuta (Desktop View)"
+              >
+                <Monitor className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Desktop</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDeviceViewMode('tablet')}
+                className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  deviceViewMode === 'tablet' 
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md font-mono' 
+                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                }`}
+                title="Mwonekano wa Tablet / iPad (768px)"
+              >
+                <Tablet className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Tablet</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDeviceViewMode('mobile')}
+                className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  deviceViewMode === 'mobile' 
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md font-mono' 
+                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                }`}
+                title="Mwonekano wa Simu ya Mkononi (Smartphone View - 390px)"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Simu</span>
+              </button>
+            </div>
+
             {/* Language Selector in Header */}
             <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
               <button 
@@ -2587,21 +2636,90 @@ export default function App() {
         </header>
 
         {/* Tab Content Canvas */}
-        <div className="flex-grow overflow-y-auto p-4 sm:p-8 custom-scrollbar">
-          <div className="max-w-7xl mx-auto h-full">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeTab}
-                initial={{ opacity: 0, x: 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                transition={{ duration: 0.2 }}
-                className="h-full"
+        <div className="flex-grow overflow-y-auto p-2 sm:p-6 custom-scrollbar">
+          {deviceViewMode !== 'desktop' ? (
+            <div className="flex flex-col items-center justify-start min-h-full py-2">
+              {/* Device Mode Badge Header */}
+              <div className="mb-4 flex items-center gap-3 bg-slate-900/90 border border-blue-500/30 px-4 py-1.5 rounded-full shadow-2xl backdrop-blur-md">
+                <div className="flex items-center gap-2">
+                  {deviceViewMode === 'tablet' ? (
+                    <Tablet className="w-4 h-4 text-blue-400" />
+                  ) : (
+                    <Smartphone className="w-4 h-4 text-emerald-400" />
+                  )}
+                  <span className="text-xs font-bold font-mono text-white">
+                    {deviceViewMode === 'tablet' 
+                      ? (language === 'sw' ? 'Mwonekano wa Tablet (768px)' : 'Tablet View (768px)') 
+                      : (language === 'sw' ? 'Mwonekano wa Simu (390px)' : 'Smartphone View (390px)')}
+                  </span>
+                </div>
+                <div className="h-3 w-[1px] bg-white/20" />
+                <button
+                  type="button"
+                  onClick={() => setDeviceViewMode('desktop')}
+                  className="text-[10px] font-bold font-mono text-blue-400 hover:text-blue-300 underline cursor-pointer"
+                >
+                  {language === 'sw' ? 'Rudi Desktop' : 'Reset to Desktop'}
+                </button>
+              </div>
+
+              {/* Physical Mockup Device Frame */}
+              <div 
+                className={`relative bg-slate-950 border-[10px] border-slate-800 rounded-[2.5rem] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] transition-all duration-300 flex flex-col overflow-hidden my-auto ${
+                  deviceViewMode === 'tablet' ? 'w-[768px] max-w-full h-[820px]' : 'w-[390px] max-w-full h-[760px]'
+                }`}
               >
-                {renderContent()}
-              </motion.div>
-            </AnimatePresence>
-          </div>
+                {/* Top Speaker & Notch */}
+                <div className="w-full bg-slate-900 h-6 flex items-center justify-center shrink-0 border-b border-white/5 relative">
+                  {deviceViewMode === 'mobile' && (
+                    <div className="w-24 h-4 bg-black rounded-full flex items-center justify-end px-2 gap-1.5 shadow-inner">
+                      <div className="w-2 h-2 rounded-full bg-blue-900/60 border border-blue-500/40" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-slate-800" />
+                    </div>
+                  )}
+                  {deviceViewMode === 'tablet' && (
+                    <div className="w-3 h-3 rounded-full bg-slate-800 border border-white/10" />
+                  )}
+                </div>
+
+                {/* Inner Device Screen */}
+                <div className="flex-grow overflow-y-auto p-3 sm:p-4 bg-[#070e1e] custom-scrollbar">
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={`${activeTab}-${deviceViewMode}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className="h-full"
+                    >
+                      {renderContent()}
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+
+                {/* Bottom Home Indicator Bar */}
+                <div className="w-full bg-slate-950 h-5 flex items-center justify-center shrink-0 border-t border-white/5">
+                  <div className="w-28 h-1 bg-white/30 rounded-full" />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="max-w-7xl mx-auto h-full">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeTab}
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="h-full"
+                >
+                  {renderContent()}
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          )}
         </div>
 
         {/* Quick Action Drawer Overlay */}
