@@ -2426,17 +2426,17 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
   const apiSecret = (settings.apiSecret || "").trim();
   const rawSenderId = (settings.senderId || "").trim();
   
-  // Detect provider configurations - Force Meseji as the only supported provider (or simulation)
-  const isSwala = false;
-  const isEhub = false;
-  const isMeseji = settings.provider !== "simulation";
-  const effectiveProvider = (isMeseji ? "meseji" : "simulation") as string;
+  // Detect provider configurations dynamically based on settings.provider
+  const actualProviderType = (settings.provider || "simulation").toLowerCase();
+  const isSwala = actualProviderType === "swalasms" || actualProviderType === "swala";
+  const isEhub = actualProviderType === "ehub";
+  const isMeseji = actualProviderType === "meseji";
+  const effectiveProvider = actualProviderType;
 
   // Internal routing helper variables to bypass hardcoded constants during fallback execution
-  const actualProviderType = (settings.provider || "simulation").toLowerCase();
-  const actualIsSwala = actualProviderType === "swalasms" || actualProviderType === "swala";
-  const actualIsEhub = actualProviderType === "ehub";
-  const actualIsMeseji = actualProviderType === "meseji";
+  const actualIsSwala = isSwala;
+  const actualIsEhub = isEhub;
+  const actualIsMeseji = isMeseji;
 
   let senderId = rawSenderId;
   const APPROVED_EHUB_IDS = ["339330f1-4e6a-4bf7-a9f8-eaae2a9dd397", "19f41b59-19d0-4f98-b8c9-9d5b1ac31308"];
@@ -2955,6 +2955,7 @@ Tafadhali badilisha 'Sender ID' kwenye Alama ya Mipangilio (Settings) ya app hii
       if (senderId !== "MESEJI") {
         console.log(`[SMS-Meseji] Retrying with default sender_id 'MESEJI' after 500 error for '${senderId}'...`);
         const retryBody: any = {
+          api_key: apiKey,
           contacts: cleanPhone,
           message: text,
           sender_id: "MESEJI"

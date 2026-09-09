@@ -1537,12 +1537,24 @@ Lema, Nguvu Moja!`);
                     if (!newConfig.senderId || newConfig.senderId.includes('-')) {
                       newConfig.senderId = 'UWALEMI';
                     }
+                  } else if (val === 'swalasms') {
+                    newConfig.baseUrl = 'https://swalasms.com/api/v1/sms/quick-message';
+                    newConfig.apiKey = 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3';
+                    newConfig.senderId = 'UWALEMI';
+                    newConfig.secretKey = '';
+                  } else if (val === 'ehub') {
+                    newConfig.baseUrl = 'https://sms.ehub.co.tz/api/v1/sms/send';
+                    newConfig.apiKey = 'sk_Y8rB4E2PzMMOQZ3LyCbf8xYKw1tjniyhae85NX3IxKgLx6GD';
+                    newConfig.secretKey = 'CDWwiiKKTa44Ql6R4uOO4jZgHVnhmnRivl7SrIYgdbeRSKJ3Z8Q7JoaSqe07miWf';
+                    newConfig.senderId = '19f41b59-19d0-4f98-b8c9-9d5b1ac31308';
                   }
                   setGatewayConfig(newConfig);
                 }}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
               >
+                <option value="swalasms">SwalaSMS (UWALEMI / Free Backups)</option>
                 <option value="meseji">Meseji API (Meseji.co.tz - Tanzania)</option>
+                <option value="ehub">eHub SMS (Tanzania)</option>
                 <option value="simulation">Mwigizo wa Kujaribu (Simulation Mode)</option>
               </select>
             </div>
