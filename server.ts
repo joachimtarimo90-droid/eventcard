@@ -2432,13 +2432,19 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
   const isMeseji = settings.provider !== "simulation";
   const effectiveProvider = (isMeseji ? "meseji" : "simulation") as string;
 
+  // Internal routing helper variables to bypass hardcoded constants during fallback execution
+  const actualProviderType = (settings.provider || "simulation").toLowerCase();
+  const actualIsSwala = actualProviderType === "swalasms" || actualProviderType === "swala";
+  const actualIsEhub = actualProviderType === "ehub";
+  const actualIsMeseji = actualProviderType === "meseji";
+
   let senderId = rawSenderId;
   const APPROVED_EHUB_IDS = ["339330f1-4e6a-4bf7-a9f8-eaae2a9dd397", "19f41b59-19d0-4f98-b8c9-9d5b1ac31308"];
-  if (isSwala) {
+  if (isSwala || actualIsSwala) {
     if (!senderId || senderId.includes("-") || senderId === "00420892-38bd-47b0-9a5f-ea55bef5d2d1" || senderId === "339330f1-4e6a-4bf7-a9f8-eaae2a9dd397") {
       senderId = (text && (text.includes("UWALEMI") || text.includes("Uwalemi") || text.includes("ada") || text.includes("kikao") || text.includes("UWL-"))) ? "UWALEMI" : "EVENT CARD";
     }
-  } else if (isEhub) {
+  } else if (isEhub || actualIsEhub) {
     // Resolve approved UUID for eHub (EVENT CARD: 339330f1-4e6a-4bf7-a9f8-eaae2a9dd397, UWALEMI: 19f41b59-19d0-4f98-b8c9-9d5b1ac31308)
     const isUuid = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
     if (!isUuid(senderId) || senderId === "00420892-38bd-47b0-9a5f-ea55bef5d2d1" || !APPROVED_EHUB_IDS.includes(senderId)) {
@@ -2449,7 +2455,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
       }
     }
   } else if (!senderId || (isMeseji && (senderId.includes("-") || senderId === "00420892-38bd-47b0-9a5f-ea55bef5d2d1" || senderId === "339330f1-4e6a-4bf7-a9f8-eaae2a9dd397"))) {
-    if (isMeseji) {
+    if (isMeseji && !actualIsSwala && !actualIsEhub) {
       senderId = rawSenderId || "EVENT CARD";
     } else if (settings.provider === "beem") {
       senderId = "INFO";
@@ -2468,11 +2474,11 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     headers: { "Content-Type": "application/json" },
   };
 
-  if (effectiveProvider !== "simulation" && effectiveProvider !== "custom" && !apiKey && !isEhub && !isSwala) {
+  if (effectiveProvider !== "simulation" && effectiveProvider !== "custom" && !apiKey && !isEhub && !isSwala && !actualIsEhub && !actualIsSwala) {
     throw new Error(`API Key ya SMS haijawekwa kwa ajili ya mtoa huduma (${effectiveProvider}). Tafadhali ingia kwenye Mipangilio ya SMS (Settings Icon) kisha uweke API Key na Sender ID yako.`);
   }
 
-  if (effectiveProvider === "meseji") {
+  if (effectiveProvider === "meseji" && !actualIsEhub && !actualIsSwala) {
     requestUrl = "https://meseji.co.tz/api/v1/sms/send";
 
     const mesejiHeaders: any = {
@@ -2517,7 +2523,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     fetchOptions.body = JSON.stringify(bodyData);
     
     console.log(`[SMS] Meseji Dispatch: ${requestUrl}, Recipient: ${cleanPhone}, SenderID: ${effectiveSenderId}${scheduleTime ? ', ScheduleTime: ' + scheduleTime : ''}`);
-  } else if (effectiveProvider === "ehub") {
+  } else if (effectiveProvider === "ehub" || actualIsEhub) {
     requestUrl = settings.url || "https://sms.ehub.co.tz/api/v1/sms/send";
     if (requestUrl.endsWith("/api/v1") || requestUrl.endsWith("/api/v1/")) {
       requestUrl = requestUrl.replace(/\/$/, "") + "/sms/send";
@@ -2669,7 +2675,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     });
     
     console.log(`[SMS] Notify Africa Dispatch: ${requestUrl}, Recipient: ${formattedPhone}, SenderID: ${senderId}`);
-  } else if (effectiveProvider === "swalasms") {
+  } else if (effectiveProvider === "swalasms" || actualIsSwala) {
     requestUrl = settings.url || "https://swalasms.com/api/v1/sms/quick-message";
     const effectiveKey = (apiKey && apiKey.startsWith("swl_")) ? apiKey : "swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3";
     const isUwalemiMsg = text && (text.includes("UWALEMI") || text.includes("Uwalemi") || text.includes("ada") || text.includes("kikao") || text.includes("UWL-"));
@@ -2744,7 +2750,7 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     responseContent = await response.text();
     
     if (settings.provider === "ehub" || !response.ok) {
-      const isMesejiAuthError = (settings.provider === "meseji" || isMeseji) && 
+      const isMesejiAuthError = (settings.provider === "meseji" || (isMeseji && actualIsMeseji)) && 
         (response.status === 401 || responseContent.toLowerCase().includes("expired") || responseContent.toLowerCase().includes("invalid"));
       
       if (!isMesejiAuthError) {
@@ -2837,6 +2843,12 @@ async function dispatchSMS(phone: string, text: string, channel: 'sms' | 'whatsa
     }
 
     if (isAuthError) {
+      if (actualIsSwala) {
+        throw new Error(`Kifunguo chako cha API cha SwalaSMS kimeisha muda au si sahihi (Invalid SwalaSMS Token). Tafadhali thibitisha salio la SwalaSMS na Token yako. [Jibu la Gateway: ${sanitizedBody}]`);
+      }
+      if (actualIsEhub) {
+        throw new Error(`Kifunguo chako cha API cha eHub SMS kimeisha muda au si sahihi (Invalid eHub Token). Tafadhali thibitisha salio la eHub na Token yako. [Jibu la Gateway: ${sanitizedBody}]`);
+      }
       if (apiKey.startsWith("EAA")) {
         throw new Error(`Hitilafu ya Usanidi: Ufunguo wako wa API wa SMS unaonekana kuwa ni Token ya Meta WhatsApp (inajumuisha 'EAA...'). Kwa ajili ya kutuma SMS za kawaida, unahitaji kuweka Token ya Meseji.co.tz kwenye Mipangilio ya SMS, sio Token ya Meta WhatsApp. Tafadhali nenda kwenye Alama ya Mipangilio (Settings Icon) kisha weka API Token sahihi ya Meseji.co.tz.`);
       }
@@ -4379,6 +4391,414 @@ Lema, Nguvu Moja!`;
     }
   });
 
+  // ==========================================
+  // UWALEMI DIGITAL ELECTION (E-VOTING) APIS
+  // ==========================================
+  app.get("/api/uwalemi/election-ballot/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      if (!token) {
+        return res.status(400).json({ error: "Kifunguo cha mpiga kura (Token) kinahitajika" });
+      }
+
+      const db = await readDBLatest();
+      const state = db.uwalemiState || {};
+      const elections = state.elections || [];
+
+      // Find election containing this voter token
+      let matchedElection: any = null;
+      let matchedVoter: any = null;
+
+      for (const elec of elections) {
+        if (Array.isArray(elec.voters)) {
+          const v = elec.voters.find((vot: any) => vot.voterToken === token);
+          if (v) {
+            matchedElection = elec;
+            matchedVoter = v;
+            break;
+          }
+        }
+      }
+
+      if (!matchedElection || !matchedVoter) {
+        return res.status(404).json({ 
+          error: "Kifunguo cha kura hakijatambuliwa. Tafadhali thibitisha kiungo ulichotumiwa kwenye SMS yako ya UWALEMI." 
+        });
+      }
+
+      // Check date validity
+      const now = new Date();
+      const startDate = matchedElection.startDate ? new Date(matchedElection.startDate) : null;
+      const endDate = matchedElection.endDate ? new Date(matchedElection.endDate) : null;
+
+      let timeStatus: 'not_started' | 'open' | 'ended' = 'open';
+      if (startDate && now < startDate) {
+        timeStatus = 'not_started';
+      } else if (endDate && now > endDate) {
+        timeStatus = 'ended';
+      }
+
+      // Sanitize voter info (return only their personal status)
+      const voterSafe = {
+        memberNo: matchedVoter.memberNo,
+        fullName: matchedVoter.fullName,
+        phone: matchedVoter.phone,
+        isEligible: matchedVoter.isEligible,
+        ineligibilityReason: matchedVoter.ineligibilityReason,
+        hasVoted: matchedVoter.hasVoted,
+        votedAt: matchedVoter.votedAt,
+        receiptCode: matchedVoter.receiptCode
+      };
+
+      // Compute simple, safe aggregate results tally if voter has voted or election ended/completed
+      let resultsTally: any = null;
+      if (matchedVoter.hasVoted || timeStatus === 'ended' || matchedElection.status === 'completed') {
+        const ballots = matchedElection.ballots || [];
+        const voters = matchedElection.voters || [];
+        const totalEligible = voters.filter((v: any) => v.isEligible).length;
+        const totalCast = ballots.length;
+        const turnoutPercent = totalEligible > 0 ? Math.round((totalCast / totalEligible) * 100) : 0;
+
+        const positionsTally = (matchedElection.positions || []).map((pos: any) => {
+          const candidateVotes: Record<string, number> = {};
+          (pos.candidates || []).forEach((c: any) => {
+            candidateVotes[c.id] = 0;
+          });
+
+          ballots.forEach((ballot: any) => {
+            const votesForPos = ballot.votes?.[pos.id] || [];
+            votesForPos.forEach((cId: string) => {
+              if (cId in candidateVotes) {
+                candidateVotes[cId] = (candidateVotes[cId] || 0) + 1;
+              }
+            });
+          });
+
+          const results = (pos.candidates || []).map((c: any) => {
+            const count = candidateVotes[c.id] || 0;
+            const pct = totalCast > 0 ? Math.round((count / totalCast) * 100) : 0;
+            return {
+              candidateId: c.id,
+              candidateName: c.fullName,
+              candidateNo: c.memberNo,
+              votesCount: count,
+              percentage: pct
+            };
+          }).sort((a: any, b: any) => b.votesCount - a.votesCount);
+
+          if (results.length > 0) {
+            const maxVotes = results[0].votesCount;
+            const maxWinners = pos.maxWinners || 1;
+            if (maxVotes > 0) {
+              results.forEach((r: any, rIdx: number) => {
+                if (r.votesCount === maxVotes) {
+                  const sharesHighest = results.filter((x: any) => x.votesCount === maxVotes).length;
+                  if (sharesHighest > 1) {
+                    r.isTie = true;
+                  } else {
+                    r.isWinner = true;
+                  }
+                } else if (rIdx < maxWinners && r.votesCount > 0) {
+                  r.isWinner = true;
+                }
+              });
+            }
+          }
+
+          return {
+            positionId: pos.id,
+            positionTitle: pos.title,
+            maxWinners: pos.maxWinners || 1,
+            totalVotesForPosition: results.reduce((sum: number, r: any) => sum + r.votesCount, 0),
+            results
+          };
+        });
+
+        resultsTally = {
+          totalEligibleVoters: totalEligible,
+          totalBallotsCast: totalCast,
+          turnoutPercentage: turnoutPercent,
+          positionsTally
+        };
+      }
+
+      // Return clean election info without exposing other voters' tokens
+      return res.json({
+        success: true,
+        election: {
+          id: matchedElection.id,
+          title: matchedElection.title,
+          description: matchedElection.description,
+          termYears: matchedElection.termYears,
+          startDate: matchedElection.startDate,
+          endDate: matchedElection.endDate,
+          status: matchedElection.status,
+          positions: matchedElection.positions || [],
+          totalEligibleCount: (matchedElection.voters || []).filter((v: any) => v.isEligible).length,
+          totalVotesCast: (matchedElection.ballots || []).length
+        },
+        voter: voterSafe,
+        timeStatus,
+        resultsTally,
+        groupSettings: {
+          groupName: state.groupSettings?.groupName || 'UWALEMI',
+          slogan: state.groupSettings?.slogan || 'Lema, Nguvu Moja.'
+        }
+      });
+    } catch (err: any) {
+      console.error("[UWALEMI ELECTION] Error fetching ballot:", err);
+      res.status(500).json({ error: "Hitilafu ya seva wakati wa kupakia fomu ya kura" });
+    }
+  });
+
+  app.post("/api/uwalemi/election/vote", async (req, res) => {
+    try {
+      const { token, electionId, votes } = req.body;
+      if (!token || !electionId || !votes || typeof votes !== 'object') {
+        return res.status(400).json({ error: "Taarifa za kura hazijakamilika" });
+      }
+
+      const db = await readDBLatest();
+      const state = db.uwalemiState || {};
+      const elections = state.elections || [];
+
+      const elecIndex = elections.findIndex((e: any) => e.id === electionId);
+      if (elecIndex === -1) {
+        return res.status(404).json({ error: "Uchaguzi huu haukupatikana" });
+      }
+
+      const election = elections[elecIndex];
+
+      // Check election status
+      if (election.status !== 'active') {
+        const statusMsg = election.status === 'completed' 
+          ? "Uchaguzi umeshakamilika na kufungwa rasmi."
+          : election.status === 'paused'
+            ? "Uchaguzi umesitishwa kwa muda na Kamati ya Uchaguzi."
+            : "Uchaguzi bado haujaanza rasmi (Hali: Matayarisho).";
+        return res.status(400).json({ error: statusMsg });
+      }
+
+      // Check time window
+      const now = new Date();
+      if (election.startDate && new Date(election.startDate) > now) {
+        return res.status(400).json({ error: `Muda wa kuanza kupiga kura bado haujafika (${new Date(election.startDate).toLocaleString('sw-TZ')}).` });
+      }
+      if (election.endDate && new Date(election.endDate) < now) {
+        return res.status(400).json({ error: `Dirisha la kupiga kura limefungwa rasmi tarehe ${new Date(election.endDate).toLocaleString('sw-TZ')}.` });
+      }
+
+      // Find voter in election
+      const voterIndex = (election.voters || []).findIndex((v: any) => v.voterToken === token);
+      if (voterIndex === -1) {
+        return res.status(404).json({ error: "Kifunguo chako cha kura si sahihi au hakimo kwenye daftari la uchaguzi huu." });
+      }
+
+      const voter = election.voters[voterIndex];
+
+      // Eligibility check
+      if (!voter.isEligible) {
+        return res.status(403).json({ 
+          error: `Huna sifa ya kupiga kura katika uchaguzi huu: ${voter.ineligibilityReason || 'Vigezo vya kikatiba havijakamilika.'}` 
+        });
+      }
+
+      // Already voted check
+      if (voter.hasVoted) {
+        return res.status(400).json({ 
+          error: `Tayari ulishapiga kura yako ya uchaguzi huu tarehe ${new Date(voter.votedAt).toLocaleString('sw-TZ')} (Stakabadhi: ${voter.receiptCode}). Kura moja tu inaruhusiwa.` 
+        });
+      }
+
+      // Validate positions and vote selections
+      const cleanVotes: Record<string, string[]> = {};
+      const positions = election.positions || [];
+
+      for (const pos of positions) {
+        const candidateIds = votes[pos.id];
+        if (Array.isArray(candidateIds) && candidateIds.length > 0) {
+          const maxWinners = Math.max(1, pos.maxWinners || 1);
+          if (candidateIds.length > maxWinners) {
+            return res.status(400).json({ 
+              error: `Nafasi ya "${pos.title}" inaruhusu kuchagua wagombea wasiozidi ${maxWinners}. Umechagua ${candidateIds.length}.` 
+            });
+          }
+          // Verify candidate IDs exist in this position
+          const validCandidateIds = candidateIds.filter((cId: string) => 
+            (pos.candidates || []).some((c: any) => c.id === cId)
+          );
+          cleanVotes[pos.id] = validCandidateIds;
+        } else {
+          // Empty vote / Abstention for this position
+          cleanVotes[pos.id] = [];
+        }
+      }
+
+      // Generate anonymous receipt code
+      const randNum = Math.floor(10000 + Math.random() * 90000);
+      const letterCode = Math.random().toString(36).substring(2, 5).toUpperCase();
+      const receiptCode = `UWL-VT-${letterCode}${randNum}`;
+      const voteTimestamp = new Date().toISOString();
+
+      // Record anonymous ballot (NO voter identification attached!)
+      if (!Array.isArray(election.ballots)) {
+        election.ballots = [];
+      }
+      election.ballots.push({
+        id: `ballot-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        electionId: election.id,
+        timestamp: voteTimestamp,
+        receiptCode,
+        votes: cleanVotes
+      });
+
+      // Update voter record (mark that this member has voted, but don't store what they voted for)
+      voter.hasVoted = true;
+      voter.votedAt = voteTimestamp;
+      voter.receiptCode = receiptCode;
+
+      // Persist state
+      elections[elecIndex] = election;
+      state.elections = elections;
+      db.uwalemiState = state;
+      await writeDB(db);
+
+      console.log(`[UWALEMI ELECTION] Ballot cast successfully for voter ${voter.memberNo}. Receipt: ${receiptCode}`);
+
+      // Try sending confirmation SMS to voter in the background
+      const voterPhone = voter.phone;
+      const voterName = voter.fullName;
+      if (voterPhone && voterPhone.length >= 9) {
+        setTimeout(async () => {
+          try {
+            const smsText = `UWALEMI UCHAGUZI: Ndugu ${voterName} (${voter.memberNo}), kura yako ya viongozi imepokelewa na kurekodiwa kwa siri 100%. Namba ya Stakabadhi: ${receiptCode}. Tarehe: ${new Date(voteTimestamp).toLocaleDateString('sw-TZ')}. Asante kwa kushiriki.`;
+            
+            const configuredSms = state.groupSettings?.smsConfig;
+            const globalSmsSettings = db.smsGatewaySettings || {};
+            let activeApiKey = configuredSms?.apiKey || globalSmsSettings?.apiKey || '';
+            let effectiveProvider = configuredSms?.provider || globalSmsSettings?.provider || 'meseji';
+            if (activeApiKey.startsWith('swl_')) effectiveProvider = 'swalasms';
+            else if (activeApiKey.startsWith('sk_')) effectiveProvider = 'ehub';
+
+            if (effectiveProvider !== 'simulation' && activeApiKey) {
+              const smsPayload = {
+                recipients: [{ name: voterName, phone: voterPhone, memberNo: voter.memberNo }],
+                message: smsText,
+                messageType: 'receipt'
+              };
+              // Dispatch SMS via internal helper if available
+              fetch(`http://localhost:3000/api/uwalemi/send-sms`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(smsPayload)
+              }).catch((e: any) => console.warn('[UWALEMI ELECTION] Confirmation SMS dispatch failed:', e.message));
+            }
+          } catch (e: any) {
+            console.warn('[UWALEMI ELECTION] Could not send confirmation SMS:', e.message);
+          }
+        }, 100);
+      }
+
+      return res.json({
+        success: true,
+        receiptCode,
+        votedAt: voteTimestamp,
+        message: "Hongera! Kura yako ya uchaguzi wa UWALEMI imepokelewa na kurekodiwa kikamilifu kwa siri 100%."
+      });
+    } catch (err: any) {
+      console.error("[UWALEMI ELECTION] Error casting vote:", err);
+      res.status(500).json({ error: "Hitilafu ya seva wakati wa kurekodi kura yako" });
+    }
+  });
+
+  app.post("/api/uwalemi/election/send-voter-links", async (req, res) => {
+    try {
+      const { electionId, voterTokens, customMessageTemplate, originUrl } = req.body;
+      if (!electionId) {
+        return res.status(400).json({ error: "electionId inahitajika" });
+      }
+
+      const db = await readDBLatest();
+      const state = db.uwalemiState || {};
+      const elections = state.elections || [];
+      const election = elections.find((e: any) => e.id === electionId);
+
+      if (!election) {
+        return res.status(404).json({ error: "Uchaguzi haukupatikana" });
+      }
+
+      const voters = election.voters || [];
+      let targetVoters = voters.filter((v: any) => v.isEligible);
+
+      if (Array.isArray(voterTokens) && voterTokens.length > 0) {
+        targetVoters = targetVoters.filter((v: any) => voterTokens.includes(v.voterToken));
+      }
+
+      if (targetVoters.length === 0) {
+        return res.status(400).json({ error: "Hakuna wapiga kura wenye sifa waliochaguliwa" });
+      }
+
+      // Determine base URL
+      const hostOrigin = originUrl || 'https://ais-dev-szslj3otpfjyj7doxrjz75-384135275183.europe-west2.run.app';
+
+      const defaultTemplate = `Habari {name} ({memberNo}), uchaguzi wa viongozi wa UWALEMI unaendelea. Bofya kiungo hiki cha siri kupiga kura yako: {link} . Tafadhali usimtumie mtu mwingine kiungo hiki.`;
+      const template = customMessageTemplate || defaultTemplate;
+
+      const configuredSms = state.groupSettings?.smsConfig;
+      const globalSmsSettings = db.smsGatewaySettings || {};
+      let activeApiKey = configuredSms?.apiKey || globalSmsSettings?.apiKey || '';
+      let effectiveProvider = configuredSms?.provider || globalSmsSettings?.provider || 'meseji';
+      if (activeApiKey.startsWith('swl_')) effectiveProvider = 'swalasms';
+      else if (activeApiKey.startsWith('sk_')) effectiveProvider = 'ehub';
+
+      let sentCount = 0;
+      let failedCount = 0;
+      const nowStr = new Date().toISOString();
+
+      for (const voter of targetVoters) {
+        const personalLink = `${hostOrigin}/?uwalemiVote=${voter.voterToken}`;
+        const personalizedMsg = template
+          .replace(/{name}/g, voter.fullName)
+          .replace(/{memberNo}/g, voter.memberNo)
+          .replace(/{phone}/g, voter.phone)
+          .replace(/{link}/g, personalLink)
+          .replace(/{title}/g, election.title);
+
+        try {
+          if (effectiveProvider !== 'simulation' && activeApiKey) {
+            await fetch(`http://localhost:3000/api/uwalemi/send-sms`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                recipients: [{ name: voter.fullName, phone: voter.phone, memberNo: voter.memberNo }],
+                message: personalizedMsg,
+                messageType: 'broadcast'
+              })
+            });
+          }
+          voter.smsSentAt = nowStr;
+          sentCount++;
+        } catch (e: any) {
+          failedCount++;
+        }
+      }
+
+      // Save updated voter.smsSentAt timestamps
+      db.uwalemiState = state;
+      await writeDB(db);
+
+      return res.json({
+        success: true,
+        sentCount,
+        failedCount,
+        message: `Viungo vya kura ${sentCount} vimetumwa kwa njia ya SMS kwa wapiga kura walioidhinishwa.`
+      });
+    } catch (err: any) {
+      console.error("[UWALEMI ELECTION] Error sending voter links:", err);
+      res.status(500).json({ error: "Hitilafu ya seva wakati wa kutuma viungo vya kura" });
+    }
+  });
+
   app.get("/api/guest-lookup", async (req, res) => {
     try {
       const code = req.query.code as string;
@@ -5778,7 +6198,16 @@ Lema, Nguvu Moja!`;
       }
 
       const db = await readDBLatest();
+      if (!db) {
+        return res.status(500).json({ error: "Kanzidata haipatikani kwa sasa. Tafadhali jaribu tena." });
+      }
       db.queueJobs = db.queueJobs || [];
+
+      // Clean up older completed or failed jobs to avoid database bloating
+      if (db.queueJobs.length >= 5) {
+        // Sort with oldest first and keep only the last 3-4 jobs
+        db.queueJobs = db.queueJobs.slice(-3);
+      }
 
       const job = {
         id: 'job-' + Date.now() + Math.random().toString(36).substring(2, 7),
@@ -5810,7 +6239,94 @@ Lema, Nguvu Moja!`;
       res.json({ success: true, job });
     } catch (e: any) {
       console.error("Queue creation error:", e);
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: e.message || "Hitilafu isiyojulikana imetokea wakati wa kujiunga na foleni." });
+    }
+  });
+
+  app.post("/api/queue/send-direct", async (req, res) => {
+    try {
+      const { eventId, channel, tasks } = req.body;
+      if (!channel || !tasks || !Array.isArray(tasks)) {
+        return res.status(400).json({ error: "Missing required parameters (channel, tasks)" });
+      }
+
+      const db = await readDBLatest();
+      if (!db) {
+        return res.status(500).json({ error: "Kanzidata haipatikani kwa sasa. Tafadhali jaribu tena baada ya muda mfupi." });
+      }
+
+      const settings = db.smsGatewaySettings || { provider: "simulation" };
+      let deliveredCount = 0;
+      let failedCount = 0;
+      const logs: string[] = [];
+
+      const protocol = 'https';
+      const host = 'eventcard.co.tz';
+      const origin = `${protocol}://${host}`;
+
+      for (const task of tasks) {
+        if (!task || !task.phone) continue;
+        try {
+          // dispatchSMS parses the settings, substitutes templates/short URLs and hits the corresponding SMS gateway APIs (Meseji, SwalaSMS, eHub, simulation etc)
+          await dispatchSMS(
+            task.phone,
+            task.text,
+            channel,
+            settings,
+            undefined,
+            task.templateParams,
+            task.guestId,
+            origin,
+            eventId || 'default',
+            task.templateName,
+            task.imageUrl,
+            task.lang || 'sw'
+          );
+
+          deliveredCount++;
+
+          // Update guest status in database
+          if (task.guestId && db.guests) {
+            db.guests = db.guests.map((g: any) => {
+              if (g.id === task.guestId) {
+                if (channel === 'whatsapp') {
+                  const currentCount = typeof g.whatsappCount === 'number' ? g.whatsappCount : (g.whatsappStatus === 'Imetumia' ? 1 : 0);
+                  return { 
+                    ...g, 
+                    whatsappStatus: "Imetumia", 
+                    whatsappCount: currentCount + 1,
+                    lastSentChannel: "whatsapp",
+                    lastSentLang: task.lang || "sw"
+                  };
+                } else {
+                  const currentCount = typeof g.smsCount === 'number' ? g.smsCount : (g.smsStatus === 'Imetumia' ? 1 : 0);
+                  return { 
+                    ...g, 
+                    smsStatus: "Imetumia", 
+                    smsCount: currentCount + 1,
+                    lastSentChannel: "sms",
+                    lastSentLang: task.lang || "sw"
+                  };
+                }
+              }
+              return g;
+            });
+          }
+          logs.push(`[${new Date().toLocaleTimeString()}] ✓ Imefanikiwa kwa namba ${task.phone}`);
+        } catch (smsErr: any) {
+          failedCount++;
+          const errMsg = smsErr?.message || String(smsErr);
+          logs.push(`[${new Date().toLocaleTimeString()}] ✗ Imeshindwa kwa namba ${task.phone}. Sababu: ${errMsg}`);
+        }
+      }
+
+      // Sync updated guest statuses back to persistent store (PostgreSQL/Local JSON fallback)
+      await writeDB(db);
+
+      res.json({ success: true, deliveredCount, failedCount, logs });
+    } catch (e: any) {
+      console.error("Direct send error:", e);
+      res.status(500).json({ error: e.message || "Hitilafu imetokea wakati wa kutuma papo hapo." });
     }
   });
 

@@ -1,4 +1,16 @@
-import { UwalemiState, UwalemiMember, UwalemiGroupSettings, UwalemiMemberRole, UwalemiFinePayment } from '../types/uwalemi';
+import { 
+  UwalemiState, 
+  UwalemiMember, 
+  UwalemiGroupSettings, 
+  UwalemiMemberRole, 
+  UwalemiFinePayment,
+  UwalemiElection,
+  UwalemiMonthlyPayment,
+  UwalemiVoterRecord,
+  UwalemiElectionPosition,
+  UwalemiCandidate,
+  UwalemiAnonymousBallot
+} from '../types/uwalemi';
 
 export const UWALEMI_ROLE_PRIORITY: Record<string, number> = {
   'Mwenyekiti': 1,
@@ -105,6 +117,7 @@ export const INITIAL_UWALEMI_STATE: UwalemiState & { initialized: boolean } = {
   meetings: [],
   finePayments: [],
   accruedFines: [],
+  elections: [],
   messageLogs: [],
   lastUpdated: new Date().toISOString()
 };
@@ -121,6 +134,9 @@ export async function fetchUwalemiState(): Promise<UwalemiState> {
   }
 
   const sanitizeState = (s: UwalemiState): UwalemiState => {
+    if (!Array.isArray(s.elections)) {
+      s.elections = [];
+    }
     if (!s.finePayments) {
       s.finePayments = [];
     } else {
@@ -1314,5 +1330,200 @@ export async function triggerMonthlyAutoRemindersApi(forceNow = false): Promise<
       message: e.message || 'Hitilafu ya mtandao'
     };
   }
+}
+
+// ==========================================
+// UWALEMI DIGITAL ELECTION (E-VOTING) UTILS
+// ==========================================
+
+export function generateVoterToken(memberNo: string, electionId: string): string {
+  const cleanMNo = (memberNo || 'MEM').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const timePart = Date.now().toString(36).slice(-4).toUpperCase();
+  return `VT-${cleanMNo}-${rand}${timePart}`;
+}
+
+export function generateVoteReceiptCode(): string {
+  const randNum = Math.floor(10000 + Math.random() * 90000);
+  const letterCode = Math.random().toString(36).substring(2, 5).toUpperCase();
+  return `UWL-VT-${letterCode}${randNum}`;
+}
+
+export function recomputeElectionVoters(
+  election: Partial<UwalemiElection>,
+  members: UwalemiMember[],
+  payments: UwalemiMonthlyPayment[]
+): UwalemiVoterRecord[] {
+  if (!Array.isArray(members)) return [];
+  const criteria = election.eligibilityCriteria || {
+    activeMembersOnly: true,
+    requireRegistrationFeePaid: false,
+    maxAllowedFeeDebtMonths: 99
+  };
+
+  const existingVoterMap = new Map<string, UwalemiVoterRecord>();
+  if (Array.isArray(election.voters)) {
+    election.voters.forEach(v => {
+      existingVoterMap.set(v.memberId, v);
+    });
+  }
+
+  return members.map(m => {
+    const existing = existingVoterMap.get(m.id);
+    let isEligible = true;
+    let reason = '';
+
+    if (criteria.activeMembersOnly && m.status !== 'active') {
+      isEligible = false;
+      reason = 'Mwanachama hayuko hai (Status: ' + (m.status === 'suspended' ? 'Amesimamishwa' : 'Hajahuishwa') + ')';
+    }
+
+    if (isEligible && criteria.requireRegistrationFeePaid && !m.registrationFeePaid) {
+      isEligible = false;
+      reason = 'Haijakamilika ada ya kiingilio cha uanachama';
+    }
+
+    if (isEligible && criteria.maxAllowedFeeDebtMonths < 99) {
+      const dummyState: any = { monthlyPayments: payments || [], members };
+      const debtInfo = calculateMemberFeeDebt(m, dummyState);
+      const unpaidCount = debtInfo.penaltyMonthsCount || 0;
+      if (unpaidCount > criteria.maxAllowedFeeDebtMonths) {
+        isEligible = false;
+        reason = `Madeni ya ada za mwezi yamezidi kiwango cha kikatiba (${unpaidCount} miezi bila ada)`;
+      }
+    }
+
+    const token = existing?.voterToken || generateVoterToken(m.memberNo, election.id || 'ELEC');
+
+    return {
+      voterToken: token,
+      memberId: m.id,
+      memberNo: m.memberNo,
+      fullName: m.fullName,
+      phone: m.phone,
+      isEligible,
+      ineligibilityReason: reason || undefined,
+      hasVoted: existing?.hasVoted || false,
+      votedAt: existing?.votedAt,
+      receiptCode: existing?.receiptCode,
+      smsSentAt: existing?.smsSentAt
+    };
+  });
+}
+
+export interface ElectionPositionTally {
+  positionId: string;
+  positionTitle: string;
+  maxWinners: number;
+  totalVotesForPosition: number;
+  results: {
+    candidateId: string;
+    candidateName: string;
+    candidateNo: string;
+    candidatePhone?: string;
+    avatarUrl?: string;
+    slogan?: string;
+    votesCount: number;
+    percentage: number;
+    isWinner: boolean;
+    isTie: boolean;
+  }[];
+}
+
+export function calculateElectionTally(election: UwalemiElection): {
+  totalEligibleVoters: number;
+  totalBallotsCast: number;
+  turnoutPercentage: number;
+  positionsTally: ElectionPositionTally[];
+} {
+  const eligibleVoters = (election.voters || []).filter(v => v.isEligible);
+  const totalEligibleVoters = eligibleVoters.length;
+  const ballots = election.ballots || [];
+  const totalBallotsCast = ballots.length;
+  const turnoutPercentage = totalEligibleVoters > 0 
+    ? Math.round((totalBallotsCast / totalEligibleVoters) * 100) 
+    : 0;
+
+  const positionsTally: ElectionPositionTally[] = (election.positions || []).map(pos => {
+    // Count votes per candidate
+    const voteCountMap = new Map<string, number>();
+    let totalVotesForPosition = 0;
+
+    pos.candidates.forEach(c => {
+      voteCountMap.set(c.id, 0);
+    });
+
+    ballots.forEach(ballot => {
+      const chosenCandidateIds = ballot.votes?.[pos.id];
+      if (Array.isArray(chosenCandidateIds)) {
+        chosenCandidateIds.forEach(cId => {
+          if (voteCountMap.has(cId)) {
+            voteCountMap.set(cId, (voteCountMap.get(cId) || 0) + 1);
+            totalVotesForPosition += 1;
+          }
+        });
+      }
+    });
+
+    const results = pos.candidates.map(c => {
+      const votesCount = voteCountMap.get(c.id) || 0;
+      const percentage = totalVotesForPosition > 0 
+        ? Math.round((votesCount / totalVotesForPosition) * 1000) / 10 
+        : 0;
+      return {
+        candidateId: c.id,
+        candidateName: c.fullName,
+        candidateNo: c.memberNo,
+        candidatePhone: c.phone,
+        avatarUrl: c.avatarUrl,
+        slogan: c.slogan || c.manifesto,
+        votesCount,
+        percentage,
+        isWinner: false,
+        isTie: false
+      };
+    });
+
+    // Sort descending by votes
+    results.sort((a, b) => b.votesCount - a.votesCount);
+
+    // Identify winners based on maxWinners
+    if (totalVotesForPosition > 0 && results.length > 0) {
+      const maxW = Math.max(1, pos.maxWinners || 1);
+      const topVotes = results[0].votesCount;
+      
+      if (maxW === 1) {
+        // Single winner position: Check if tie for 1st place
+        if (results.length > 1 && results[1].votesCount === topVotes && topVotes > 0) {
+          results[0].isTie = true;
+          results[1].isTie = true;
+        } else if (topVotes > 0) {
+          results[0].isWinner = true;
+        }
+      } else {
+        // Multi-winner position
+        for (let i = 0; i < Math.min(maxW, results.length); i++) {
+          if (results[i].votesCount > 0) {
+            results[i].isWinner = true;
+          }
+        }
+      }
+    }
+
+    return {
+      positionId: pos.id,
+      positionTitle: pos.title,
+      maxWinners: pos.maxWinners,
+      totalVotesForPosition,
+      results
+    };
+  });
+
+  return {
+    totalEligibleVoters,
+    totalBallotsCast,
+    turnoutPercentage,
+    positionsTally
+  };
 }
 

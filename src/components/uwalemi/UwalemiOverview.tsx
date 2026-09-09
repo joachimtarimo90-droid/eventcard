@@ -14,7 +14,8 @@ import {
   Send,
   PlusCircle,
   FileSpreadsheet,
-  Award
+  Award,
+  Vote
 } from 'lucide-react';
 
 interface Props {
@@ -121,9 +122,47 @@ export const UwalemiOverview: React.FC<Props> = ({
               <HeartHandshake className="w-4 h-4" />
               Fungua Mchango wa Dharura
             </button>
+            <button
+              onClick={() => onNavigateTab('elections')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-700/80 hover:bg-emerald-600 text-white rounded-xl text-xs font-semibold shadow-lg shadow-emerald-950/30 transition-all cursor-pointer"
+            >
+              <Vote className="w-4 h-4" />
+              Uchaguzi (E-Voting)
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Active Election Notification Banner (if any) */}
+      {(state.elections || []).some(e => e.status === 'active' || e.status === 'draft') && (
+        <div className="bg-gradient-to-r from-emerald-950/60 via-slate-900 to-teal-950/60 border border-emerald-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
+              <Vote className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white">
+                  {(state.elections || []).find(e => e.status === 'active')?.title || (state.elections || [])[0]?.title}
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  {(state.elections || []).some(e => e.status === 'active') ? 'LIVE - Kura Zinaendelea' : 'Uchaguzi Mpya Umeandaliwa'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Wapiga kura walioidhinishwa: <strong>{(state.elections || [])[0]?.voters?.filter(v => v.isEligible).length || 0}</strong> • Kura zilizopigwa: <strong>{(state.elections || [])[0]?.ballots?.length || 0}</strong>
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => onNavigateTab('elections')}
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md self-start sm:self-auto"
+          >
+            Fungua Moduli ya Uchaguzi →
+          </button>
+        </div>
+      )}
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

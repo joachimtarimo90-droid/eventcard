@@ -43,6 +43,7 @@ import { useEventCard } from './context/EventCardContext';
 import { AIChatbotWidget } from './components/AIChatbotWidget';
 import { UwalemiModule } from './components/uwalemi/UwalemiModule';
 import { UwalemiMemberPortal } from './components/uwalemi/UwalemiMemberPortal';
+import { UwalemiVotingPage } from './components/uwalemi/UwalemiVotingPage';
 import LandingPage from './components/LandingPage';
 import Login from './components/Login';
 import CreateEventPage from './components/CreateEventPage';
@@ -184,6 +185,7 @@ export default function App() {
   const [isScanOnlyPortal, setIsScanOnlyPortal] = useState(false);
   const [scanPortalEventId, setScanPortalEventId] = useState<string | null>(null);
   const [uwalemiMemberParam, setUwalemiMemberParam] = useState<string | null>(null);
+  const [uwalemiVoteToken, setUwalemiVoteToken] = useState<string | null>(null);
 
   // Parse invite search query on mount
   useEffect(() => {
@@ -192,9 +194,13 @@ export default function App() {
       const params = new URLSearchParams(searchStr);
 
       // Check UWALEMI parameters
+      const uwalemiVote = params.get('uwalemiVote') || params.get('voteToken') || params.get('uwalemi_vote');
       const uwalemiMember = params.get('uwalemiMember') || params.get('uwalemi_member') || params.get('uwalemi');
       const moduleParam = params.get('module');
-      if (uwalemiMember) {
+      if (uwalemiVote) {
+        setUwalemiVoteToken(uwalemiVote);
+        setShowLanding(false);
+      } else if (uwalemiMember) {
         setUwalemiMemberParam(uwalemiMember);
         setShowLanding(false);
       }
@@ -1041,6 +1047,18 @@ export default function App() {
           />
         </div>
       </div>
+    );
+  }
+
+  if (uwalemiVoteToken) {
+    return (
+      <UwalemiVotingPage 
+        token={uwalemiVoteToken} 
+        onClose={() => {
+          setUwalemiVoteToken(null);
+          setActiveTab('uwalemi');
+        }} 
+      />
     );
   }
 

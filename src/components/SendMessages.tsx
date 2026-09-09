@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, RefreshCw, CheckCircle, MessageCircle, AlertCircle, PlayCircle, ArrowRight, X, Clipboard, Check, ExternalLink, Smartphone, MessageSquare, Search, User, Filter } from 'lucide-react';
+import { Send, RefreshCw, CheckCircle, MessageCircle, AlertCircle, PlayCircle, ArrowRight, X, Clipboard, Check, ExternalLink, Smartphone, MessageSquare, Search, User, Filter, Zap, Clock } from 'lucide-react';
 import { EventDetails, Guest, TemplateSettings } from '../types';
 import { drawCardToCanvas, generateGuestCardImage, preloadImage } from '../utils/canvasHelper';
 import { safeLocalStorage } from '../utils/storage';
@@ -79,6 +79,7 @@ export default function SendMessages({ event, settings, guests, language, onUpda
 
   const [isScheduling, setIsScheduling] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('');
+  const [sendMethod, setSendMethod] = useState<'direct' | 'queue'>('direct');
 
   const [activeSendTarget, setActiveSendTarget] = useState<{ guest: Guest, channel: 'sms' | 'whatsapp' } | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -1534,8 +1535,65 @@ Karibu sana!`);
       setSendingProgress(Math.round((preparedCount / pendingGuests.length) * 100));
     }
 
-    setSendLogs(prev => [`[INFO] Inatuma mialiko ${tasks.length} kwenye Foleni ya Server...`, ...prev]);
+    if (sendMethod === 'direct') {
+      setSendLogs(prev => [`[INFO] Inatuma mialiko ${tasks.length} papo hapo (Njia ya Uwalemi)...`, ...prev]);
+      try {
+        const directRes = await fetch('/api/queue/send-direct', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventId: event.id,
+            channel: channel,
+            tasks: tasks
+          })
+        });
 
+        const responseText = await directRes.text();
+        let responseData: any = {};
+        try {
+          responseData = JSON.parse(responseText);
+        } catch (parseErr) {
+          throw new Error(`Mwitikio wa Server sio wa JSON (Status: ${directRes.status} ${directRes.statusText}).`);
+        }
+
+        if (!directRes.ok) {
+          throw new Error(responseData.error || responseData.message || "Utumaji wa moja kwa moja umeshindwa.");
+        }
+
+        // Add all success and failed logs from the server
+        if (responseData.logs && Array.isArray(responseData.logs)) {
+          setSendLogs(prev => [...responseData.logs.slice().reverse(), ...prev]);
+        }
+
+        // Fetch fresh guests list to sync status on the UI
+        fetch('/api/guests')
+          .then(r => r.json())
+          .then(data => {
+            if (Array.isArray(data) && onUpdateGuests) {
+              onUpdateGuests(data, "Marekebisho baada ya utumaji wa moja kwa moja", false);
+            }
+          })
+          .catch(err => console.error("Error refreshing guests:", err));
+
+        showToast(
+          isEn 
+            ? `Successfully sent to ${responseData.deliveredCount} guests. Failed for ${responseData.failedCount} guests.` 
+            : `Ujumbe umetumwa kikamilifu kwa wageni ${responseData.deliveredCount}. Imeshindwa kwa wageni ${responseData.failedCount}.`, 
+          'success'
+        );
+      } catch (err: any) {
+        console.error("Direct Send Failed:", err);
+        showToast("Imeshindwa kutuma moja kwa moja: " + err.message, "error");
+        setSendLogs(prev => [`[ERROR] Hitilafu ya utumaji: ${err.message}`, ...prev]);
+      } finally {
+        setIsSendingAll(false);
+        setSendingProgress(100);
+      }
+      return;
+    }
+
+    setSendLogs(prev => [`[INFO] Inatuma mialiko ${tasks.length} kwenye Foleni ya Server...`, ...prev]);
+ 
     try {
       const queueRes = await fetch('/api/queue/create', {
         method: 'POST',
@@ -1547,14 +1605,20 @@ Karibu sana!`);
         })
       });
 
-      if (!queueRes.ok) {
-        const errorData = await queueRes.json();
-        throw new Error(errorData.error || "Queue setup failed.");
+      const responseText = await queueRes.text();
+      let responseData: any = {};
+      try {
+        responseData = JSON.parse(responseText);
+      } catch (parseErr) {
+        throw new Error(`Mwitikio wa Server sio wa JSON (Status: ${queueRes.status} ${queueRes.statusText}).`);
       }
 
-      const queueData = await queueRes.json();
+      if (!queueRes.ok) {
+        throw new Error(responseData.error || responseData.message || "Mchakato wa kujiunga na foleni umeshindwa.");
+      }
+
       setSendLogs(prev => [
-        `[SUCCESS] ✓ Kazi imeanza kutekelezwa background! ID ya kazi: ${queueData.job?.id}`,
+        `[SUCCESS] ✓ Kazi imeanza kutekelezwa background! ID ya kazi: ${responseData.job?.id}`,
         `[INFO] Unaweza kuendelea kutumia mfumo au kufunga kivinjari na utumaji utaendelea background.`,
         ...prev
       ]);
@@ -1828,6 +1892,34 @@ Karibu sana!`);
               </button>
             </div>
           )}
+
+          {/* Choice of dispatching strategy: Direct (Uwalemi style) vs Queue (Background Queue) */}
+          <div className="flex items-center space-x-1 border border-white/10 bg-white/5 rounded-xl p-0.5">
+            <button
+              onClick={() => setSendMethod('direct')}
+              className={`px-2.5 py-1 text-[10px] rounded-lg transition-all font-bold cursor-pointer flex items-center gap-1 ${
+                sendMethod === 'direct'
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm font-extrabold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title={isEn ? "Send directly (Uwalemi style, very reliable, real-time results)" : "Tuma Moja kwa Moja (Njia ya UWALEMI - thabiti na haraka)"}
+            >
+              <Zap className="w-3 h-3 text-amber-400" />
+              <span>Njia ya UWALEMI</span>
+            </button>
+            <button
+              onClick={() => setSendMethod('queue')}
+              className={`px-2.5 py-1 text-[10px] rounded-lg transition-all font-bold cursor-pointer flex items-center gap-1 ${
+                sendMethod === 'queue'
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm font-extrabold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title={isEn ? "Queue in background (useful for hundreds of messages)" : "Tuma kwa Foleni (Njia ya Background)"}
+            >
+              <Clock className="w-3 h-3 text-blue-400" />
+              <span>Njia ya Foleni</span>
+            </button>
+          </div>
 
           <div className="flex items-center space-x-2 border border-white/10 bg-white/5 rounded-xl px-2 py-1">
             <label className="text-[10px] text-slate-300 font-bold flex items-center gap-1 cursor-pointer">

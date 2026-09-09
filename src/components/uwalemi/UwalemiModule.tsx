@@ -11,6 +11,8 @@ import { UwalemiSmsCenter } from './UwalemiSmsCenter';
 import { UwalemiSettings } from './UwalemiSettings';
 import { UwalemiReports } from './UwalemiReports';
 import { UwalemiMemberPortal } from './UwalemiMemberPortal';
+import { UwalemiElections } from './UwalemiElections';
+import { UwalemiVotingPage } from './UwalemiVotingPage';
 
 import { 
   Users, 
@@ -26,7 +28,8 @@ import {
   RefreshCw,
   ExternalLink,
   Lock,
-  FileText
+  FileText,
+  Vote
 } from 'lucide-react';
 
 interface Props {
@@ -47,6 +50,8 @@ export const UwalemiModule: React.FC<Props> = ({ onBackToMainApp }) => {
 
   // Portal preview modal for a specific member
   const [previewMemberNo, setPreviewMemberNo] = useState<string | null>(null);
+  // E-Voting ballot preview
+  const [previewVotingToken, setPreviewVotingToken] = useState<string | null>(null);
 
   // Auto-open modal triggers when navigating from dashboard
   const [autoOpenNewFee, setAutoOpenNewFee] = useState<boolean>(false);
@@ -79,6 +84,13 @@ export const UwalemiModule: React.FC<Props> = ({ onBackToMainApp }) => {
     setActiveTab('sms_center');
   };
 
+  const activeElection = (state.elections || []).find(e => e.status === 'active');
+  const electionBadge = activeElection 
+    ? 'LIVE' 
+    : (state.elections && state.elections.length > 0) 
+      ? `${state.elections.length}` 
+      : undefined;
+
   const navItems: { key: UwalemiTab; label: string; icon: React.FC<{ className?: string }>; badge?: string }[] = [
     { key: 'overview', label: 'Dashibodi Kuu', icon: LayoutDashboard },
     { key: 'members', label: 'Wanachama', icon: Users, badge: `${state.members?.length || 0}` },
@@ -86,10 +98,20 @@ export const UwalemiModule: React.FC<Props> = ({ onBackToMainApp }) => {
     { key: 'emergency_funds', label: 'Michango & Misiba', icon: HeartHandshake, badge: `${state.emergencyFunds?.filter(f => f.status === 'active').length || ''}` },
     { key: 'expenses', label: 'Hazina & Matumizi', icon: Wallet },
     { key: 'meetings', label: 'Vikao & Mahudhurio', icon: Calendar },
+    { key: 'elections', label: 'Uchaguzi (E-Voting)', icon: Vote, badge: electionBadge },
     { key: 'sms_center', label: 'Kituo cha SMS', icon: MessageSquare },
     { key: 'reports', label: 'Ripoti & PDF', icon: FileText },
     { key: 'settings', label: 'Mipangilio', icon: Settings },
   ];
+
+  if (previewVotingToken) {
+    return (
+      <UwalemiVotingPage 
+        token={previewVotingToken} 
+        onClose={() => setPreviewVotingToken(null)} 
+      />
+    );
+  }
 
   if (previewMemberNo) {
     return (
@@ -263,6 +285,15 @@ export const UwalemiModule: React.FC<Props> = ({ onBackToMainApp }) => {
               <UwalemiMeetings
                 state={state}
                 onSaveState={handleSaveState}
+                onOpenSmsWithTemplate={handleOpenSmsWithTemplate}
+              />
+            )}
+
+            {activeTab === 'elections' && (
+              <UwalemiElections
+                state={state}
+                onSaveState={handleSaveState}
+                onOpenVotingPage={(token) => setPreviewVotingToken(token)}
                 onOpenSmsWithTemplate={handleOpenSmsWithTemplate}
               />
             )}

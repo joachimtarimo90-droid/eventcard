@@ -195,6 +195,70 @@ export interface UwalemiMessageLog {
   status: 'delivered' | 'failed' | 'sent' | 'simulated';
 }
 
+export interface UwalemiCandidate {
+  id: string;
+  memberId: string;
+  memberNo: string;
+  fullName: string;
+  phone: string;
+  avatarUrl?: string;
+  manifesto?: string;
+  slogan?: string;
+}
+
+export interface UwalemiElectionPosition {
+  id: string;
+  title: string; // e.g. "Mwenyekiti", "Makamu Mwenyekiti", "Katibu", "Mweka Hazina", "Mjumbe wa Kamati"
+  description?: string;
+  maxWinners: number; // e.g. 1 for chairperson, 2 or 3 for committee members
+  candidates: UwalemiCandidate[];
+}
+
+export interface UwalemiVoterRecord {
+  voterToken: string; // Unique, secret token e.g. "VT-91827481-UWL002"
+  memberId: string;
+  memberNo: string;
+  fullName: string;
+  phone: string;
+  isEligible: boolean;
+  ineligibilityReason?: string;
+  hasVoted: boolean;
+  votedAt?: string;
+  receiptCode?: string; // e.g. "UWL-VT-94817"
+  smsSentAt?: string;
+}
+
+export interface UwalemiAnonymousBallot {
+  id: string;
+  electionId: string;
+  timestamp: string;
+  receiptCode: string;
+  // Map of positionId -> array of candidateIds chosen
+  votes: Record<string, string[]>;
+}
+
+export interface UwalemiElection {
+  id: string;
+  title: string; // e.g. "Uchaguzi Mkuu wa Viongozi wa UWALEMI 2026/2028"
+  description?: string;
+  termYears?: string; // e.g. "2026 - 2028"
+  startDate: string; // YYYY-MM-DDTHH:mm
+  endDate: string; // YYYY-MM-DDTHH:mm
+  status: 'draft' | 'active' | 'paused' | 'completed';
+  eligibilityCriteria: {
+    activeMembersOnly: boolean;
+    requireRegistrationFeePaid: boolean;
+    maxAllowedFeeDebtMonths: number; // 0 = zero debt required, 3 = max 3 months, 99 = all allowed
+  };
+  positions: UwalemiElectionPosition[];
+  voters: UwalemiVoterRecord[];
+  ballots: UwalemiAnonymousBallot[]; // Anonymous votes storage
+  createdAt: string;
+  certifiedAt?: string;
+  certifiedBy?: string;
+  notes?: string;
+}
+
 export interface UwalemiState {
   groupSettings: UwalemiGroupSettings;
   members: UwalemiMember[];
@@ -204,6 +268,7 @@ export interface UwalemiState {
   meetings: UwalemiMeeting[];
   finePayments?: UwalemiFinePayment[];
   accruedFines?: UwalemiAccruedFine[];
+  elections?: UwalemiElection[];
   messageLogs: UwalemiMessageLog[];
   lastMonthlyReminderYearMonth?: string;
   lastMonthlyReminderDate?: string;
@@ -217,6 +282,7 @@ export type UwalemiTab =
   | 'emergency_funds' 
   | 'expenses' 
   | 'meetings' 
+  | 'elections'
   | 'sms_center' 
   | 'reports'
   | 'settings';
