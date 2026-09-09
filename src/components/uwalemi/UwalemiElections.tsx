@@ -506,9 +506,186 @@ export const UwalemiElections: React.FC<Props> = ({
     }
   };
 
-  // Print results report
+  // Print/Export Results Report
   const handlePrintResults = () => {
-    window.print();
+    if (!activeElection || !tallyData) {
+      alert("Hakuna matokeo ya kupakua kwa sasa.");
+      return;
+    }
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Tafadhali ruhusu Popups (pop-up blocker) kwenye kivinjari chako ili kupakua ripoti.");
+      return;
+    }
+
+    const groupName = state.groupSettings?.groupName || "UWALEMI";
+    const slogan = state.groupSettings?.slogan || "Lema, Nguvu Moja.";
+    const title = activeElection.title || "Uchaguzi wa Viongozi";
+    const term = activeElection.termYears ? `${activeElection.termYears} (Miaka ${activeElection.termYears})` : "-";
+    const dateStr = new Date().toLocaleDateString('sw-TZ', { dateStyle: 'long' });
+    const timeStr = new Date().toLocaleTimeString('sw-TZ', { timeStyle: 'short' });
+
+    let positionsHtml = '';
+    tallyData.positionsTally.forEach((pos: any) => {
+      let candidatesHtml = '';
+      pos.results.forEach((cand: any, idx: number) => {
+        candidatesHtml += `
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 10px; font-weight: bold;">${idx + 1}</td>
+            <td style="padding: 10px;">${cand.candidateName} <span style="color: #64748b; font-family: monospace;">(${cand.candidateNo})</span></td>
+            <td style="padding: 10px; text-align: center; font-weight: bold; font-family: monospace;">${cand.votesCount}</td>
+            <td style="padding: 10px; text-align: right; font-weight: bold; font-family: monospace; color: #0f766e;">${cand.percentage}%</td>
+            <td style="padding: 10px; text-align: center;">
+              ${cand.isWinner ? '<span style="background-color: #d1fae5; color: #065f46; padding: 3px 12px; border-radius: 9999px; font-size: 11px; font-weight: bold; display: inline-block;">Mshindi ✓</span>' : cand.isTie ? '<span style="background-color: #fef3c7; color: #92400e; padding: 3px 12px; border-radius: 9999px; font-size: 11px; font-weight: bold; display: inline-block;">Sare ⚠</span>' : '-'}
+            </td>
+          </tr>
+        `;
+      });
+
+      positionsHtml += `
+        <div style="margin-top: 25px; page-break-inside: avoid;">
+          <h3 style="background-color: #f1f5f9; padding: 10px 14px; margin-bottom: 10px; border-left: 4px solid #0f766e; color: #1e293b; font-size: 15px; font-weight: bold;">
+            ${pos.positionTitle} (Wanaohitajika: ${pos.maxWinners})
+          </h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
+            <thead>
+              <tr style="background-color: #f8fafc; border-bottom: 2px solid #cbd5e1; color: #475569; font-weight: bold;">
+                <th style="padding: 10px; text-align: left; width: 50px;">Namba</th>
+                <th style="padding: 10px; text-align: left;">Mgombea</th>
+                <th style="padding: 10px; text-align: center; width: 100px;">Jumla ya Kura</th>
+                <th style="padding: 10px; text-align: right; width: 100px;">Asilimia (%)</th>
+                <th style="padding: 10px; text-align: center; width: 120px;">Matokeo / Hali</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${candidatesHtml}
+            </tbody>
+          </table>
+        </div>
+      `;
+    });
+
+    const reportHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Ripoti ya Matokeo ya Uchaguzi - ${groupName}</title>
+        <meta charset="utf-8">
+        <style>
+          body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            color: #334155;
+            line-height: 1.5;
+            padding: 30px;
+            background-color: #f8fafc;
+          }
+          .report-container {
+            border: 2px solid #0f766e;
+            padding: 40px;
+            border-radius: 4px;
+            background-color: white;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            max-width: 800px;
+            margin: 0 auto;
+          }
+          .stats-grid {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+          }
+          .stat-card {
+            flex: 1;
+            border: 1px solid #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            background-color: #f8fafc;
+          }
+          @media print {
+            body { padding: 0; background-color: white; }
+            .no-print { display: none; }
+            .report-container { border: none; box-shadow: none; padding: 0; max-width: 100%; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; padding: 15px; border-radius: 12px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; max-width: 800px; margin-left: auto; margin-right: auto; box-sizing: border-box;">
+          <div>
+            <h4 style="margin: 0; color: #0f766e; font-size: 15px; font-weight: bold;">Kihakiki Ripoti ya Matokeo</h4>
+            <p style="margin: 4px 0 0 0; font-size: 12px; color: #64748b;">Huu ni mwonekano safi wa kuchapa PDF. Bonyeza kitufe kilicho kulia kuhifadhi kama PDF.</p>
+          </div>
+          <button onclick="window.print()" style="background-color: #0f766e; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; transition: background-color 0.2s;">
+            Chapa / Hifadhi kama PDF
+          </button>
+        </div>
+
+        <div class="report-container">
+          <!-- Offical Crest Header -->
+          <div style="text-align: center; border-bottom: 3px double #0f766e; padding-bottom: 15px; margin-bottom: 25px;">
+            <h1 style="margin: 0; font-size: 26px; letter-spacing: 1px; color: #0f766e; text-transform: uppercase; font-weight: bold;">${groupName}</h1>
+            <p style="margin: 4px 0; font-size: 12px; font-style: italic; color: #64748b; font-weight: bold;">"${slogan}"</p>
+            <div style="margin-top: 15px; font-weight: bold; font-size: 16px; color: #1e293b; text-transform: uppercase; letter-spacing: 0.5px;">
+              TAARIFA RASMI YA MATOKEO YA UCHAGUZI WA VIONGOZI
+            </div>
+            <p style="margin: 6px 0 0 0; font-size: 13px; color: #475569;">
+              <strong>Uchaguzi:</strong> ${title} • <strong>Kipindi:</strong> ${term}
+            </p>
+          </div>
+
+          <!-- Statistics Cards Grid -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <p style="margin: 0; font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: bold; tracking-wider">Daftari la Wapiga Kura</p>
+              <h2 style="margin: 5px 0 0 0; font-size: 24px; color: #1e293b; font-family: monospace; font-weight: bold;">${tallyData.totalEligibleVoters}</h2>
+            </div>
+            <div class="stat-card">
+              <p style="margin: 0; font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: bold; tracking-wider">Kura Zilizopigwa</p>
+              <h2 style="margin: 5px 0 0 0; font-size: 24px; color: #0f766e; font-family: monospace; font-weight: bold;">${tallyData.totalBallotsCast}</h2>
+            </div>
+            <div class="stat-card">
+              <p style="margin: 0; font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: bold; tracking-wider">Asilimia ya Ushiriki</p>
+              <h2 style="margin: 5px 0 0 0; font-size: 24px; color: #0d9488; font-family: monospace; font-weight: bold;">${tallyData.turnoutPercentage}%</h2>
+            </div>
+          </div>
+
+          <!-- Position breakdown -->
+          ${positionsHtml}
+
+          <!-- Declaration / Verification Sign-off -->
+          <div style="margin-top: 50px; border-top: 1px dashed #cbd5e1; padding-top: 25px; page-break-inside: avoid;">
+            <p style="font-size: 12px; color: #475569; font-style: italic; text-align: center;">
+              Taarifa hii imetolewa na kujumuishwa kiotomatiki kwa usahihi wa 100% kupitia Mfumo wa Kidijitali wa ${groupName} tarehe ${dateStr} saa ${timeStr}.
+            </p>
+            
+            <div style="display: flex; justify-content: space-between; margin-top: 45px; font-size: 13px;">
+              <div style="width: 250px; text-align: center;">
+                <div style="border-bottom: 1px solid #94a3b8; height: 40px; margin-bottom: 5px;"></div>
+                <strong>Msimamizi wa Uchaguzi</strong>
+                <p style="margin: 3px 0 0 0; font-size: 11px; color: #64748b;">Sahihi na Tarehe</p>
+              </div>
+              <div style="width: 250px; text-align: center;">
+                <div style="border-bottom: 1px solid #94a3b8; height: 40px; margin-bottom: 5px;"></div>
+                <strong>Katibu wa Kamati</strong>
+                <p style="margin: 3px 0 0 0; font-size: 11px; color: #64748b;">Sahihi na Tarehe</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 300);
+          }
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(reportHtml);
+    printWindow.document.close();
   };
 
   // Filtered voters
