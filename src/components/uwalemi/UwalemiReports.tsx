@@ -443,55 +443,94 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
   };
 
   const handleExportExcel = () => {
+    const filter = getReportPeriodFilter();
+    const safeLabel = (filter.periodLabel || 'Kipindi').replace(/[^a-zA-Z0-9]/g, '_');
+
     if (reportType === 'financial') {
-      const data = [
-        ['UWALEMI - TAARIFA YA FEDHA NA HAZINA'],
-        ['Mwaka', selectedYear, 'Mwezi', selectedMonth === 'all' ? 'Mwaka Mzima' : monthNamesSw[selectedMonth - 1]],
-        [],
-        ['AINA YA MAPATO', 'KIASI (TZS)'],
-        ['Ada za Kila Mwezi', totalMonthlyCollected],
-        ...(includeRegFee ? [['Ada za Usajili wa Wanachama (2023)', totalRegFees]] : []),
-        ['Michango ya Dharura & Misiba', emergencyCollectedInPeriod],
-        ['JUMLA KUU YA MAPATO', totalInflowsPeriod],
-        [],
-        ['ORODHA YA MATUMIZI'],
-        ['Tarehe', 'Aina ya Matumizi', 'Kundi', 'Mlipwaji', 'Mwidhinishaji', 'Kiasi (TZS)'],
-        ...filteredExpenses.map(e => [e.date, e.title, e.category, e.paidTo, e.approvedBy, e.amount]),
-        [],
-        ['JUMLA YA MATUMIZI', totalExpensesPeriod],
-        ['SALIO HALISI LA KIPINDI', netBalancePeriod]
-      ];
-      const ws = XLSX.utils.aoa_to_sheet(data);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Ripoti ya Fedha');
-      XLSX.writeFile(wb, `UWALEMI_Fedha_${selectedYear}.xlsx`);
+
+      // Sheet 1: Muhtasari wa Hazina
+      const summaryData = [
+        ['UWALEMI - TAARIFA YA MAPATO, MATUMIZI NA HAZINA'],
+        ['Kipindi:', filter.periodLabel],
+        ['Tarehe ya Ripoti:', new Date().toLocaleDateString('sw-TZ', { dateStyle: 'long' })],
+        [],
+        ['1. TAARIFA YA MAPATO (INFLOWS)', 'KIASI (TZS)'],
+        ['Ada za Kila Mwezi (Monthly Fees)', totalMonthlyCollected],
+        ...(includeRegFee ? [['Ada za Usajili wa Wanachama (Registration)', totalRegFees]] : []),
+        ['Faini na Adhabu Zilizokusanywa (Fines & Penalties)', totalAllFinesPeriodCollected],
+        ['Michango ya Dharura & Misiba (Emergency Funds)', emergencyCollectedInPeriod],
+        ['JUMLA KUU YA MAPATO (TOTAL INFLOW)', totalInflowsPeriod],
+        [],
+        ['2. TAARIFA YA MATUMIZI (OUTFLOWS)', 'KIASI (TZS)'],
+        ['Matumizi ya Kikundi (Expenses)', totalExpensesPeriod],
+        ['JUMLA KUU YA MATUMIZI (TOTAL OUTFLOW)', totalExpensesPeriod],
+        [],
+        ['3. SALIO LA HAZINA (TREASURY BALANCE)', 'KIASI (TZS)'],
+        ['SALIO HALISI (NET TREASURY BALANCE)', netBalancePeriod]
+      ];
+      const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Muhtasari wa Hazina');
+
+      // Sheet 2: Mchanganuo wa Matumizi
+      const expensesRows = filteredExpenses.map(e => ({
+        'Tarehe': e.date,
+        'Matumizi / Kazi': e.title,
+        'Kundi': e.category || 'Mengineyo',
+        'Mlipwaji': e.paidTo || '-',
+        'Mwidhinishaji': e.approvedBy || '-',
+        'Namba ya Risiti / Kumbukumbu': e.receiptNo || '-',
+        'Kiasi (TZS)': Number(e.amount) || 0
+      }));
+      const wsExpenses = XLSX.utils.json_to_sheet(expensesRows);
+      XLSX.utils.book_append_sheet(wb, wsExpenses, 'Mchango wa Matumizi');
+
+      // Sheet 3: Michango ya Dharura
+      const emergencyPaymentsRows: any[] = [];
+      emergencyFunds.forEach(ef => {
+        (ef.payments || []).forEach(p => {
+          const iso = normalizeDateToISO(p.paymentDate);
+          const pYear = iso ? Number(iso.substring(0, 4)) : 0;
+          const pMonth = iso ? Number(iso.substring(5, 7)) : 0;
+          if (isPeriodMatch(currentPeriodFilter, pYear, pMonth, p.paymentDate)) {
+            emergencyPaymentsRows.push({
+              'Mfuko / Mchango': ef.title,
+              'Namba ya Mjumbe': p.memberNo || '-',
+              'Jina la Mjumbe': p.memberName || '-',
+              'Tarehe ya Malipo': p.paymentDate,
+              'Njia ya Malipo': p.paymentMethod || '-',
+              'Kumbukumbu / Risiti': p.referenceNo || p.receiptNo || '-',
+              'Kiasi (TZS)': Number(p.amount) || 0
+            });
+          }
+        });
+      });
+      const wsEmergency = XLSX.utils.json_to_sheet(emergencyPaymentsRows);
+      XLSX.utils.book_append_sheet(wb, wsEmergency, 'Michango ya Dharura');
+
+      XLSX.writeFile(wb, `UWALEMI_Ripoti_ya_Fedha_${safeLabel}.xlsx`);
+
     } else if (reportType === 'members') {
-      const defaultMonthlyFee = Number(state.groupSettings?.monthlyFeeDefault) || 0;
       const activeMonths = getActiveMonthsForPeriod(currentPeriodFilter);
 
       const rows = members.map(m => {
-        // 1. Registration (Only in 2023)
         const regFeeAmount = includeRegFee ? (Number(m.registrationFeeAmount) || 0) : 0;
         const regPaid = includeRegFee ? (m.registrationFeePaidAmount !== undefined ? m.registrationFeePaidAmount : (m.registrationFeePaid ? regFeeAmount : 0)) : 0;
         const regDebt = includeRegFee ? Math.max(0, regFeeAmount - regPaid) : 0;
 
-        // 2. Month-by-month values
         const monthCols: Record<string, any> = {};
         activeMonths.forEach(am => {
           const rec = monthlyPayments.find(p => (p.memberId === m.id || (m.memberNo && p.memberNo === m.memberNo)) && Number(p.year) === Number(am.year) && Number(p.month) === Number(am.month));
           monthCols[am.label] = rec && Number(rec.paidAmount) > 0 ? Number(rec.paidAmount) : 0;
         });
 
-        // 3. Monthly Fee Total & Late Fee Penalty
         const expFee = activeMonths.reduce((s, am) => s + getDefaultFeeForMonth(am.year, am.month, m.monthlyFeeAmount), 0);
         const paidFee = monthlyPayments.filter(p => (p.memberId === m.id || (m.memberNo && p.memberNo === m.memberNo)) && isPeriodMatch(currentPeriodFilter, p.year, p.month, p.paymentDate)).reduce((s, p) => s + (Number(p.paidAmount) || 0), 0);
         const feeDebt = Math.max(0, expFee - paidFee);
 
-        // Calculate member debt info with late fee penalty
         const memberDebtInfo = calculateMemberFeeDebt(m, state);
         const lateFeePenalty = memberDebtInfo.lateFeePenalty || 0;
 
-        // 4. Meeting Fines
         let meetingFinesPaid = 0;
         let meetingFinesDebt = 0;
         (state.meetings || []).forEach(mtg => {
@@ -507,7 +546,6 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
           }
         });
 
-        // 5. Emergency
         let emergencyPaid = 0;
         (state.emergencyFunds || []).forEach(ef => {
           (ef.payments || []).forEach(p => {
@@ -534,14 +572,14 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
         };
 
         if (includeRegFee) {
-          rowData['KIINGILIO (2023)'] = regPaid > 0 ? regPaid : 0;
+          rowData['Kiingilio (2023)'] = regPaid;
         }
 
         Object.assign(rowData, monthCols);
         rowData['Ada Zilizolipwa'] = paidFee;
         rowData['Deni la Ada'] = feeDebt;
         rowData['Faini ya Kuchelewa Ada (>Miezi 3)'] = lateFeePenalty;
-        rowData['Faini za Vikao'] = meetingFinesDebt;
+        rowData['Faini za Vikao (Zisizolipwa)'] = meetingFinesDebt;
         rowData['Jumla ya Faini'] = totalFinesDebt;
         rowData['Michango ya Dharura'] = emergencyPaid;
         rowData['Jumla ya Fedha Alizotoa'] = memberTotalContributed;
@@ -550,12 +588,17 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
 
         return rowData;
       });
+
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Daftari la Wanachama');
-      XLSX.writeFile(wb, `UWALEMI_Daftari_la_Wanachama_${Date.now()}.xlsx`);
+      XLSX.utils.book_append_sheet(wb, ws, 'Daftari la Ada za Wanachama');
+      XLSX.writeFile(wb, `UWALEMI_Mchanganuo_Ada_${safeLabel}.xlsx`);
+
     } else if (reportType === 'fines') {
-      const rows = members.map(m => {
+      const wb = XLSX.utils.book_new();
+
+      // Sheet 1: Muhtasari wa Faini za Wajumbe
+      const summaryFinesRows = members.map(m => {
         const debtInfo = calculateMemberFeeDebt(m, state);
         const lateFeePenalty = debtInfo.lateFeePenalty || 0;
         const unpaidMonthsCount = debtInfo.unpaidCount || 0;
@@ -592,11 +635,41 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
           'Hali ya Faini': totalMemberFineDebt > 0 ? 'Inadaiwa' : meetingFinesPaid > 0 ? 'Imelipwa' : 'Hakuna Faini'
         };
       });
+      const wsSummaryFines = XLSX.utils.json_to_sheet(summaryFinesRows);
+      XLSX.utils.book_append_sheet(wb, wsSummaryFines, 'Muhtasari wa Faini za Wajumbe');
 
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Ripoti ya Faini');
-      XLSX.writeFile(wb, `UWALEMI_Ripoti_ya_Faini_${Date.now()}.xlsx`);
+      // Sheet 2: Mchanganuo wa Faini za Vikao
+      const meetingFinesRows = meetingFinesDetailedList.map(item => ({
+        'Tarehe ya Kikao': item.date,
+        'Kikao': item.title,
+        'Namba ya Mjumbe': item.memberNo,
+        'Jina la Mjumbe': item.memberName,
+        'Kosa / Sababu': item.reason,
+        'Kiasi cha Faini (TZS)': item.amount,
+        'Hali ya Malipo': item.paid ? 'Imelipwa' : 'Haijalipwa'
+      }));
+      const wsMeetingFines = XLSX.utils.json_to_sheet(meetingFinesRows);
+      XLSX.utils.book_append_sheet(wb, wsMeetingFines, 'Faini za Vikao');
+
+      // Sheet 3: Marekodi ya Malipo ya Faini
+      const receiptsRows = periodFinePayments.map(fp => {
+        const decomp = decomposeFinePaymentAmounts(fp, state);
+        return {
+          'Namba ya Risiti': fp.receiptNo || fp.id,
+          'Tarehe ya Malipo': fp.paymentDate,
+          'Namba ya Mjumbe': fp.memberNo || '-',
+          'Jina la Mjumbe': fp.memberName || '-',
+          'Aina ya Faini': fp.fineType === 'kikao' ? 'Faini ya Kikao' : fp.fineType === 'ada_late_fee' ? 'Faini ya Kuchelewa Ada' : fp.fineTitle || 'Faini Nyingine',
+          'Njia ya Malipo': fp.paymentMethod || '-',
+          'Kiasi Kilicholipwa (TZS)': fp.amount || fp.paidAmount || 0,
+          'Maelezo': fp.notes || '-'
+        };
+      });
+      const wsReceipts = XLSX.utils.json_to_sheet(receiptsRows);
+      XLSX.utils.book_append_sheet(wb, wsReceipts, 'Malipo ya Faini yaliyofanyika');
+
+      XLSX.writeFile(wb, `UWALEMI_Ripoti_ya_Faini_${safeLabel}.xlsx`);
+
     } else {
       if (!currentEmergencyFund) return;
       const rows = (currentEmergencyFund.payments || []).map(p => ({
@@ -610,7 +683,7 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Mchango wa Dharura');
-      XLSX.writeFile(wb, `UWALEMI_${currentEmergencyFund.title.replace(/\s+/g, '_')}.xlsx`);
+      XLSX.writeFile(wb, `UWALEMI_Mchango_${currentEmergencyFund.title.replace(/\s+/g, '_')}.xlsx`);
     }
   };
 
