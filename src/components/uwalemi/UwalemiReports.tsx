@@ -38,7 +38,8 @@ import {
   calculateAllMembersFeeDebts,
   calculateLateFeePenalty,
   classifyFinePaymentType,
-  decomposeFinePaymentAmounts
+  decomposeFinePaymentAmounts,
+  normalizePaymentMethod
 } from '../../services/uwalemiService';
 import { UwalemiFinePaymentModal } from './UwalemiFinePaymentModal';
 import { 
@@ -498,7 +499,7 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
               'Namba ya Mjumbe': p.memberNo || '-',
               'Jina la Mjumbe': p.memberName || '-',
               'Tarehe ya Malipo': p.paymentDate,
-              'Njia ya Malipo': p.paymentMethod || '-',
+              'Njia ya Malipo': normalizePaymentMethod(p.paymentMethod),
               'Kumbukumbu / Risiti': p.referenceNo || p.receiptNo || '-',
               'Kiasi (TZS)': Number(p.amount) || 0
             });
@@ -660,7 +661,7 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
           'Namba ya Mjumbe': fp.memberNo || '-',
           'Jina la Mjumbe': fp.memberName || '-',
           'Aina ya Faini': fp.fineType === 'kikao' ? 'Faini ya Kikao' : fp.fineType === 'ada_late_fee' ? 'Faini ya Kuchelewa Ada' : fp.fineTitle || 'Faini Nyingine',
-          'Njia ya Malipo': fp.paymentMethod || '-',
+          'Njia ya Malipo': normalizePaymentMethod(fp.paymentMethod),
           'Kiasi Kilicholipwa (TZS)': fp.amount || fp.paidAmount || 0,
           'Maelezo': fp.notes || '-'
         };
@@ -676,7 +677,7 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
         'Namba ya Mjumbe': p.memberNo,
         'Jina la Mjumbe': p.memberName,
         'Tarehe': p.paymentDate,
-        'Njia ya Malipo': p.paymentMethod,
+        'Njia ya Malipo': normalizePaymentMethod(p.paymentMethod),
         'Kumbukumbu': p.referenceNo || p.receiptNo || '',
         'Kiasi Kilicholipwa': p.amount
       }));
@@ -2385,7 +2386,7 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
                               <td className="p-3 text-right font-bold text-emerald-400">
                                 {formatTZS(Number(fp.amount) || Number((fp as any).paidAmount) || 0)}
                               </td>
-                              <td className="p-3 text-slate-400">{fp.paymentMethod}</td>
+                              <td className="p-3 text-slate-400">{normalizePaymentMethod(fp.paymentMethod)}</td>
                               <td className="p-3 text-center">
                                 <div className="flex items-center justify-center gap-1">
                                   {onSaveState && (
@@ -2473,7 +2474,7 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
                         <td className="p-3 font-mono font-bold text-emerald-400">{p.memberNo}</td>
                         <td className="p-3 font-semibold text-white">{p.memberName}</td>
                         <td className="p-3 text-slate-400">{p.paymentDate}</td>
-                        <td className="p-3 text-slate-400">{p.paymentMethod}</td>
+                        <td className="p-3 text-slate-400">{normalizePaymentMethod(p.paymentMethod)}</td>
                         <td className="p-3 text-right font-bold text-emerald-400">{formatTZS(p.amount)}</td>
                       </tr>
                     ))}
@@ -2767,7 +2768,7 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
                   >
                     <option value="Pesa Taslimu (Cash)">Pesa Taslimu (Cash)</option>
-                    <option value="M-Pesa">M-Pesa</option>
+                    <option value="M Koba">M Koba</option>
                     <option value="TigoPesa">TigoPesa</option>
                     <option value="Airtel Money">Airtel Money</option>
                     <option value="Benki">Benki (NMB/CRDB)</option>

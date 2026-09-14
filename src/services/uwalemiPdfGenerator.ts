@@ -14,7 +14,8 @@ import {
   calculateLateFeePenalty,
   calculateMemberOtherFines,
   classifyFinePaymentType,
-  decomposeFinePaymentAmounts
+  decomposeFinePaymentAmounts,
+  normalizePaymentMethod
 } from './uwalemiService';
 
 const MONTH_NAMES_SW = [
@@ -1248,7 +1249,7 @@ export const generateFinancialReportPDF = (
     currentY += 3;
 
     const pmRows = pMethods.map(pm => [
-      pm.provider,
+      normalizePaymentMethod(pm.provider),
       pm.type,
       pm.number,
       pm.accountName
@@ -1649,7 +1650,7 @@ export const generateEmergencyFundReportPDF = (
     p.memberNo,
     p.memberName,
     p.paymentDate,
-    p.paymentMethod,
+    normalizePaymentMethod(p.paymentMethod),
     p.referenceNo || p.receiptNo || '-',
     formatTZS(p.amount)
   ]);
@@ -2175,7 +2176,7 @@ export const generatePaymentReceiptPDF = (receiptData: {
     ['Simu ya Mjumbe', receiptData.memberPhone || '-'],
     ['Aina ya Malipo', receiptData.paymentType],
     ['Madhumuni / Kipindi', receiptData.periodOrTitle],
-    ['Njia ya Malipo', receiptData.paymentMethod],
+    ['Njia ya Malipo', normalizePaymentMethod(receiptData.paymentMethod)],
     ['Namba ya Kumbukumbu', receiptData.referenceNo || 'KUTOKA MFUMONI'],
     ['Kiasi Kilicholipwa', formatTZS(receiptData.amount)]
   ];

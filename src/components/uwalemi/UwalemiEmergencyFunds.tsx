@@ -19,7 +19,7 @@ import {
   Award
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { sortMembersByLeadership, triggerAutoReceiptSms } from '../../services/uwalemiService';
+import { sortMembersByLeadership, triggerAutoReceiptSms, normalizePaymentMethod } from '../../services/uwalemiService';
 
 interface Props {
   state: UwalemiState;
@@ -88,7 +88,7 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
     memberId: '',
     amount: 0,
     paymentDate: new Date().toISOString().split('T')[0],
-    paymentMethod: 'M-Pesa (Lipa Namba)',
+    paymentMethod: 'M Koba',
     note: ''
   });
 
@@ -393,7 +393,7 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
                     memberId: members[0]?.id || '',
                     amount: selectedFund.perMemberTarget || 20000,
                     paymentDate: new Date().toISOString().split('T')[0],
-                    paymentMethod: 'M-Pesa (Lipa Namba)',
+                    paymentMethod: 'M Koba',
                     note: ''
                   });
                   setIsRecordPaymentModalOpen(true);
@@ -489,7 +489,7 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
                                 memberId: m.id,
                                 amount: payment ? payment.amount : targetAmt,
                                 paymentDate: payment?.paymentDate || new Date().toISOString().split('T')[0],
-                                paymentMethod: payment?.paymentMethod || 'M-Pesa (Lipa Namba)',
+                                paymentMethod: normalizePaymentMethod(payment?.paymentMethod),
                                 note: payment?.note || ''
                               });
                               setIsRecordPaymentModalOpen(true);
@@ -703,7 +703,7 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
                     onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
                   >
-                    <option value="M-Pesa (Lipa Namba)">M-Pesa (Lipa Namba)</option>
+                    <option value="M Koba">M Koba</option>
                     <option value="Tigo Pesa">Tigo Pesa</option>
                     <option value="Airtel Money">Airtel Money</option>
                     <option value="Benki (CRDB/NMB)">Benki (CRDB/NMB)</option>

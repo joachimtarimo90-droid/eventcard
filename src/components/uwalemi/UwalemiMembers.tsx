@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { UwalemiFinePaymentModal } from './UwalemiFinePaymentModal';
-import { calculateMemberFeeDebt } from '../../services/uwalemiService';
+import { calculateMemberFeeDebt, normalizePaymentMethod } from '../../services/uwalemiService';
 
 interface Props {
   state: UwalemiState;
@@ -1567,7 +1567,7 @@ export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsF
                               <td className="p-2 font-mono">{f.year} - Mwezi {f.month}</td>
                               <td className="p-2 text-emerald-400 font-bold">TZS {f.paidAmount.toLocaleString()}</td>
                               <td className="p-2 text-slate-400">{f.paymentDate || '-'}</td>
-                              <td className="p-2">{f.paymentMethod || 'M-Pesa'}</td>
+                              <td className="p-2">{normalizePaymentMethod(f.paymentMethod)}</td>
                               <td className="p-2 font-mono text-[10px] text-slate-400">{f.receiptNo || '-'}</td>
                             </tr>
                           ))}

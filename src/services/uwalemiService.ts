@@ -65,6 +65,15 @@ export function getMemberLocationGroup(member: { residence?: string; locationGro
   return 'Dar es Salaam';
 }
 
+export function normalizePaymentMethod(method?: string): string {
+  if (!method) return 'M Koba';
+  const trimmed = method.trim();
+  if (/m-?pesa/i.test(trimmed)) {
+    return 'M Koba';
+  }
+  return trimmed;
+}
+
 export const INITIAL_UWALEMI_SETTINGS: UwalemiGroupSettings = {
   groupName: 'UWALEMI',
   slogan: 'Lema, Nguvu Moja.',
@@ -76,10 +85,10 @@ export const INITIAL_UWALEMI_SETTINGS: UwalemiGroupSettings = {
   paymentMethods: [
     {
       id: 'pm-1',
-      provider: 'M-Koba / Vodacom M-Pesa',
+      provider: 'M Koba',
       type: 'Mobile',
       number: '0758 219 298',
-      accountName: 'Eva O Lema (M-Koba)'
+      accountName: 'Eva O Lema (M Koba)'
     },
     {
       id: 'pm-2',
@@ -186,6 +195,42 @@ export async function fetchUwalemiState(): Promise<UwalemiState> {
 
     // Preserve accrued late fee fines so that paying Ada in matrix never wipes out incurred fines
     s = autoAccrueLateFeeFines(s);
+
+    // Normalize any legacy M-Pesa occurrences to M Koba across all payment records
+    if (s.groupSettings?.paymentMethods) {
+      s.groupSettings.paymentMethods = s.groupSettings.paymentMethods.map(pm => ({
+        ...pm,
+        provider: normalizePaymentMethod(pm.provider),
+        accountName: pm.accountName?.replace(/m-?koba/i, 'M Koba').replace(/vodacom m-?pesa/i, 'M Koba') || pm.accountName
+      }));
+    }
+    if (Array.isArray(s.monthlyPayments)) {
+      s.monthlyPayments = s.monthlyPayments.map(p => ({
+        ...p,
+        paymentMethod: normalizePaymentMethod(p.paymentMethod)
+      }));
+    }
+    if (Array.isArray(s.finePayments)) {
+      s.finePayments = s.finePayments.map(fp => ({
+        ...fp,
+        paymentMethod: normalizePaymentMethod(fp.paymentMethod)
+      }));
+    }
+    if (Array.isArray(s.emergencyFunds)) {
+      s.emergencyFunds = s.emergencyFunds.map(ef => ({
+        ...ef,
+        payments: (ef.payments || []).map(p => ({
+          ...p,
+          paymentMethod: normalizePaymentMethod(p.paymentMethod)
+        }))
+      }));
+    }
+    if (Array.isArray(s.expenses)) {
+      s.expenses = s.expenses.map(e => ({
+        ...e,
+        paymentMethod: normalizePaymentMethod(e.paymentMethod)
+      }));
+    }
 
     return s;
   };

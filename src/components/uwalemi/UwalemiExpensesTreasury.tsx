@@ -47,7 +47,7 @@ export const UwalemiExpensesTreasury: React.FC<Props> = ({ state, onSaveState })
     date: new Date().toISOString().split('T')[0],
     paidTo: '',
     approvedBy: 'Jimson Lema (Mwenyekiti)',
-    paymentMethod: 'M-Pesa (Lipa Namba)',
+    paymentMethod: 'M Koba',
     description: ''
   });
 
@@ -178,7 +178,7 @@ export const UwalemiExpensesTreasury: React.FC<Props> = ({ state, onSaveState })
                 date: new Date().toISOString().split('T')[0],
                 paidTo: '',
                 approvedBy: 'Jimson Lema (Mwenyekiti)',
-                paymentMethod: 'M-Pesa (Lipa Namba)',
+                paymentMethod: 'M Koba',
                 description: ''
               });
               setIsNewExpenseModalOpen(true);
@@ -448,7 +448,7 @@ export const UwalemiExpensesTreasury: React.FC<Props> = ({ state, onSaveState })
                     onChange={(e) => setExpenseForm({ ...expenseForm, paymentMethod: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
                   >
-                    <option value="M-Pesa (Lipa Namba)">M-Pesa (Lipa Namba)</option>
+                    <option value="M Koba">M Koba</option>
                     <option value="Tigo Pesa">Tigo Pesa</option>
                     <option value="Airtel Money">Airtel Money</option>
                     <option value="Benki (CRDB/NMB)">Benki (CRDB/NMB)</option>

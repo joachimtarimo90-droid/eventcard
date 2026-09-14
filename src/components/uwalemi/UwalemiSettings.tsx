@@ -53,7 +53,7 @@ export const UwalemiSettings: React.FC<Props> = ({ state, onSaveState }) => {
   const handleAddPaymentMethod = () => {
     const newPm: UwalemiPaymentMethod = {
       id: `pm-${Date.now()}`,
-      provider: 'M-Pesa (Lipa Namba)',
+      provider: 'M Koba',
       type: 'Till',
       number: '',
       accountName: settings.groupName || 'UWALEMI GROUP'
@@ -484,7 +484,7 @@ export const UwalemiSettings: React.FC<Props> = ({ state, onSaveState }) => {
                       updated[idx].provider = e.target.value;
                       setSettings({ ...settings, paymentMethods: updated });
                     }}
-                    placeholder="M-Pesa / CRDB / Tigo Pesa"
+                    placeholder="M Koba / CRDB / Tigo Pesa"
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white font-medium"
                   />
                 </div>

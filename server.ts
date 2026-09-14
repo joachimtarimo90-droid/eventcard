@@ -3750,7 +3750,38 @@ async function startServer() {
           }
         }
         if (Array.isArray(uState.finePayments)) {
-          uState.finePayments = uState.finePayments.filter((fp: any) => fp && fp.id !== 'fine-pay-1788768387595');
+          uState.finePayments = uState.finePayments.filter((fp: any) => fp && fp.id !== 'fine-pay-1788768387595').map((fp: any) => ({
+            ...fp,
+            paymentMethod: fp.paymentMethod && /m-?pesa/i.test(fp.paymentMethod) ? 'M Koba' : (fp.paymentMethod || 'M Koba')
+          }));
+        }
+        if (Array.isArray(uState.monthlyPayments)) {
+          uState.monthlyPayments = uState.monthlyPayments.map((p: any) => ({
+            ...p,
+            paymentMethod: p.paymentMethod && /m-?pesa/i.test(p.paymentMethod) ? 'M Koba' : (p.paymentMethod || 'M Koba')
+          }));
+        }
+        if (Array.isArray(uState.emergencyFunds)) {
+          uState.emergencyFunds = uState.emergencyFunds.map((ef: any) => ({
+            ...ef,
+            payments: (ef.payments || []).map((p: any) => ({
+              ...p,
+              paymentMethod: p.paymentMethod && /m-?pesa/i.test(p.paymentMethod) ? 'M Koba' : (p.paymentMethod || 'M Koba')
+            }))
+          }));
+        }
+        if (Array.isArray(uState.expenses)) {
+          uState.expenses = uState.expenses.map((e: any) => ({
+            ...e,
+            paymentMethod: e.paymentMethod && /m-?pesa/i.test(e.paymentMethod) ? 'M Koba' : (e.paymentMethod || 'M Koba')
+          }));
+        }
+        if (uState.groupSettings && Array.isArray(uState.groupSettings.paymentMethods)) {
+          uState.groupSettings.paymentMethods = uState.groupSettings.paymentMethods.map((pm: any) => ({
+            ...pm,
+            provider: pm.provider && /m-?pesa/i.test(pm.provider) ? 'M Koba' : (pm.provider || 'M Koba'),
+            accountName: pm.accountName?.replace(/m-?koba/i, 'M Koba').replace(/vodacom m-?pesa/i, 'M Koba') || pm.accountName
+          }));
         }
         if (Array.isArray(uState.meetings)) {
           uState.meetings.forEach((m: any) => {
@@ -3804,6 +3835,40 @@ async function startServer() {
             });
           }
         });
+        if (Array.isArray(state.finePayments)) {
+          state.finePayments = state.finePayments.filter((fp: any) => fp && fp.id !== 'fine-pay-1788768387595').map((fp: any) => ({
+            ...fp,
+            paymentMethod: fp.paymentMethod && /m-?pesa/i.test(fp.paymentMethod) ? 'M Koba' : (fp.paymentMethod || 'M Koba')
+          }));
+        }
+        if (Array.isArray(state.monthlyPayments)) {
+          state.monthlyPayments = state.monthlyPayments.map((p: any) => ({
+            ...p,
+            paymentMethod: p.paymentMethod && /m-?pesa/i.test(p.paymentMethod) ? 'M Koba' : (p.paymentMethod || 'M Koba')
+          }));
+        }
+        if (Array.isArray(state.emergencyFunds)) {
+          state.emergencyFunds = state.emergencyFunds.map((ef: any) => ({
+            ...ef,
+            payments: (ef.payments || []).map((p: any) => ({
+              ...p,
+              paymentMethod: p.paymentMethod && /m-?pesa/i.test(p.paymentMethod) ? 'M Koba' : (p.paymentMethod || 'M Koba')
+            }))
+          }));
+        }
+        if (Array.isArray(state.expenses)) {
+          state.expenses = state.expenses.map((e: any) => ({
+            ...e,
+            paymentMethod: e.paymentMethod && /m-?pesa/i.test(e.paymentMethod) ? 'M Koba' : (e.paymentMethod || 'M Koba')
+          }));
+        }
+        if (state.groupSettings && Array.isArray(state.groupSettings.paymentMethods)) {
+          state.groupSettings.paymentMethods = state.groupSettings.paymentMethods.map((pm: any) => ({
+            ...pm,
+            provider: pm.provider && /m-?pesa/i.test(pm.provider) ? 'M Koba' : (pm.provider || 'M Koba'),
+            accountName: pm.accountName?.replace(/m-?koba/i, 'M Koba').replace(/vodacom m-?pesa/i, 'M Koba') || pm.accountName
+          }));
+        }
       }
       db.uwalemiState = state;
       await writeDB(db);

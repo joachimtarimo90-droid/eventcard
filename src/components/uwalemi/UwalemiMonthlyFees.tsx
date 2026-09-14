@@ -40,7 +40,8 @@ import {
   triggerAutoReceiptSms,
   calculateMemberFeeDebt,
   calculateMemberOtherFines,
-  formatMemberReceiptDebtLines 
+  formatMemberReceiptDebtLines,
+  normalizePaymentMethod
 } from '../../services/uwalemiService';
 
 interface Props {
@@ -145,7 +146,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
       12: getDefaultFeeForMonth(currentYear, 12),
     },
     paymentDate: new Date().toISOString().split('T')[0],
-    paymentMethod: 'M-Pesa (Lipa Namba)',
+    paymentMethod: 'M Koba',
     referenceNo: '',
     note: `Ada ya mwaka mzima wa ${currentYear}`
   });
@@ -167,7 +168,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
     amountPerMonth: getDefaultFeeForMonth(currentYear, currentMonth),
     useDefaultRates: true,
     paymentDate: new Date().toISOString().split('T')[0],
-    paymentMethod: 'M-Pesa (Lipa Namba)',
+    paymentMethod: 'M Koba',
     referenceNo: ''
   });
 
@@ -198,7 +199,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
     meetingId: '',
     fineReason: '',
     paymentDate: new Date().toISOString().split('T')[0],
-    paymentMethod: 'M-Pesa (Lipa Namba)',
+    paymentMethod: 'M Koba',
     referenceNo: '',
     note: '',
     isTopUp: true
@@ -986,7 +987,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
       expectedAmount: expected,
       paidAmount: expected,
       paymentDate: new Date().toISOString().split('T')[0],
-      paymentMethod: 'M-Pesa (Lipa Namba)',
+      paymentMethod: 'M Koba',
       referenceNo: `AUTO-${Date.now().toString().slice(-6)}`,
       status: 'paid',
       receiptNo,
@@ -1126,7 +1127,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
       year: targetYear,
       monthlyAmounts: initialAmounts,
       paymentDate: new Date().toISOString().split('T')[0],
-      paymentMethod: 'M-Pesa (Lipa Namba)',
+      paymentMethod: 'M Koba',
       referenceNo: '',
       note: `Ada ya mwaka mzima wa ${targetYear}`
     });
@@ -1267,7 +1268,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
         'Mwezi (1-12)': 1,
         'Kiasi Kilicholipwa': 10000,
         'Tarehe (YYYY-MM-DD)': '2023-01-15',
-        'Njia ya Malipo': 'M-Pesa'
+        'Njia ya Malipo': 'M Koba'
       },
       {
         'Namba ya Mwanachama': 'UWL-001',
@@ -1276,7 +1277,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
         'Mwezi (1-12)': 2,
         'Kiasi Kilicholipwa': 10000,
         'Tarehe (YYYY-MM-DD)': '2023-02-15',
-        'Njia ya Malipo': 'M-Pesa'
+        'Njia ya Malipo': 'M Koba'
       },
       {
         'Namba ya Mwanachama': 'UWL-002',
@@ -1323,7 +1324,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
           const month = Number(row['Mwezi (1-12)'] || row['Mwezi'] || row['Month'] || 1);
           const amount = Number(row['Kiasi Kilicholipwa'] || row['Amount'] || row['Kiasi'] || 10000);
           const pDate = String(row['Tarehe (YYYY-MM-DD)'] || row['Tarehe'] || new Date().toISOString().split('T')[0]);
-          const pMethod = String(row['Njia ya Malipo'] || row['Njia'] || 'M-Pesa');
+          const pMethod = normalizePaymentMethod(String(row['Njia ya Malipo'] || row['Njia'] || 'M Koba'));
 
           const member = members.find(m => m.memberNo.toLowerCase() === memberNo.toLowerCase() || m.fullName.toLowerCase() === memberNo.toLowerCase());
           if (member && year >= 2020 && month >= 1 && month <= 12) {
@@ -1534,7 +1535,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                   month: selectedMonth,
                   amount: getDefaultFeeForMonth(selectedYear, selectedMonth, members[0]?.monthlyFeeAmount),
                   paymentDate: new Date().toISOString().split('T')[0],
-                  paymentMethod: 'M-Pesa (Lipa Namba)',
+                  paymentMethod: 'M Koba',
                   referenceNo: '',
                   note: ''
                 });
@@ -1749,7 +1750,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                                   month: selectedMonth,
                                   amount: payment ? payment.paidAmount : expected,
                                   paymentDate: payment?.paymentDate || new Date().toISOString().split('T')[0],
-                                  paymentMethod: payment?.paymentMethod || 'M-Pesa (Lipa Namba)',
+                                  paymentMethod: normalizePaymentMethod(payment?.paymentMethod),
                                   referenceNo: payment?.referenceNo || '',
                                   note: payment?.note || ''
                                 });
@@ -2560,7 +2561,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                     onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
                   >
-                    <option value="M-Pesa (Lipa Namba)">M-Pesa (Lipa Namba)</option>
+                    <option value="M Koba">M Koba</option>
                     <option value="Tigo Pesa">Tigo Pesa</option>
                     <option value="Airtel Money">Airtel Money</option>
                     <option value="CRDB Bank">CRDB Bank</option>
@@ -2652,7 +2653,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Njia ya Malipo:</span>
-                <span className="font-semibold text-slate-900">{viewingReceipt.paymentMethod}</span>
+                <span className="font-semibold text-slate-900">{normalizePaymentMethod(viewingReceipt.paymentMethod)}</span>
               </div>
               {viewingReceipt.referenceNo && (
                 <div className="flex justify-between">
@@ -2710,7 +2711,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                       periodOrTitle: `${monthNamesSw[viewingReceipt.month - 1]} ${viewingReceipt.year}`,
                       amount: viewingReceipt.paidAmount,
                       paymentDate: viewingReceipt.paymentDate || new Date().toISOString().split('T')[0],
-                      paymentMethod: viewingReceipt.paymentMethod || 'M-Pesa',
+                      paymentMethod: normalizePaymentMethod(viewingReceipt.paymentMethod),
                       referenceNo: viewingReceipt.referenceNo,
                       receivedBy: 'Mweka Hazina wa UWALEMI',
                       statusType: viewingReceipt.status === 'partial' ? 'partial' : 'paid',
@@ -2793,7 +2794,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Njia ya Malipo:</span>
-                <span className="font-semibold text-slate-900">{viewingMultiReceipt.paymentMethod}</span>
+                <span className="font-semibold text-slate-900">{normalizePaymentMethod(viewingMultiReceipt.paymentMethod)}</span>
               </div>
               {viewingMultiReceipt.referenceNo && (
                 <div className="flex justify-between">
@@ -2929,7 +2930,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                         : 'Malipo ya Faini',
                       amount: viewingMultiReceipt.amount,
                       paymentDate: viewingMultiReceipt.paymentDate,
-                      paymentMethod: viewingMultiReceipt.paymentMethod,
+                      paymentMethod: normalizePaymentMethod(viewingMultiReceipt.paymentMethod),
                       referenceNo: viewingMultiReceipt.referenceNo,
                       receivedBy: 'Mweka Hazina wa UWALEMI',
                       balanceRemaining: viewingMultiReceipt.totalDebtAfter,
@@ -3184,7 +3185,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                     onChange={(e) => setBulkForm({ ...bulkForm, paymentMethod: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-500"
                   >
-                    <option value="M-Pesa (Lipa Namba)">M-Pesa</option>
+                    <option value="M Koba">M Koba</option>
                     <option value="Airtel Money">Airtel Money</option>
                     <option value="Mix/Tigo Pesa">Tigo Pesa</option>
                     <option value="Amana / NMB / CRDB">Benki</option>
@@ -3632,7 +3633,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                     onChange={(e) => setAnnualForm({ ...annualForm, paymentMethod: e.target.value })}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-amber-500 cursor-pointer"
                   >
-                    <option value="M-Pesa (Lipa Namba)">M-Pesa (Lipa Namba)</option>
+                    <option value="M Koba">M Koba</option>
                     <option value="Tigo Pesa">Tigo Pesa</option>
                     <option value="Airtel Money">Airtel Money</option>
                     <option value="Benki ya CRDB / NMB">Benki ya CRDB / NMB</option>
