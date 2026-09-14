@@ -381,7 +381,9 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
     const matchesSearch = 
       item.member.fullName.toLowerCase().includes(term) ||
       item.member.memberNo.toLowerCase().includes(term) ||
-      item.member.phone.includes(term);
+      item.member.phone.includes(term) ||
+      (item.payment?.receiptNo && item.payment.receiptNo.toLowerCase().includes(term)) ||
+      (item.payment?.referenceNo && item.payment.referenceNo.toLowerCase().includes(term));
     
     const matchesStatus = filterStatus === 'all' || item.status === filterStatus;
     return matchesSearch && matchesStatus;
@@ -1637,7 +1639,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder={`Tafuta mwanachama kwa jina au namba ya UWL...`}
+                placeholder="Tafuta mwanachama kwa jina, namba ya UWL, au risiti (REC)..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
