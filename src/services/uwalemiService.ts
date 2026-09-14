@@ -308,12 +308,15 @@ export function autoAccrueLateFeeFines(s: UwalemiState, activeUntickedMonth?: { 
 
       if (existingIdx >= 0) {
         const ex = accruedFines[existingIdx];
-        if (ex.amount !== calculatedPenalty || ex.reason !== fineReason) {
+        // KANUNI KUU: Faini haipungui wala kuondoka hata mwanachama akilipa ada zote!
+        // Faini inaweza tu kuongezeka ikiwa ataongeza miezi ya uchelewaji.
+        const targetAmt = Math.max(Number(ex.amount) || 0, calculatedPenalty);
+        if (ex.amount !== targetAmt || (targetAmt === calculatedPenalty && ex.reason !== fineReason)) {
           accruedFines[existingIdx] = {
             ...ex,
-            amount: calculatedPenalty,
-            reason: fineReason,
-            status: (ex.paidAmount || 0) >= calculatedPenalty ? 'paid' : (ex.paidAmount || 0) > 0 ? 'partial' : 'unpaid'
+            amount: targetAmt,
+            reason: targetAmt > calculatedPenalty ? ex.reason : fineReason,
+            status: (ex.paidAmount || 0) >= targetAmt ? 'paid' : (ex.paidAmount || 0) > 0 ? 'partial' : 'unpaid'
           };
           changed = true;
         }
@@ -332,13 +335,9 @@ export function autoAccrueLateFeeFines(s: UwalemiState, activeUntickedMonth?: { 
         });
         changed = true;
       }
-    } else if (existingIdx >= 0) {
-      const ex = accruedFines[existingIdx];
-      if (!ex.paidAmount || ex.paidAmount === 0) {
-        accruedFines.splice(existingIdx, 1);
-        changed = true;
-      }
     }
+    // TANBIHI: Hatuondoi (splice) faini iliyopo hata kama calculatedPenalty iko 0 (kwa sababu mwanachama amelipa ada).
+    // Faini itaendelea kubaki kama deni thabiti hadi pale malipo ya faini (finePayments) yatakaporekodiwa!
   });
 
   if (changed || !s.accruedFines) {
