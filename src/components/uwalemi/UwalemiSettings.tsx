@@ -297,7 +297,7 @@ export const UwalemiSettings: React.FC<Props> = ({ state, onSaveState }) => {
             <div className="text-xs space-y-1">
               <div className="font-bold text-amber-300">Kanuni ya Faini ya Kuchelewesha Ada (Kuanzia Mwezi wa 6 / Juni 2026):</div>
               <p className="text-slate-300 leading-relaxed text-[11px]">
-                Faini ya kuchelewesha ada inaanza rasmi kuhesabiwa kuanzia <strong className="text-white">Mwezi wa 6 (Juni 2026)</strong>. Mwanachama anayedaiwa ada kuanzia mwezi huo hutozwa faini ya <strong className="text-amber-400 font-mono">TZS 5,000</strong> kwa kila mwezi unaodaiwa kuanzia mwezi huo. Faini ikishatengenezwa inabaki kama deni thabiti hadi pale malipo ya faini yatakaporekodiwa.
+                Faini ya kuchelewesha ada inaanza rasmi kuhesabiwa kuanzia <strong className="text-white">Mwezi wa 6 (Juni 2026)</strong>. Mwanachama anayedaiwa zaidi ya miezi 3 kuanzia mwezi huo hutozwa faini ya <strong className="text-amber-400 font-mono">TZS 5,000</strong> kwa kila mwezi unaozidi miezi 3 ya kwanza (kuanzia mwezi wa 4 wa kutolipwa kuanzia Juni 2026). Faini ikishatengenezwa inabaki kama deni thabiti hadi pale malipo ya faini yatakaporekodiwa.
               </p>
             </div>
           </div>

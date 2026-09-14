@@ -277,19 +277,11 @@ export function autoAccrueLateFeeFines(s: UwalemiState, activeUntickedMonth?: { 
     const payments = s.monthlyPayments || [];
     let unpaidFromJuneCount = 0;
 
-    const maxYear = Math.max(
-      currentYear, 
-      ...(payments.map(p => Number(p.year) || 2026)), 
-      activeUntickedMonth ? activeUntickedMonth.year : 2026
-    );
-
-    for (let y = 2026; y <= maxYear; y++) {
+    // Faini ya ada inapaswa kutozwa kwa miezi iliyokwishapita au iliyofika pekee (hadi currentMonth).
+    // Miezi ya mbeleni (kama Oktoba, Novemba, Desemba) haiwezi kutozwa faini kabla haijafika.
+    for (let y = 2026; y <= currentYear; y++) {
       const startM = y === 2026 ? 6 : 1;
-      const untickedInYear = (activeUntickedMonth && activeUntickedMonth.year === y) ? activeUntickedMonth.month : 0;
-      const maxPaymentMonthInYear = Math.max(0, ...(payments.filter(p => Number(p.year) === y).map(p => Number(p.month) || 0)));
-      const endM = y < currentYear 
-        ? 12 
-        : Math.max(currentMonth, untickedInYear, maxPaymentMonthInYear);
+      const endM = y < currentYear ? 12 : currentMonth;
 
       for (let m = startM; m <= endM; m++) {
         const p = payments.find(pay => 
@@ -307,22 +299,21 @@ export function autoAccrueLateFeeFines(s: UwalemiState, activeUntickedMonth?: { 
 
     const { penalty: calculatedPenalty } = calculateLateFeePenalty(unpaidFromJuneCount);
 
-    if (calculatedPenalty > 0) {
-      const existingIdx = accruedFines.findIndex(
-        af => (af.memberId === member.id || (member.memberNo && af.memberNo === member.memberNo)) && af.fineType === 'ada_late_fee'
-      );
+    const existingIdx = accruedFines.findIndex(
+      af => (af.memberId === member.id || (member.memberNo && af.memberNo === member.memberNo)) && af.fineType === 'ada_late_fee'
+    );
 
-      const fineReason = `Faini ya Kuchelewa Ada (Kuanzia Mwezi wa 6 / Juni 2026 - Miezi ${unpaidFromJuneCount})`;
+    if (calculatedPenalty > 0) {
+      const fineReason = `Faini ya Kuchelewa Ada (>Miezi 3 kuanzia Juni 2026 - Miezi ${unpaidFromJuneCount})`;
 
       if (existingIdx >= 0) {
         const ex = accruedFines[existingIdx];
-        const newAmt = Math.max(Number(ex.amount) || 0, calculatedPenalty);
-        if (newAmt !== ex.amount || ex.reason !== fineReason) {
+        if (ex.amount !== calculatedPenalty || ex.reason !== fineReason) {
           accruedFines[existingIdx] = {
             ...ex,
-            amount: newAmt,
+            amount: calculatedPenalty,
             reason: fineReason,
-            status: (ex.paidAmount || 0) >= newAmt ? 'paid' : (ex.paidAmount || 0) > 0 ? 'partial' : 'unpaid'
+            status: (ex.paidAmount || 0) >= calculatedPenalty ? 'paid' : (ex.paidAmount || 0) > 0 ? 'partial' : 'unpaid'
           };
           changed = true;
         }
@@ -339,6 +330,12 @@ export function autoAccrueLateFeeFines(s: UwalemiState, activeUntickedMonth?: { 
           status: 'unpaid',
           paidAmount: 0
         });
+        changed = true;
+      }
+    } else if (existingIdx >= 0) {
+      const ex = accruedFines[existingIdx];
+      if (!ex.paidAmount || ex.paidAmount === 0) {
+        accruedFines.splice(existingIdx, 1);
         changed = true;
       }
     }
@@ -686,7 +683,13 @@ export function calculateMemberFeeDebt(
   // Kanuni ya Kikundi: Faini ya ada inaanza rasmi kuhesabiwa kuanzia Mwezi wa 6 (Juni 2026).
   // Mwanachama anayedaiwa zaidi ya miezi 3 kuanzia Mwezi wa 6 (Juni 2026)
   // hutozwa faini ya TZS 5,000 kwa kila mwezi unaozidi miezi 3 ya kwanza kuanzia mwezi huo wa 6.
-  const unpaidFromJuneItems = unpaidItems.filter(item => item.year > 2026 || (item.year === 2026 && item.month >= 6));
+  // MUHIMU: Faini haitozwi kwa miezi ya mbeleni ambayo bado haijafika (kama Oktoba, Novemba, Desemba).
+  const currentY = now.getFullYear();
+  const currentM = now.getMonth() + 1;
+  const unpaidFromJuneItems = unpaidItems.filter(item => 
+    ((item.year === 2026 && item.month >= 6) || item.year > 2026) &&
+    (item.year < currentY || (item.year === currentY && item.month <= currentM))
+  );
   const unpaidFromJuneCount = unpaidFromJuneItems.length;
   const { penalty: currentUnpaidPenalty } = calculateLateFeePenalty(unpaidFromJuneCount);
 
