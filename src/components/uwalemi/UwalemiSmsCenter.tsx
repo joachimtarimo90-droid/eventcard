@@ -79,6 +79,8 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   const [isSending, setIsSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null);
   const [previewMemberIndex, setPreviewMemberIndex] = useState<number>(0);
+  const [resendingLogId, setResendingLogId] = useState<string | null>(null);
+  const [resendLogFeedback, setResendLogFeedback] = useState<{ id: string; success: boolean; message: string } | null>(null);
 
   // Sync props when user triggers SMS from external tabs (like Fines report or Meetings)
   useEffect(() => {
@@ -718,6 +720,50 @@ Lema, Nguvu Moja!`);
       success: result.success,
       message: result.message
     });
+  };
+
+  const handleResendLog = async (log: any) => {
+    const phone = log.recipientPhone || '';
+    if (!phone) {
+      alert('Hakuna namba ya simu ya mpokeaji iliyopatikana kwenye kumbukumbu hii.');
+      return;
+    }
+    const textToSend = log.message || log.content || '';
+    if (!textToSend) {
+      alert('Hakuna ujumbe uliopatikana kwenye kumbukumbu hii.');
+      return;
+    }
+
+    setResendingLogId(log.id);
+    setResendLogFeedback(null);
+    try {
+      const result = await sendUwalemiSms({
+        recipients: [
+          {
+            memberId: log.memberId,
+            phone,
+            name: log.recipientName,
+            customMessage: textToSend
+          }
+        ],
+        message: textToSend,
+        messageType: log.type || 'receipt'
+      });
+
+      setResendLogFeedback({
+        id: log.id,
+        success: result.success,
+        message: result.success ? `✓ SMS imetumwa tena kwa mafanikio kwenda ${phone}!` : (result.message || 'Haikuweza kutuma SMS.')
+      });
+    } catch (e: any) {
+      setResendLogFeedback({
+        id: log.id,
+        success: false,
+        message: e.message || 'Hitilafu ya mtandao wakati wa kutuma SMS.'
+      });
+    } finally {
+      setResendingLogId(null);
+    }
   };
 
   const handleSaveGateway = async (e: React.FormEvent) => {
@@ -1836,6 +1882,15 @@ Lema, Nguvu Moja!`);
             <span className="text-xs text-slate-400">Jumla: {messageLogs.length} ujumbe</span>
           </div>
 
+          {resendLogFeedback && (
+            <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between border ${
+              resendLogFeedback.success ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300' : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
+            }`}>
+              <span>{resendLogFeedback.message}</span>
+              <button onClick={() => setResendLogFeedback(null)} className="text-slate-400 hover:text-white text-xs cursor-pointer ml-2">✕</button>
+            </div>
+          )}
+
           {messageLogs.length === 0 ? (
             <div className="py-12 text-center text-slate-500 text-xs">
               Bado hakuna kumbukumbu za ujumbe uliotumwa.
@@ -1851,6 +1906,7 @@ Lema, Nguvu Moja!`);
                     <th className="py-2.5 px-3">Simu</th>
                     <th className="py-2.5 px-3">Hali</th>
                     <th className="py-2.5 px-3">Ujumbe</th>
+                    <th className="py-2.5 px-3 text-right">Hatua / Tuma Tena</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -1880,6 +1936,32 @@ Lema, Nguvu Moja!`);
                       </td>
                       <td className="py-2.5 px-3 text-slate-300 max-w-xs truncate" title={log.message}>
                         {log.message}
+                      </td>
+                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleResendLog(log)}
+                            disabled={resendingLogId === log.id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600 border border-blue-500/40 text-blue-300 hover:text-white text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                            title="Tuma Tena Ujumbe Huu kwa SMS"
+                          >
+                            <Send className="w-3 h-3" />
+                            {resendingLogId === log.id ? '...' : 'Tuma Tena'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              const text = log.message || '';
+                              const rawPhone = (log.recipientPhone || '').replace(/\D/g, '');
+                              const formattedPhone = rawPhone.startsWith('0') ? `255${rawPhone.slice(1)}` : rawPhone;
+                              window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`, '_blank');
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-600/20 hover:bg-teal-600 border border-teal-500/40 text-teal-300 hover:text-white text-[11px] font-bold transition-all cursor-pointer"
+                            title="Tuma Ujumbe Huu kupitia WhatsApp"
+                          >
+                            <Share2 className="w-3 h-3" />
+                            WhatsApp
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

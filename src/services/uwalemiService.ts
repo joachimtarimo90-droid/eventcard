@@ -1083,13 +1083,15 @@ export async function triggerAutoReceiptSms(params: {
   remainingFineDebt?: number;
   totalDebtAfter?: number;
   customMessage?: string;
+  forceSend?: boolean;
+  targetPhone?: string;
 }): Promise<{ triggered: boolean; success: boolean; message: string }> {
-  const autoSend = params.state.groupSettings?.smsConfig?.autoSendReceipts;
+  const autoSend = params.forceSend || params.state.groupSettings?.smsConfig?.autoSendReceipts;
   if (!autoSend) {
     return { triggered: false, success: false, message: 'Utumaji wa stakabadhi kiotomatiki umezimwa kwenye mipangilio.' };
   }
 
-  const phone = (params.member.phone || '').trim();
+  const phone = (params.targetPhone || params.member.phone || '').trim();
   if (!phone) {
     return { triggered: false, success: false, message: `Mwanachama ${params.member.fullName || ''} hana namba ya simu ya kutumiwa stakabadhi.` };
   }

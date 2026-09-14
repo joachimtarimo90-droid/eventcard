@@ -30,7 +30,9 @@ import {
   Coins,
   Scale,
   AlertTriangle,
-  FileText
+  FileText,
+  MessageSquare,
+  Phone
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { generatePaymentReceiptPDF } from '../../services/uwalemiPdfGenerator';
@@ -112,6 +114,26 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
     remainingFineDebt?: number;
     totalDebtAfter: number;
   } | null>(null);
+
+  // SMS Resend state for receipts
+  const [resendingReceiptSms, setResendingReceiptSms] = useState<boolean>(false);
+  const [receiptSmsStatus, setReceiptSmsStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [receiptPhoneInput, setReceiptPhoneInput] = useState<string>('');
+
+  useEffect(() => {
+    if (viewingReceipt) {
+      const member = state.members.find(m => m.id === viewingReceipt.memberId || m.memberNo === viewingReceipt.memberNo);
+      setReceiptPhoneInput(member?.phone || '');
+      setReceiptSmsStatus(null);
+    }
+  }, [viewingReceipt, state.members]);
+
+  useEffect(() => {
+    if (viewingMultiReceipt) {
+      setReceiptPhoneInput(viewingMultiReceipt.member?.phone || '');
+      setReceiptSmsStatus(null);
+    }
+  }, [viewingMultiReceipt]);
 
   // Custom Confirmation Dialog States
   const [wholeYearConfirmOpen, setWholeYearConfirmOpen] = useState(false);
@@ -2696,6 +2718,83 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
               <p className="font-medium text-slate-700">Ahsante kwa kuwajibika na kujenga kikundi chetu.</p>
             </div>
 
+            {/* SMS Resend Box */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold flex items-center gap-1.5 text-slate-800">
+                  <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
+                  SMS ya Stakabadhi (Simu ya Mjumbe):
+                </span>
+                {receiptSmsStatus && (
+                  <span className={`text-[11px] font-bold ${receiptSmsStatus.type === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                    {receiptSmsStatus.message}
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  <input
+                    type="tel"
+                    value={receiptPhoneInput}
+                    onChange={(e) => setReceiptPhoneInput(e.target.value)}
+                    placeholder="07XXXXXXXX au 255..."
+                    className="w-full bg-white border border-slate-300 rounded-lg pl-8 pr-2.5 py-1.5 text-slate-900 font-mono text-xs focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={resendingReceiptSms}
+                  onClick={async () => {
+                    const phone = receiptPhoneInput.trim();
+                    if (!phone) {
+                      setReceiptSmsStatus({ type: 'error', message: 'Ingiza namba ya simu ya mpokeaji.' });
+                      return;
+                    }
+                    const memberObj = members.find(m => m.id === viewingReceipt.memberId || m.memberNo === viewingReceipt.memberNo) || {
+                      id: viewingReceipt.memberId,
+                      memberNo: viewingReceipt.memberNo,
+                      fullName: viewingReceipt.memberName,
+                      phone
+                    };
+                    setResendingReceiptSms(true);
+                    setReceiptSmsStatus(null);
+                    try {
+                      const rem = Math.max(0, viewingReceipt.expectedAmount - viewingReceipt.paidAmount);
+                      const res = await triggerAutoReceiptSms({
+                        state,
+                        member: { ...memberObj, phone },
+                        paymentType: 'ada',
+                        amount: viewingReceipt.paidAmount,
+                        purpose: `Ada ya ${monthNamesSw[viewingReceipt.month - 1]} ${viewingReceipt.year}`,
+                        receiptNo: viewingReceipt.receiptNo || `REC-${viewingReceipt.id.slice(-6)}`,
+                        paymentDate: viewingReceipt.paymentDate,
+                        paymentMethod: normalizePaymentMethod(viewingReceipt.paymentMethod),
+                        isPartial: viewingReceipt.status === 'partial',
+                        expectedAmount: viewingReceipt.expectedAmount,
+                        monthBalance: rem,
+                        forceSend: true,
+                        targetPhone: phone
+                      });
+                      if (res.success) {
+                        setReceiptSmsStatus({ type: 'success', message: `✓ SMS imetumwa tena kwa ${phone}!` });
+                      } else {
+                        setReceiptSmsStatus({ type: 'error', message: res.message || 'Haikuweza kutuma SMS.' });
+                      }
+                    } catch (e: any) {
+                      setReceiptSmsStatus({ type: 'error', message: e.message || 'Hitilafu ya mtandao.' });
+                    } finally {
+                      setResendingReceiptSms(false);
+                    }
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs shadow-sm transition-all cursor-pointer whitespace-nowrap"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {resendingReceiptSms ? 'Inatuma...' : 'Tuma Tena SMS'}
+                </button>
+              </div>
+            </div>
+
             {/* Buttons */}
             <div className="flex flex-wrap gap-2 pt-2">
               <button
@@ -2892,6 +2991,83 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
             <div className="text-center text-[10px] text-slate-500 space-y-0.5">
               <p>Imethibitishwa na Mfumo wa UWALEMI Treasury.</p>
               <p className="font-medium text-slate-700">Ahsante kwa kuwajibika na kujenga kikundi chetu.</p>
+            </div>
+
+            {/* SMS Resend Box */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold flex items-center gap-1.5 text-slate-800">
+                  <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
+                  SMS ya Stakabadhi (Simu ya Mjumbe):
+                </span>
+                {receiptSmsStatus && (
+                  <span className={`text-[11px] font-bold ${receiptSmsStatus.type === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                    {receiptSmsStatus.message}
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  <input
+                    type="tel"
+                    value={receiptPhoneInput}
+                    onChange={(e) => setReceiptPhoneInput(e.target.value)}
+                    placeholder="07XXXXXXXX au 255..."
+                    className="w-full bg-white border border-slate-300 rounded-lg pl-8 pr-2.5 py-1.5 text-slate-900 font-mono text-xs focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={resendingReceiptSms}
+                  onClick={async () => {
+                    const phone = receiptPhoneInput.trim();
+                    if (!phone) {
+                      setReceiptSmsStatus({ type: 'error', message: 'Ingiza namba ya simu ya mpokeaji.' });
+                      return;
+                    }
+                    setResendingReceiptSms(true);
+                    setReceiptSmsStatus(null);
+                    try {
+                      const isCombo = Boolean(viewingMultiReceipt.months?.length && viewingMultiReceipt.fineItems?.length);
+                      const feeAmt = viewingMultiReceipt.months?.reduce((s, m) => s + m.paid, 0);
+                      const fineAmt = viewingMultiReceipt.fineItems?.reduce((s, f) => s + f.amount, 0);
+
+                      const res = await triggerAutoReceiptSms({
+                        state,
+                        member: { ...viewingMultiReceipt.member, phone },
+                        paymentType: isCombo ? 'combo' : viewingMultiReceipt.months?.length ? 'ada' : 'fine',
+                        amount: viewingMultiReceipt.amount,
+                        feeAmount: feeAmt,
+                        fineAmount: fineAmt,
+                        purpose: viewingMultiReceipt.receiptTitle || (isCombo ? 'Ada na Faini' : viewingMultiReceipt.months?.length ? 'Ada ya Miezi' : 'Faini za UWALEMI'),
+                        receiptNo: viewingMultiReceipt.receiptNo,
+                        paymentDate: viewingMultiReceipt.paymentDate,
+                        paymentMethod: normalizePaymentMethod(viewingMultiReceipt.paymentMethod),
+                        multiMonthBreakdown: viewingMultiReceipt.months,
+                        fineBreakdown: viewingMultiReceipt.fineItems,
+                        totalDebtAfter: viewingMultiReceipt.totalDebtAfter,
+                        forceSend: true,
+                        targetPhone: phone
+                      });
+
+                      if (res.success) {
+                        setReceiptSmsStatus({ type: 'success', message: `✓ SMS imetumwa tena kwa ${phone}!` });
+                      } else {
+                        setReceiptSmsStatus({ type: 'error', message: res.message || 'Haikuweza kutuma SMS.' });
+                      }
+                    } catch (e: any) {
+                      setReceiptSmsStatus({ type: 'error', message: e.message || 'Hitilafu ya mtandao.' });
+                    } finally {
+                      setResendingReceiptSms(false);
+                    }
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs shadow-sm transition-all cursor-pointer whitespace-nowrap"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {resendingReceiptSms ? 'Inatuma...' : 'Tuma Tena SMS'}
+                </button>
+              </div>
             </div>
 
             {/* Buttons */}
