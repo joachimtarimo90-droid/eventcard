@@ -838,9 +838,9 @@ export const generateFinancialReportPDF = (
   }
   debtRows.push(
     [
-      'Madeni ya Faini za Ada (>Miezi 3 ya Kuchelewa - Kikundi)',
+      'Madeni ya Faini za Ada (Kuanzia Mwezi wa 6 / Juni 2026 - Kikundi)',
       formatTZS(totalLateFeePenalty),
-      'Faini ya TZS 5,000 kwa kila mwezi unaozidi miezi 3 ya deni (Jumla ya wanachama wote wenye malimbikizo)'
+      'Faini ya TZS 5,000 kwa kila mwezi unaodaiwa kuanzia Mwezi wa 6 (Jumla ya wanachama wote wenye faini)'
     ],
     [
       'Madeni ya Faini ya Kuchelewa Kwenye Vikao',
@@ -1913,9 +1913,9 @@ export const generateFinesReportPDF = (
         `Wenye madeni ya faini bado hawajalipa (${totalMembersWithFinePaid} wameshalipa faini zao). Wakilipa ada au faini idadi inapungua`
       ],
       [
-        '1. Faini ya Kuchelewesha Ada (>Miezi 3, Mz 6+)',
+        '1. Faini ya Kuchelewesha Ada (Kuanzia Mwezi wa 6 / Juni 2026)',
         `Deni: ${formatTZS(totalLateFeeDebt)} | Imelipwa: ${formatTZS(totalLateFeePaid)}`,
-        'TZS 5,000 kwa kila mwezi unaozidi miezi 3 ya deni la ada kuanzia Mwezi wa 6 (Juni 2026)'
+        'TZS 5,000 kwa kila mwezi unaodaiwa ada kuanzia Mwezi wa 6 (Juni 2026)'
       ],
       [
         '2. Faini ya Kuchelewa Kwenye Kikao',

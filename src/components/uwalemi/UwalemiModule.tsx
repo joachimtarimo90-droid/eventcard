@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UwalemiState, UwalemiTab } from '../../types/uwalemi';
-import { fetchUwalemiState, saveUwalemiState, INITIAL_UWALEMI_STATE } from '../../services/uwalemiService';
+import { fetchUwalemiState, saveUwalemiState, autoAccrueLateFeeFines, INITIAL_UWALEMI_STATE } from '../../services/uwalemiService';
 import { UwalemiOverview } from './UwalemiOverview';
 import { UwalemiMembers } from './UwalemiMembers';
 import { UwalemiMonthlyFees } from './UwalemiMonthlyFees';
@@ -70,8 +70,9 @@ export const UwalemiModule: React.FC<Props> = ({ onBackToMainApp }) => {
 
   const handleSaveState = async (newState: UwalemiState): Promise<boolean> => {
     setIsSaving(true);
-    setState(newState);
-    const success = await saveUwalemiState(newState);
+    const reconciled = autoAccrueLateFeeFines(newState);
+    setState(reconciled);
+    const success = await saveUwalemiState(reconciled);
     setIsSaving(false);
     return success;
   };

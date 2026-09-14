@@ -261,7 +261,7 @@ export async function fetchUwalemiState(): Promise<UwalemiState> {
   return INITIAL_UWALEMI_STATE;
 }
 
-export function autoAccrueLateFeeFines(s: UwalemiState): UwalemiState {
+export function autoAccrueLateFeeFines(s: UwalemiState, activeUntickedMonth?: { year: number; month: number }): UwalemiState {
   if (!s || !Array.isArray(s.members) || s.members.length === 0) {
     return s;
   }
@@ -277,9 +277,20 @@ export function autoAccrueLateFeeFines(s: UwalemiState): UwalemiState {
     const payments = s.monthlyPayments || [];
     let unpaidFromJuneCount = 0;
 
-    for (let y = 2026; y <= currentYear; y++) {
+    const maxYear = Math.max(
+      currentYear, 
+      ...(payments.map(p => Number(p.year) || 2026)), 
+      activeUntickedMonth ? activeUntickedMonth.year : 2026
+    );
+
+    for (let y = 2026; y <= maxYear; y++) {
       const startM = y === 2026 ? 6 : 1;
-      const endM = y === currentYear ? currentMonth : 12;
+      const untickedInYear = (activeUntickedMonth && activeUntickedMonth.year === y) ? activeUntickedMonth.month : 0;
+      const maxPaymentMonthInYear = Math.max(0, ...(payments.filter(p => Number(p.year) === y).map(p => Number(p.month) || 0)));
+      const endM = y < currentYear 
+        ? 12 
+        : Math.max(currentMonth, untickedInYear, maxPaymentMonthInYear);
+
       for (let m = startM; m <= endM; m++) {
         const p = payments.find(pay => 
           (pay.memberId === member.id || (member.memberNo && pay.memberNo === member.memberNo)) &&
@@ -301,13 +312,16 @@ export function autoAccrueLateFeeFines(s: UwalemiState): UwalemiState {
         af => (af.memberId === member.id || (member.memberNo && af.memberNo === member.memberNo)) && af.fineType === 'ada_late_fee'
       );
 
+      const fineReason = `Faini ya Kuchelewa Ada (Kuanzia Mwezi wa 6 / Juni 2026 - Miezi ${unpaidFromJuneCount})`;
+
       if (existingIdx >= 0) {
         const ex = accruedFines[existingIdx];
         const newAmt = Math.max(Number(ex.amount) || 0, calculatedPenalty);
-        if (newAmt !== ex.amount) {
+        if (newAmt !== ex.amount || ex.reason !== fineReason) {
           accruedFines[existingIdx] = {
             ...ex,
             amount: newAmt,
+            reason: fineReason,
             status: (ex.paidAmount || 0) >= newAmt ? 'paid' : (ex.paidAmount || 0) > 0 ? 'partial' : 'unpaid'
           };
           changed = true;
@@ -319,7 +333,7 @@ export function autoAccrueLateFeeFines(s: UwalemiState): UwalemiState {
           memberNo: member.memberNo,
           memberName: member.fullName,
           fineType: 'ada_late_fee',
-          reason: 'Faini ya Kuchelewa Ada (>Miezi 3 kuanzia Juni 2026)',
+          reason: fineReason,
           amount: calculatedPenalty,
           assessedDate: new Date().toISOString().split('T')[0],
           status: 'unpaid',

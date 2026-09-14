@@ -579,7 +579,7 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
         Object.assign(rowData, monthCols);
         rowData['Ada Zilizolipwa'] = paidFee;
         rowData['Deni la Ada'] = feeDebt;
-        rowData['Faini ya Kuchelewa Ada (>Miezi 3)'] = lateFeePenalty;
+        rowData['Faini ya Kuchelewa Ada (Kuanzia Mwezi wa 6)'] = lateFeePenalty;
         rowData['Faini za Vikao (Zisizolipwa)'] = meetingFinesDebt;
         rowData['Jumla ya Faini'] = totalFinesDebt;
         rowData['Michango ya Dharura'] = emergencyPaid;
@@ -628,7 +628,7 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
           'Namba ya Simu': m.phone,
           'Wadhifa': m.role || 'Mjumbe',
           'Miezi ya Deni la Ada': unpaidMonthsCount,
-          'Faini ya Kuchelewa Ada (>Miezi 3)': lateFeePenalty,
+          'Faini ya Kuchelewa Ada (Kuanzia Mwezi wa 6)': lateFeePenalty,
           'Faini za Vikao (Zisizolipwa)': meetingFinesDebt,
           'Faini za Vikao (Zilizolipwa)': meetingFinesPaid,
           'Jumla ya Faini Zinazodaiwa': totalMemberFineDebt,

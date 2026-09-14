@@ -42,6 +42,8 @@ import {
   triggerAutoReceiptSms,
   calculateMemberFeeDebt,
   calculateMemberOtherFines,
+  calculateLateFeePenalty,
+  autoAccrueLateFeeFines,
   formatMemberReceiptDebtLines,
   normalizePaymentMethod
 } from '../../services/uwalemiService';
@@ -138,6 +140,14 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
   // Custom Confirmation Dialog States
   const [wholeYearConfirmOpen, setWholeYearConfirmOpen] = useState(false);
   const [wholeYearData, setWholeYearData] = useState<{ member: UwalemiMember; year: number } | null>(null);
+  const [matrixToast, setMatrixToast] = useState<{ message: string; type: 'info' | 'warning' | 'success' } | null>(null);
+
+  useEffect(() => {
+    if (matrixToast) {
+      const timer = setTimeout(() => setMatrixToast(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [matrixToast]);
 
   // Annual Manual Entry Modal State (Jan - Dec)
   const [isAnnualModalOpen, setIsAnnualModalOpen] = useState<boolean>(false);
@@ -1041,6 +1051,41 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
     }
   };
 
+  // Open Record Payment Modal for a specific member directly
+  const handleOpenRecordModalForMember = (member: UwalemiMember, preferredMode: 'smart' | 'ada_late_fee' = 'smart') => {
+    const debtInfo = calculateMemberFeeDebt(member, state, selectedYear);
+    if (preferredMode === 'ada_late_fee' && debtInfo.lateFeePenalty > 0) {
+      setRecordMode('fine');
+      setPaymentForm({
+        memberId: member.id,
+        year: selectedYear,
+        month: selectedMonth,
+        amount: 0,
+        fineAmount: debtInfo.lateFeePenalty,
+        fineType: 'ada_late_fee',
+        paymentDate: new Date().toISOString().split('T')[0],
+        paymentMethod: 'M Koba',
+        referenceNo: '',
+        note: `Malipo ya Faini ya Kuchelewa Ada (${member.fullName})`
+      });
+    } else {
+      setRecordMode('smart');
+      setPaymentForm({
+        memberId: member.id,
+        year: selectedYear,
+        month: selectedMonth,
+        amount: debtInfo.feeDebt > 0 ? debtInfo.feeDebt : 20000,
+        fineAmount: debtInfo.totalFinesDebt > 0 ? debtInfo.totalFinesDebt : undefined,
+        fineType: debtInfo.lateFeePenalty > 0 ? 'all_fines' : 'kikao',
+        paymentDate: new Date().toISOString().split('T')[0],
+        paymentMethod: 'M Koba',
+        referenceNo: '',
+        note: ''
+      });
+    }
+    setIsRecordModalOpen(true);
+  };
+
   // Toggle single cell in Matrix Mode
   const handleToggleMonthCell = async (member: UwalemiMember, year: number, month: number) => {
     const existing = monthlyPayments.find(p => 
@@ -1051,6 +1096,8 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
     const expected = getDefaultFeeForMonth(year, month, member.monthlyFeeAmount);
 
     let updatedPayments = [...monthlyPayments];
+    let isUnticking = false;
+
     if (existing && Number(existing.paidAmount) >= expected) {
       // Toggle to unpaid
       updatedPayments = updatedPayments.filter(p => 
@@ -1058,6 +1105,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
           Number(p.year) === Number(year) && 
           Number(p.month) === Number(month))
       );
+      isUnticking = true;
     } else {
       // Mark as paid
       const receiptNo = `UWL-REC-${year}${String(month).padStart(2, '0')}-${member.memberNo.replace('UWL-', '')}`;
@@ -1084,7 +1132,30 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
       );
       updatedPayments.push(newPayment);
     }
-    await onSaveState({ ...state, monthlyPayments: updatedPayments });
+
+    const nextState: UwalemiState = { ...state, monthlyPayments: updatedPayments };
+    const reconciledState = autoAccrueLateFeeFines(nextState, isUnticking ? { year, month } : undefined);
+    await onSaveState(reconciledState);
+
+    if (isUnticking) {
+      const debtInfo = calculateMemberFeeDebt(member, reconciledState, year, month);
+      if (year >= 2026 && month >= 6 && debtInfo.lateFeePenalty > 0) {
+        setMatrixToast({
+          message: `⚠️ Ada ya ${monthNamesSw[month - 1]} ${year} imeondolewa kwa ${member.fullName}. Faini ya kuchelewa ada (TZS ${debtInfo.lateFeePenalty.toLocaleString()}) imetengenezwa hapo hapo! Faini itabaki hadi malipo ya faini yatakaporekodiwa.`,
+          type: 'warning'
+        });
+      } else {
+        setMatrixToast({
+          message: `Ada ya ${monthNamesSw[month - 1]} ${year} imeondolewa kwa ${member.fullName}.`,
+          type: 'info'
+        });
+      }
+    } else {
+      setMatrixToast({
+        message: `Ada ya ${monthNamesSw[month - 1]} ${year} (TZS ${expected.toLocaleString()}) imewekwa kuwa imelipwa kwa ${member.fullName}.`,
+        type: 'success'
+      });
+    }
   };
 
   // Mark all 12 months paid for a member in a specific year
@@ -1807,6 +1878,32 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
       ) : (
         /* 12-MONTH MATRIX GRID VIEW */
         <div className="space-y-4">
+          {matrixToast && (
+            <div className={`p-3 rounded-2xl border flex items-center justify-between gap-3 text-xs font-medium shadow-lg transition-all ${
+              matrixToast.type === 'warning'
+                ? 'bg-amber-950/80 border-amber-500/50 text-amber-200'
+                : matrixToast.type === 'success'
+                ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-200'
+                : 'bg-blue-950/80 border-blue-500/50 text-blue-200'
+            }`}>
+              <div className="flex items-center gap-2">
+                {matrixToast.type === 'warning' ? (
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                )}
+                <span>{matrixToast.message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMatrixToast(null)}
+                className="text-slate-400 hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-300">
             <div>
               <span className="font-bold block text-sm text-white flex items-center gap-1.5">
@@ -1814,7 +1911,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                 Ujazaji wa Taarifa za Mwaka Mzima ({selectedYear}):
               </span>
               <span className="text-slate-300 text-xs">
-                Weka kiasi kwa mkono kuanzia Januari hadi Desemba kwa mbofyo mmoja, au badili malipo ya mwezi mmoja mmoja moja kwa moja kwenye jedwali.
+                Weka kiasi kwa mkono kuanzia Januari hadi Desemba kwa mbofyo mmoja, au badili malipo ya mwezi mmoja mmoja moja kwa moja kwenye jedwali. Kuanzia Mwezi wa 6 (Juni 2026), mwanachama anayedaiwa hutengenezewa faini ya TZS 5,000 papo hapo hadi malipo yatakaporekodiwa.
               </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -1856,7 +1953,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                     const yearPayments = monthlyPayments.filter(p => (p.memberId === m.id || (m.memberNo && p.memberNo === m.memberNo)) && Number(p.year) === Number(selectedYear));
                     const totalPaidInYear = yearPayments.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
                     const paidCount = yearPayments.filter(p => Number(p.paidAmount) >= getDefaultFeeForMonth(selectedYear, Number(p.month), m.monthlyFeeAmount)).length;
-                    const mDebt = calculateMemberFeeDebt(m, state);
+                    const mDebt = calculateMemberFeeDebt(m, state, selectedYear);
 
                     return (
                       <tr key={m.id} className="hover:bg-slate-800/40">
@@ -1868,9 +1965,15 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                           <div className="text-[10px] text-slate-400 font-normal flex items-center flex-wrap gap-1.5 mt-0.5">
                             <span>Iliyolipiwa: {paidCount}/{totalMonthsInYear} miezi</span>
                             {mDebt.lateFeePenalty > 0 && (
-                              <span className="text-rose-400 font-semibold font-mono bg-rose-950/60 px-1.5 py-0.2 rounded border border-rose-800/40 text-[9.5px]" title={`Deni la Faini ya Kuchelewa Ada (>Miezi 3): TZS ${mDebt.lateFeePenalty.toLocaleString()}`}>
-                                Faini: {mDebt.lateFeePenalty.toLocaleString()}
-                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenRecordModalForMember(m, 'ada_late_fee')}
+                                className="inline-flex items-center gap-1 text-rose-300 font-bold font-mono bg-rose-950/90 hover:bg-rose-900 px-2 py-0.5 rounded-full border border-rose-600/60 text-[9.5px] cursor-pointer transition-all shadow-sm"
+                                title={`Deni la Faini ya Kuchelewa Ada: TZS ${mDebt.lateFeePenalty.toLocaleString()} - Bonyeza kurekodi malipo ya faini`}
+                              >
+                                <AlertTriangle className="w-2.5 h-2.5 text-rose-400" />
+                                Faini: {mDebt.lateFeePenalty.toLocaleString()} (Lipa)
+                              </button>
                             )}
                           </div>
                         </td>
@@ -1916,6 +2019,16 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
 
                         <td className="py-2.5 px-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">
+                            {mDebt.totalDebt > 0 && (
+                              <button
+                                onClick={() => handleOpenRecordModalForMember(m, mDebt.lateFeePenalty > 0 ? 'ada_late_fee' : 'smart')}
+                                title={`Rekodi malipo ya ${mDebt.lateFeePenalty > 0 ? 'Faini au Ada' : 'Ada'} kwa ${m.fullName}`}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10.5px] font-bold shadow-sm transition-all cursor-pointer whitespace-nowrap inline-flex items-center gap-1"
+                              >
+                                <CreditCard className="w-3 h-3" />
+                                Rekodi Malipo
+                              </button>
+                            )}
                             <button
                               onClick={() => handleOpenAnnualModal(m.id, selectedYear)}
                               title={`Jaza kiasi maalum kwa miezi yote 12 ya mwaka ${selectedYear} kwa ${m.fullName}`}
