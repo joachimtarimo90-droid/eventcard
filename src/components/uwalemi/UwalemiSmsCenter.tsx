@@ -37,7 +37,9 @@ import {
   CreditCard,
   Layers,
   ShieldCheck,
-  Zap
+  Zap,
+  Eye,
+  Copy
 } from 'lucide-react';
 
 interface Props {
@@ -81,6 +83,9 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   const [previewMemberIndex, setPreviewMemberIndex] = useState<number>(0);
   const [resendingLogId, setResendingLogId] = useState<string | null>(null);
   const [resendLogFeedback, setResendLogFeedback] = useState<{ id: string; success: boolean; message: string } | null>(null);
+  const [selectedLogForModal, setSelectedLogForModal] = useState<UwalemiMessageLog | any | null>(null);
+  const [copiedLogId, setCopiedLogId] = useState<string | null>(null);
+  const [logSearchTerm, setLogSearchTerm] = useState<string>('');
 
   // Sync props when user triggers SMS from external tabs (like Fines report or Meetings)
   useEffect(() => {
@@ -2072,13 +2077,44 @@ Lema, Nguvu Moja!`);
       {/* VIEW 3: MESSAGE LOGS */}
       {activeSubTab === 'logs' && (
         <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 backdrop-blur-md space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <History className="w-4 h-4 text-emerald-400" />
-              Kumbukumbu za Ujumbe Uliotumwa (Message Logs)
-            </h3>
-            <span className="text-xs text-slate-400">Jumla: {messageLogs.length} ujumbe</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <History className="w-4 h-4 text-emerald-400" />
+                Kumbukumbu za Ujumbe Uliotumwa (Message Logs)
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Huonesha tarehe, muda halisi, namba ya simu, na ujumbe kamili uliotumwa kwa kila mwanachama.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 font-mono">
+                Jumla: {messageLogs.length}
+              </span>
+            </div>
           </div>
+
+          {/* Search bar for logs */}
+          {messageLogs.length > 0 && (
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={logSearchTerm}
+                onChange={(e) => setLogSearchTerm(e.target.value)}
+                placeholder="Tafuta kumbukumbu kwa jina la mwanachama, namba ya simu, au maneno ya ujumbe..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              />
+              {logSearchTerm && (
+                <button
+                  onClick={() => setLogSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs cursor-pointer"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          )}
 
           {resendLogFeedback && (
             <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between border ${
@@ -2098,75 +2134,284 @@ Lema, Nguvu Moja!`);
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
                   <tr>
-                    <th className="py-2.5 px-3">Tarehe & Muda</th>
+                    <th className="py-2.5 px-3">Tarehe & Muda Halisi</th>
                     <th className="py-2.5 px-3">Aina</th>
                     <th className="py-2.5 px-3">Mpokeaji</th>
                     <th className="py-2.5 px-3">Simu</th>
                     <th className="py-2.5 px-3">Hali</th>
-                    <th className="py-2.5 px-3">Ujumbe</th>
-                    <th className="py-2.5 px-3 text-right">Hatua / Tuma Tena</th>
+                    <th className="py-2.5 px-3 min-w-[240px]">Ujumbe Uliotumwa</th>
+                    <th className="py-2.5 px-3 text-right">Hatua</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {messageLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-800/40">
-                      <td className="py-2.5 px-3 font-mono text-slate-400">
-                        {new Date(log.sentAt).toLocaleString('sw-TZ')}
-                      </td>
-                      <td className="py-2.5 px-3 uppercase text-[10px] font-bold text-emerald-400">
-                        {log.type}
-                      </td>
-                      <td className="py-2.5 px-3 font-semibold text-white">
-                        {log.recipientName}
-                      </td>
-                      <td className="py-2.5 px-3 font-mono text-slate-400">
-                        {log.recipientPhone}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          log.status === 'delivered' ? 'bg-emerald-500/15 text-emerald-400' :
-                          log.status === 'sent' ? 'bg-blue-500/15 text-blue-400' :
-                          log.status === 'simulated' ? 'bg-amber-500/15 text-amber-400' :
-                          'bg-rose-500/15 text-rose-400'
-                        }`}>
-                          {log.status}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-300 max-w-xs truncate" title={log.message}>
-                        {log.message}
-                      </td>
-                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => handleResendLog(log)}
-                            disabled={resendingLogId === log.id}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600 border border-blue-500/40 text-blue-300 hover:text-white text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
-                            title="Tuma Tena Ujumbe Huu kwa SMS"
-                          >
-                            <Send className="w-3 h-3" />
-                            {resendingLogId === log.id ? '...' : 'Tuma Tena'}
-                          </button>
-                          <button
-                            onClick={() => {
-                              const text = log.message || '';
-                              const rawPhone = (log.recipientPhone || '').replace(/\D/g, '');
-                              const formattedPhone = rawPhone.startsWith('0') ? `255${rawPhone.slice(1)}` : rawPhone;
-                              window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`, '_blank');
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-600/20 hover:bg-teal-600 border border-teal-500/40 text-teal-300 hover:text-white text-[11px] font-bold transition-all cursor-pointer"
-                            title="Tuma Ujumbe Huu kupitia WhatsApp"
-                          >
-                            <Share2 className="w-3 h-3" />
-                            WhatsApp
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {messageLogs
+                    .filter((log) => {
+                      if (!logSearchTerm.trim()) return true;
+                      const q = logSearchTerm.toLowerCase();
+                      const name = (log.recipientName || '').toLowerCase();
+                      const phone = (log.recipientPhone || '').toLowerCase();
+                      const text = (log.content || log.message || log.text || '').toLowerCase();
+                      const type = (log.messageType || log.type || '').toLowerCase();
+                      return name.includes(q) || phone.includes(q) || text.includes(q) || type.includes(q);
+                    })
+                    .map((log) => {
+                      const rawDate = log.timestamp || log.sentAt || log.createdAt || (log as any).date;
+                      let formattedDate = '—';
+                      if (rawDate) {
+                        const d = new Date(rawDate);
+                        if (!isNaN(d.getTime())) {
+                          formattedDate = d.toLocaleString('sw-TZ', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false
+                          });
+                        } else {
+                          formattedDate = String(rawDate);
+                        }
+                      }
+
+                      const rawType = (log.messageType || log.type || 'sms').toLowerCase();
+                      let typeLabel = 'SMS';
+                      if (rawType === 'receipt') typeLabel = 'Stakabadhi';
+                      else if (rawType === 'reminder') typeLabel = 'Kikumbusho';
+                      else if (rawType === 'emergency') typeLabel = 'Dharura';
+                      else if (rawType === 'meeting') typeLabel = 'Kikao';
+                      else if (rawType === 'broadcast') typeLabel = 'Matangazo';
+                      else if (rawType) typeLabel = rawType.toUpperCase();
+
+                      const messageText = log.content || log.message || log.text || '';
+                      const recipientPhone = log.recipientPhone || (log as any).phone || '';
+                      const recipientName = log.recipientName || (log as any).name || 'Mjumbe';
+
+                      return (
+                        <tr key={log.id} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="py-2.5 px-3 font-mono text-slate-300 text-[11px] whitespace-nowrap">
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-slate-500" />
+                              {formattedDate}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              {typeLabel}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 font-semibold text-white whitespace-nowrap">
+                            {recipientName}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono text-slate-400 text-[11px] whitespace-nowrap">
+                            {recipientPhone}
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              log.status === 'delivered' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' :
+                              log.status === 'sent' ? 'bg-blue-500/15 text-blue-400 border-blue-500/20' :
+                              log.status === 'simulated' ? 'bg-amber-500/15 text-amber-400 border-amber-500/20' :
+                              'bg-rose-500/15 text-rose-400 border-rose-500/20'
+                            }`}>
+                              {log.status === 'delivered' ? 'Imefika' :
+                               log.status === 'sent' ? 'Imetumwa' :
+                               log.status === 'simulated' ? 'Majaribio' :
+                               'Imeshindwa'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-200">
+                            <div className="flex items-start justify-between gap-2 max-w-md">
+                              <p className="line-clamp-2 text-xs leading-relaxed text-slate-300" title={messageText}>
+                                {messageText || <span className="text-slate-500 italic">Hakuna ujumbe</span>}
+                              </p>
+                              {messageText && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedLogForModal(log)}
+                                  className="text-emerald-400 hover:text-emerald-300 text-[10px] font-semibold whitespace-nowrap underline cursor-pointer shrink-0 mt-0.5"
+                                  title="Fungua na usome ujumbe mzima"
+                                >
+                                  Soma
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedLogForModal(log)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-[11px] font-medium transition-all cursor-pointer"
+                                title="Tazama maelezo yote ya kumbukumbu hii"
+                              >
+                                <Eye className="w-3 h-3" />
+                                Tazama
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleResendLog(log)}
+                                disabled={resendingLogId === log.id}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600 border border-blue-500/40 text-blue-300 hover:text-white text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                                title="Tuma Tena Ujumbe Huu kwa SMS"
+                              >
+                                <Send className="w-3 h-3" />
+                                {resendingLogId === log.id ? '...' : 'Tuma Tena'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const text = messageText || '';
+                                  const rawPhone = (recipientPhone || '').replace(/\D/g, '');
+                                  const formattedPhone = rawPhone.startsWith('0') ? `255${rawPhone.slice(1)}` : rawPhone;
+                                  window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`, '_blank');
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-600/20 hover:bg-teal-600 border border-teal-500/40 text-teal-300 hover:text-white text-[11px] font-bold transition-all cursor-pointer"
+                                title="Tuma Ujumbe Huu kupitia WhatsApp"
+                              >
+                                <Share2 className="w-3 h-3" />
+                                WhatsApp
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* MODAL: TAZAMA UJUMBE KAMILI (FULL MESSAGE VIEWER) */}
+      {selectedLogForModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-fadeIn">
+            {/* Modal Header */}
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-emerald-400" />
+                <h4 className="text-sm font-bold text-white">Maelezo ya Ujumbe Uliotumwa</h4>
+              </div>
+              <button
+                onClick={() => setSelectedLogForModal(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 text-xs">
+              {/* Meta Grid */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                <div>
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold">Mpokeaji:</span>
+                  <span className="font-semibold text-white text-xs">{selectedLogForModal.recipientName || 'Mwanachama'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold">Namba ya Simu:</span>
+                  <span className="font-mono text-emerald-400 text-xs">{selectedLogForModal.recipientPhone || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold">Tarehe na Muda:</span>
+                  <span className="text-slate-300 font-mono text-[11px]">
+                    {(() => {
+                      const raw = selectedLogForModal.timestamp || selectedLogForModal.sentAt || selectedLogForModal.createdAt || selectedLogForModal.date;
+                      if (!raw) return '—';
+                      const d = new Date(raw);
+                      return !isNaN(d.getTime()) ? d.toLocaleString('sw-TZ') : String(raw);
+                    })()}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold">Hali ya Kutumwa:</span>
+                  <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                    selectedLogForModal.status === 'delivered' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' :
+                    selectedLogForModal.status === 'sent' ? 'bg-blue-500/15 text-blue-400 border-blue-500/20' :
+                    selectedLogForModal.status === 'simulated' ? 'bg-amber-500/15 text-amber-400 border-amber-500/20' :
+                    'bg-rose-500/15 text-rose-400 border-rose-500/20'
+                  }`}>
+                    {selectedLogForModal.status === 'delivered' ? 'Imefika (Delivered)' :
+                     selectedLogForModal.status === 'sent' ? 'Imetumwa (Sent)' :
+                     selectedLogForModal.status === 'simulated' ? 'Majaribio (Simulated)' :
+                     `Imeshindwa (${selectedLogForModal.status})`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Message Box */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-slate-400 text-[11px] font-bold uppercase tracking-wider">Maneno Kamili ya Ujumbe:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const text = selectedLogForModal.content || selectedLogForModal.message || selectedLogForModal.text || '';
+                      navigator.clipboard.writeText(text);
+                      setCopiedLogId(selectedLogForModal.id);
+                      setTimeout(() => setCopiedLogId(null), 2000);
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer"
+                  >
+                    {copiedLogId === selectedLogForModal.id ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        Imenakiliwa!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        Nakili Ujumbe
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-slate-200 text-xs font-mono leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
+                  {selectedLogForModal.content || selectedLogForModal.message || selectedLogForModal.text || 'Hakuna ujumbe'}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="p-4 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedLogForModal(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Funga
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = selectedLogForModal.content || selectedLogForModal.message || selectedLogForModal.text || '';
+                    const rawPhone = (selectedLogForModal.recipientPhone || '').replace(/\D/g, '');
+                    const formattedPhone = rawPhone.startsWith('0') ? `255${rawPhone.slice(1)}` : rawPhone;
+                    window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`, '_blank');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold transition-all cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  Tuma WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleResendLog(selectedLogForModal);
+                    setSelectedLogForModal(null);
+                  }}
+                  disabled={resendingLogId === selectedLogForModal.id}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  Tuma Tena SMS
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

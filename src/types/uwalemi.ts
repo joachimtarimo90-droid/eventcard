@@ -186,13 +186,18 @@ export interface UwalemiGroupSettings {
 
 export interface UwalemiMessageLog {
   id: string;
-  timestamp: string;
+  timestamp?: string;
+  sentAt?: string;
+  createdAt?: string;
   recipientPhone: string;
   recipientName: string;
-  messageType: 'receipt' | 'reminder' | 'emergency' | 'meeting' | 'broadcast';
-  channel: 'sms' | 'whatsapp';
-  content: string;
-  status: 'delivered' | 'failed' | 'sent' | 'simulated';
+  messageType?: 'receipt' | 'reminder' | 'emergency' | 'meeting' | 'broadcast' | string;
+  type?: string;
+  channel?: 'sms' | 'whatsapp' | string;
+  content?: string;
+  message?: string;
+  text?: string;
+  status: 'delivered' | 'failed' | 'sent' | 'simulated' | string;
 }
 
 export interface UwalemiCandidate {
