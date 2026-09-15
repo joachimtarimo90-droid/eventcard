@@ -131,10 +131,13 @@ export const UwalemiModule: React.FC<Props> = ({ onBackToMainApp }) => {
           <div className="flex items-center justify-between h-16">
             {/* Brand */}
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 p-0.5 shadow-lg shadow-emerald-950/50 flex items-center justify-center">
-                <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
-                  <Shield className="w-5 h-5 text-emerald-400" />
-                </div>
+              <div className="w-11 h-11 rounded-full p-0.5 shadow-lg shadow-emerald-950/50 flex items-center justify-center bg-gradient-to-tr from-emerald-500 via-blue-500 to-teal-400">
+                <img 
+                  src={state.groupSettings?.logoUrl || '/uwalemi_logo.png'} 
+                  alt="UWALEMI Logo" 
+                  className="w-full h-full object-cover rounded-full bg-slate-950 border border-slate-900"
+                  referrerPolicy="no-referrer"
+                />
               </div>
 
               <div>

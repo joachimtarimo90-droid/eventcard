@@ -173,6 +173,7 @@ export interface UwalemiPaymentMethod {
 export interface UwalemiGroupSettings {
   groupName: string;
   slogan: string;
+  logoUrl?: string;
   registrationFeeDefault: number;
   monthlyFeeDefault: number;
   emergencyFeeDefault: number;
@@ -182,6 +183,9 @@ export interface UwalemiGroupSettings {
   smsConfig: UwalemiSmsConfig;
   constitutionSummary?: string;
   createdDate: string;
+  foundedYear?: number;
+  foundedMonth?: number;
+  foundedDay?: number;
 }
 
 export interface UwalemiMessageLog {

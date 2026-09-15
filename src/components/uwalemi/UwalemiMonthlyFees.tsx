@@ -35,7 +35,7 @@ import {
   Phone
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { generatePaymentReceiptPDF } from '../../services/uwalemiPdfGenerator';
+import { generatePaymentReceiptPDF, loadUwalemiLogoAsBase64 } from '../../services/uwalemiPdfGenerator';
 import { 
   sortMembersByLeadership, 
   getDefaultFeeForMonth, 
@@ -2758,9 +2758,17 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
           <div className="bg-white text-slate-900 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
             {/* Header of Receipt */}
             <div className="text-center border-b-2 border-dashed border-slate-300 pb-4">
+              <div className="w-16 h-16 mx-auto mb-2 rounded-full overflow-hidden border border-slate-300 shadow-sm">
+                <img 
+                  src={state.groupSettings?.logoUrl || '/uwalemi_logo.png'} 
+                  alt="UWALEMI Emblem" 
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
               <div className="text-xs font-bold uppercase tracking-widest text-emerald-800">KIKUNDI CHA KIJAMII CHA</div>
               <h2 className="text-2xl font-black text-slate-900 tracking-tight">{state.groupSettings.groupName || 'UWALEMI'}</h2>
-              <p className="text-xs text-slate-600 italic mt-0.5">"{state.groupSettings.slogan || 'Kusaidiana Katika Shida na Raha'}"</p>
+              <p className="text-xs text-slate-600 italic mt-0.5">"{state.groupSettings.slogan && !state.groupSettings.slogan.includes('Shida na Raha') ? state.groupSettings.slogan : 'Lema, Nguvu Moja.'}"</p>
               <div className="mt-2 inline-block bg-slate-100 text-slate-800 font-mono text-[11px] font-bold px-3 py-1 rounded-full border border-slate-300">
                 {viewingReceipt.status === 'partial' ? 'STAKABADHI YA MALIPO YA NUSU' : 'STAKABADHI YA ADA YA MWEZI'}
               </div>
@@ -2911,13 +2919,15 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
             {/* Buttons */}
             <div className="flex flex-wrap gap-2 pt-2">
               <button
-                onClick={() => {
+                onClick={async () => {
                   try {
+                    await loadUwalemiLogoAsBase64(state.groupSettings?.logoUrl);
                     const member = state.members.find(m => m.id === viewingReceipt.memberId);
                     const doc = generatePaymentReceiptPDF({
                       receiptNo: viewingReceipt.receiptNo || `REC-${viewingReceipt.id.slice(-6)}`,
                       groupName: state.groupSettings?.groupName || 'UWALEMI',
                       slogan: state.groupSettings?.slogan,
+                      logoUrl: state.groupSettings?.logoUrl || '/uwalemi_logo.png',
                       memberNo: viewingReceipt.memberNo,
                       memberName: viewingReceipt.memberName,
                       memberPhone: member?.phone,
@@ -2984,9 +2994,17 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
           <div className="bg-white text-slate-900 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200">
             {/* Header of Receipt */}
             <div className="text-center border-b-2 border-dashed border-slate-300 pb-4">
+              <div className="w-16 h-16 mx-auto mb-2 rounded-full overflow-hidden border border-slate-300 shadow-sm">
+                <img 
+                  src={state.groupSettings?.logoUrl || '/uwalemi_logo.png'} 
+                  alt="UWALEMI Emblem" 
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
               <div className="text-xs font-bold uppercase tracking-widest text-emerald-800">KIKUNDI CHA KIJAMII CHA</div>
               <h2 className="text-2xl font-black text-slate-900 tracking-tight">{state.groupSettings.groupName || 'UWALEMI'}</h2>
-              <p className="text-xs text-slate-600 italic mt-0.5">"{state.groupSettings.slogan || 'Kusaidiana Katika Shida na Raha'}"</p>
+              <p className="text-xs text-slate-600 italic mt-0.5">"{state.groupSettings.slogan && !state.groupSettings.slogan.includes('Shida na Raha') ? state.groupSettings.slogan : 'Lema, Nguvu Moja.'}"</p>
               <div className="mt-2 inline-block bg-emerald-100 text-emerald-900 font-mono text-[11px] font-bold px-3 py-1 rounded-full border border-emerald-300">
                 {viewingMultiReceipt.receiptTitle || `STAKABADHI YA MALIPO YA UWALEMI`}
               </div>
@@ -3186,8 +3204,9 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
             {/* Buttons */}
             <div className="flex flex-wrap gap-2 pt-2">
               <button
-                onClick={() => {
+                onClick={async () => {
                   try {
+                    await loadUwalemiLogoAsBase64(state.groupSettings?.logoUrl);
                     const breakdownList: { label: string; amount: string; status: string }[] = [];
                     if (viewingMultiReceipt.months) {
                       viewingMultiReceipt.months.forEach(m => {
@@ -3212,6 +3231,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                       receiptNo: viewingMultiReceipt.receiptNo,
                       groupName: state.groupSettings?.groupName || 'UWALEMI',
                       slogan: state.groupSettings?.slogan,
+                      logoUrl: state.groupSettings?.logoUrl || '/uwalemi_logo.png',
                       memberNo: viewingMultiReceipt.member.memberNo,
                       memberName: viewingMultiReceipt.member.fullName,
                       memberPhone: viewingMultiReceipt.member.phone,

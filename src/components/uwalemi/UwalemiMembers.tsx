@@ -31,7 +31,7 @@ import {
 import * as XLSX from 'xlsx';
 import { UwalemiFinePaymentModal } from './UwalemiFinePaymentModal';
 import { calculateMemberFeeDebt, normalizePaymentMethod, MONTH_NAMES_SW } from '../../services/uwalemiService';
-import { generatePaymentReceiptPDF, downloadPdfDocument } from '../../services/uwalemiPdfGenerator';
+import { generatePaymentReceiptPDF, downloadPdfDocument, loadUwalemiLogoAsBase64 } from '../../services/uwalemiPdfGenerator';
 
 interface Props {
   state: UwalemiState;
@@ -1573,12 +1573,14 @@ export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsF
                               <td className="p-2 font-mono text-[10px] text-slate-400">{f.receiptNo || '-'}</td>
                               <td className="p-2 text-right">
                                 <button
-                                  onClick={() => {
+                                  onClick={async () => {
                                     try {
+                                      await loadUwalemiLogoAsBase64(state.groupSettings?.logoUrl);
                                       const doc = generatePaymentReceiptPDF({
                                         receiptNo: f.receiptNo || `REC-${f.id.slice(-6)}`,
                                         groupName: state.groupSettings?.groupName || 'UWALEMI',
                                         slogan: state.groupSettings?.slogan,
+                                        logoUrl: state.groupSettings?.logoUrl || '/uwalemi_logo.png',
                                         memberNo: viewingStatementMember.memberNo,
                                         memberName: viewingStatementMember.fullName,
                                         memberPhone: viewingStatementMember.phone,
@@ -1769,12 +1771,14 @@ export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsF
                                     <td className="p-2 text-center">
                                       <div className="flex items-center justify-center gap-1">
                                         <button
-                                          onClick={() => {
+                                          onClick={async () => {
                                             try {
+                                              await loadUwalemiLogoAsBase64(state.groupSettings?.logoUrl);
                                               const doc = generatePaymentReceiptPDF({
                                                 receiptNo: fp.receiptNo,
                                                 groupName: state.groupSettings?.groupName || 'UWALEMI',
                                                 slogan: state.groupSettings?.slogan || 'Lema, Nguvu Moja.',
+                                                logoUrl: state.groupSettings?.logoUrl || '/uwalemi_logo.png',
                                                 memberNo: viewingStatementMember.memberNo,
                                                 memberName: viewingStatementMember.fullName,
                                                 memberPhone: viewingStatementMember.phone,

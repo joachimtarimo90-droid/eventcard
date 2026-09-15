@@ -77,6 +77,7 @@ export function normalizePaymentMethod(method?: string): string {
 export const INITIAL_UWALEMI_SETTINGS: UwalemiGroupSettings = {
   groupName: 'UWALEMI',
   slogan: 'Lema, Nguvu Moja.',
+  logoUrl: '/uwalemi_logo.png',
   registrationFeeDefault: 0,
   monthlyFeeDefault: 0,
   emergencyFeeDefault: 0,

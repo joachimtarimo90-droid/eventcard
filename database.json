@@ -18744,6 +18744,7 @@
     "groupSettings": {
       "slogan": "Lema, Nguvu Moja.",
       "groupName": "UWALEMI",
+      "logoUrl": "/uwalemi_logo.png",
       "smsConfig": {
         "provider": "meseji",
         "apiKey": "",

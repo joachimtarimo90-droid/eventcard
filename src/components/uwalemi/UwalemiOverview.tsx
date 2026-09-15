@@ -91,20 +91,31 @@ export const UwalemiOverview: React.FC<Props> = ({
       <div className="bg-gradient-to-r from-emerald-900/40 via-teal-900/30 to-slate-900/60 border border-emerald-500/20 rounded-2xl p-6 relative overflow-hidden backdrop-blur-md">
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-2">
-              <Award className="w-3.5 h-3.5" />
-              <span>Chama cha Kijamii cha UWALEMI</span>
+          <div className="flex items-start sm:items-center gap-4">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full p-1 bg-gradient-to-tr from-emerald-500 via-blue-500 to-teal-400 shadow-xl shadow-emerald-950/60 flex-shrink-0">
+              <img 
+                src={state.groupSettings?.logoUrl || '/uwalemi_logo.png'} 
+                alt="UWALEMI Emblem Logo" 
+                className="w-full h-full object-cover rounded-full bg-slate-950 border border-slate-900"
+                referrerPolicy="no-referrer"
+              />
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-              {state.groupSettings.groupName || 'UWALEMI'}
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-normal border border-slate-700">
-                Wanachama {members.length}
-              </span>
-            </h1>
-            <p className="text-slate-300 text-sm mt-1 max-w-xl">
-              {state.groupSettings?.slogan && !state.groupSettings.slogan.includes('Shida na Raha') ? state.groupSettings.slogan : 'Lema, Nguvu Moja.'} • Moduli inayojitegemea ya uendeshaji wa ada za kila mwezi, michango ya misiba, matibabu, na vikao vya kikundi (Kuanzia 2023).
-            </p>
+
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-1.5">
+                <Award className="w-3.5 h-3.5" />
+                <span>Chama cha Kijamii cha UWALEMI</span>
+              </div>
+              <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+                {state.groupSettings.groupName || 'UWALEMI'}
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-normal border border-slate-700">
+                  Wanachama {members.length}
+                </span>
+              </h1>
+              <p className="text-slate-300 text-sm mt-1 max-w-xl">
+                {state.groupSettings?.slogan && !state.groupSettings.slogan.includes('Shida na Raha') ? state.groupSettings.slogan : 'Lema, Nguvu Moja.'} • Moduli inayojitegemea ya uendeshaji wa ada za kila mwezi, michango ya misiba, matibabu, na vikao vya kikundi (Kuanzia 2023).
+              </p>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2.5">

@@ -14,6 +14,7 @@ import {
   generatePaymentReceiptPDF, 
   downloadPdfDocument, 
   getPdfBlobUrl, 
+  loadUwalemiLogoAsBase64,
   formatTZS 
 } from '../../services/uwalemiPdfGenerator';
 import { 
@@ -277,12 +278,14 @@ export const UwalemiFinePaymentModal: React.FC<Props> = ({
     }
   };
 
-  const handleDownloadReceiptPdf = () => {
+  const handleDownloadReceiptPdf = async () => {
     if (!completedPayment || !selectedMember) return;
+    await loadUwalemiLogoAsBase64(state.groupSettings?.logoUrl);
     const doc = generatePaymentReceiptPDF({
       receiptNo: completedPayment.receiptNo,
       groupName: state.groupSettings?.groupName || 'UWALEMI',
       slogan: state.groupSettings?.slogan || 'Lema, Nguvu Moja.',
+      logoUrl: state.groupSettings?.logoUrl || '/uwalemi_logo.png',
       memberNo: completedPayment.memberNo,
       memberName: completedPayment.memberName,
       memberPhone: completedPayment.memberPhone,
@@ -299,12 +302,14 @@ export const UwalemiFinePaymentModal: React.FC<Props> = ({
     downloadPdfDocument(doc, `Risiti_Faini_${completedPayment.receiptNo}_${completedPayment.memberNo}.pdf`);
   };
 
-  const handlePreviewReceiptPdf = () => {
+  const handlePreviewReceiptPdf = async () => {
     if (!completedPayment || !selectedMember) return;
+    await loadUwalemiLogoAsBase64(state.groupSettings?.logoUrl);
     const doc = generatePaymentReceiptPDF({
       receiptNo: completedPayment.receiptNo,
       groupName: state.groupSettings?.groupName || 'UWALEMI',
       slogan: state.groupSettings?.slogan || 'Lema, Nguvu Moja.',
+      logoUrl: state.groupSettings?.logoUrl || '/uwalemi_logo.png',
       memberNo: completedPayment.memberNo,
       memberName: completedPayment.memberName,
       memberPhone: completedPayment.memberPhone,
@@ -365,8 +370,16 @@ export const UwalemiFinePaymentModal: React.FC<Props> = ({
         {completedPayment ? (
           <div className="space-y-5 py-2">
             <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-xl p-4 text-center space-y-2">
-              <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center border border-emerald-500/40">
-                <CheckCircle2 className="w-7 h-7" />
+              <div className="flex items-center justify-center gap-3 mb-1">
+                <img 
+                  src={state.groupSettings?.logoUrl || '/uwalemi_logo.png'} 
+                  alt="UWALEMI Logo" 
+                  className="w-12 h-12 rounded-full object-cover shadow-md border border-emerald-500/40"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/40">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
               </div>
               <h4 className="text-sm font-bold text-white">Malipo Yamethibitishwa Kikamilifu!</h4>
               <p className="text-xs text-slate-300">

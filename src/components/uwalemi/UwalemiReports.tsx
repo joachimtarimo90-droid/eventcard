@@ -49,6 +49,7 @@ import {
   generateFinesReportPDF,
   downloadPdfDocument,
   getPdfBlobUrl,
+  loadUwalemiLogoAsBase64,
   formatTZS,
   ReportPeriodFilter,
   isPeriodMatch,
@@ -402,9 +403,10 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
   };
 
   // Actions
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     setIsGenerating(true);
     try {
+      await loadUwalemiLogoAsBase64(state.groupSettings?.logoUrl);
       const { doc, fileName } = getCurrentPDFDoc();
       const blobUrl = downloadPdfDocument(doc, fileName);
       setDownloadSuccessToast({
@@ -423,8 +425,9 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
     }
   };
 
-  const handlePreviewPDF = () => {
+  const handlePreviewPDF = async () => {
     try {
+      await loadUwalemiLogoAsBase64(state.groupSettings?.logoUrl);
       const { doc, fileName, title } = getCurrentPDFDoc();
       const blobUrl = getPdfBlobUrl(doc);
       setPreviewPdfModal({
@@ -1036,8 +1039,13 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
       <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 sm:p-8 backdrop-blur-md" id="printable-report-area">
         {/* Letterhead Preview */}
         <div className="border-b-2 border-emerald-600/60 pb-5 mb-6 text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 mb-2">
-            <Building className="w-6 h-6" />
+          <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto rounded-full p-0.5 bg-gradient-to-tr from-emerald-500 via-blue-500 to-teal-400 shadow-xl shadow-emerald-950/60 mb-2.5 flex items-center justify-center">
+            <img 
+              src={state.groupSettings?.logoUrl || '/uwalemi_logo.png'} 
+              alt="UWALEMI Emblem" 
+              className="w-full h-full object-cover rounded-full bg-slate-950 border border-slate-900"
+              referrerPolicy="no-referrer"
+            />
           </div>
           <h3 className="text-2xl font-black text-white tracking-tight uppercase">
             {state.groupSettings?.groupName || 'UWALEMI'}

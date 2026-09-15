@@ -237,8 +237,13 @@ export const UwalemiVotingPage: React.FC<Props> = ({ token, onClose }) => {
           <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600" />
           
           <div className="text-center mb-6 pt-2">
-            <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4 shadow-lg shadow-emerald-950/50">
-              <CheckCircle2 className="w-10 h-10" />
+            <div className="w-20 h-20 mx-auto rounded-full p-1 bg-gradient-to-tr from-emerald-500 via-blue-500 to-teal-400 shadow-xl shadow-emerald-950/60 mb-4 flex items-center justify-center">
+              <img 
+                src={groupSettings.logoUrl || '/uwalemi_logo.png'} 
+                alt="UWALEMI Emblem" 
+                className="w-full h-full object-cover rounded-full bg-slate-950 border border-slate-900"
+                referrerPolicy="no-referrer"
+              />
             </div>
             <span className="text-[11px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
               Kura Imepokelewa Kikamilifu
@@ -453,10 +458,13 @@ export const UwalemiVotingPage: React.FC<Props> = ({ token, onClose }) => {
       <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 p-0.5 flex items-center justify-center">
-              <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
-                <Vote className="w-4 h-4 text-emerald-400" />
-              </div>
+            <div className="w-10 h-10 rounded-full p-0.5 bg-gradient-to-tr from-emerald-500 via-blue-500 to-teal-400 shadow-md shadow-emerald-950/50 flex-shrink-0">
+              <img 
+                src={groupSettings.logoUrl || '/uwalemi_logo.png'} 
+                alt="UWALEMI Emblem" 
+                className="w-full h-full object-cover rounded-full bg-slate-950 border border-slate-900"
+                referrerPolicy="no-referrer"
+              />
             </div>
             <div>
               <h1 className="text-sm sm:text-base font-black text-white leading-tight">
