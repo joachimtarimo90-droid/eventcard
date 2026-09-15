@@ -3890,12 +3890,17 @@ async function startServer() {
       const uwalemiState = db.uwalemiState || {};
       const globalSmsSettings = db.smsGatewaySettings || {};
       const configuredSms = uwalemiState.groupSettings?.smsConfig;
-      let activeApiKey = configuredSms?.apiKey || globalSmsSettings?.apiKey || '';
       let effectiveProvider = configuredSms?.provider || globalSmsSettings?.provider || 'meseji';
-      if (activeApiKey.startsWith('swl_')) {
-        effectiveProvider = 'swalasms';
-      } else if (activeApiKey.startsWith('sk_')) {
-        effectiveProvider = 'ehub';
+      let activeApiKey = configuredSms?.apiKey || (configuredSms?.provider === globalSmsSettings?.provider ? globalSmsSettings?.apiKey : '') || '';
+      
+      if (!configuredSms?.provider && !globalSmsSettings?.provider) {
+        if (activeApiKey.startsWith('swl_')) {
+          effectiveProvider = 'swalasms';
+        } else if (activeApiKey.startsWith('sk_')) {
+          effectiveProvider = 'ehub';
+        } else if (activeApiKey.startsWith('zs_')) {
+          effectiveProvider = 'meseji';
+        }
       }
 
       let resolvedSenderId = (configuredSms?.senderId || globalSmsSettings?.senderId || '').trim();
@@ -4188,12 +4193,17 @@ async function startServer() {
 
       const globalSmsSettings = db.smsGatewaySettings || {};
       const configuredSms = uwalemiState.groupSettings?.smsConfig;
-      let activeApiKey = configuredSms?.apiKey || globalSmsSettings?.apiKey || '';
       let effectiveProvider = configuredSms?.provider || globalSmsSettings?.provider || 'meseji';
-      if (activeApiKey.startsWith('swl_')) {
-        effectiveProvider = 'swalasms';
-      } else if (activeApiKey.startsWith('sk_')) {
-        effectiveProvider = 'ehub';
+      let activeApiKey = configuredSms?.apiKey || (configuredSms?.provider === globalSmsSettings?.provider ? globalSmsSettings?.apiKey : '') || '';
+      
+      if (!configuredSms?.provider && !globalSmsSettings?.provider) {
+        if (activeApiKey.startsWith('swl_')) {
+          effectiveProvider = 'swalasms';
+        } else if (activeApiKey.startsWith('sk_')) {
+          effectiveProvider = 'ehub';
+        } else if (activeApiKey.startsWith('zs_')) {
+          effectiveProvider = 'meseji';
+        }
       }
 
       let resolvedSenderId = (configuredSms?.senderId || globalSmsSettings?.senderId || '').trim();
@@ -6624,8 +6634,7 @@ Lema, Nguvu Moja!`;
         };
       }
 
-      // Force Meseji as the only supported provider (except simulation)
-      if (settings.provider !== "simulation") {
+      if (!settings.provider) {
         settings.provider = "meseji";
       }
 

@@ -10844,11 +10844,11 @@
     }
   },
   "smsGatewaySettings": {
-    "provider": "swalasms",
-    "apiKey": "swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3",
+    "provider": "meseji",
+    "apiKey": "",
     "apiSecret": "",
-    "senderId": "UWALEMI",
-    "url": "https://swalasms.com/api/v1/sms/quick-message"
+    "senderId": "MESEJI",
+    "url": "https://meseji.co.tz/api/v1/sms/send"
   },
   "adminAlertWhatsAppPhone": "",
   "committee_members": [
@@ -18745,14 +18745,14 @@
       "slogan": "Lema, Nguvu Moja.",
       "groupName": "UWALEMI",
       "smsConfig": {
-        "provider": "swalasms",
-        "apiKey": "swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3",
+        "provider": "meseji",
+        "apiKey": "",
         "secretKey": "",
-        "senderId": "UWALEMI",
-        "baseUrl": "https://swalasms.com/api/v1/sms/quick-message",
-        "autoSendReceipts": false,
-        "autoSendMeetingAlerts": false,
-        "autoSendMonthlyReminder": false
+        "senderId": "MESEJI",
+        "baseUrl": "https://meseji.co.tz/api/v1/sms/send",
+        "autoSendReceipts": true,
+        "autoSendMeetingAlerts": true,
+        "autoSendMonthlyReminder": true
       },
       "foundedDay": 1,
       "foundedYear": 2023,
