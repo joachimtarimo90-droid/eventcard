@@ -950,12 +950,24 @@ Karibu sana!`);
       '{muda}': `${event.time || "12:00"} ${formattedPeriod}`,
       '{time}': `${event.time || "12:00"} ${formattedPeriod}`,
       '{eventTime}': `${event.time || "12:00"} ${formattedPeriod}`,
-      '{{5}}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-      '{5}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-      '{{venue}}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-      '{ukumbi}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-      '{venue}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-      '{eventHall}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
+      '{{5}}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+        ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+        : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+      '{5}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+        ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+        : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+      '{{venue}}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+        ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+        : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+      '{ukumbi}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+        ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+        : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+      '{venue}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+        ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+        : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+      '{eventHall}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+        ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+        : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
       '{mahali}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
       '{mahali_ukumbi}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
       '{location}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
@@ -1202,12 +1214,24 @@ Karibu sana!`);
           '{muda}': `${event.time || "12:00"} ${formattedPeriod}`,
           '{time}': `${event.time || "12:00"} ${formattedPeriod}`,
           '{eventTime}': `${event.time || "12:00"} ${formattedPeriod}`,
-          '{{5}}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-          '{5}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-          '{{venue}}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-          '{ukumbi}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-          '{venue}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-          '{eventHall}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
+          '{{5}}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+            ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+            : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+          '{5}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+            ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+            : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+          '{{venue}}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+            ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+            : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+          '{ukumbi}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+            ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+            : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+          '{venue}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+            ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+            : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+          '{eventHall}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+            ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+            : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
           '{mahali}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
           '{mahali_ukumbi}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
           '{location}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
@@ -1459,12 +1483,24 @@ Karibu sana!`);
         '{muda}': `${event.time || "12:00"} ${formattedPeriod}`,
         '{time}': `${event.time || "12:00"} ${formattedPeriod}`,
         '{eventTime}': `${event.time || "12:00"} ${formattedPeriod}`,
-        '{{5}}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-        '{5}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-        '{{venue}}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-        '{ukumbi}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-        '{venue}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
-        '{eventHall}': event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe"),
+        '{{5}}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+          ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+          : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+        '{5}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+          ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+          : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+        '{{venue}}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+          ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+          : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+        '{ukumbi}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+          ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+          : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+        '{venue}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+          ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+          : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
+        '{eventHall}': event.venueLocation && event.venueLocation.trim() && !event.eventHallName?.toLowerCase().includes(event.venueLocation.trim().toLowerCase())
+          ? `${event.eventHallName || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")} (${event.venueLocation.trim()})`
+          : (event.eventHallName || event.venueLocation || (isEn ? "Event Hall" : "Ukumbi wa Sherehe")),
         '{mahali}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
         '{mahali_ukumbi}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
         '{location}': event.venueLocation || (isEn ? "Venue Location" : "Mahali pa Ukumbi"),
@@ -2476,6 +2512,8 @@ Karibu sana!`);
                   { tag: '{kiungo}', label: 'Kiungo cha Kadi' },
                   { tag: '{date}', label: 'Tarehe' },
                   { tag: '{venue}', label: 'Ukumbi' },
+                  { tag: '{mahali}', label: 'Mahali pa Ukumbi (Physical Location)' },
+                  { tag: '{link_ramani}', label: 'Link ya Ramani (Google Maps)' },
                   { tag: '{time}', label: 'Muda' },
                   { tag: '{card_number}', label: 'Namba ya Kadi' },
                   { tag: '{card_type}', label: 'Aina ya Kadi' },

@@ -438,13 +438,18 @@ Karibu sana!`);
       const periodTranslated = translatePeriod(eventDetails.period);
       const timeVal = `${eventDetails.time || ""} ${periodTranslated}`.trim();
 
+      const venueCombined = eventDetails.venueLocation && eventDetails.venueLocation.trim() && !eventDetails.eventHallName?.toLowerCase().includes(eventDetails.venueLocation.trim().toLowerCase())
+        ? `${eventDetails.eventHallName || ''} (${eventDetails.venueLocation.trim()})`
+        : (eventDetails.eventHallName || eventDetails.venueLocation || "");
+
       let compiled = template
         .replace(/{name}/g, guestCleanName)
         .replace(/{host}/g, eventDetails.hostName || (isEn ? 'Our Family' : 'Familia yetu'))
         .replace(/{event_name}/g, eventDetails.name || (isEn ? 'Our Event' : 'Sherehe yetu'))
         .replace(/{date}/g, eventDetails.date || '')
         .replace(/{link}/g, stripLink ? "" : guestLink)
-        .replace(/{ukumbi}/g, eventDetails.eventHallName || "")
+        .replace(/{ukumbi}/g, venueCombined)
+        .replace(/{mahali}/g, eventDetails.venueLocation || "")
         .replace(/{muda}/g, timeVal)
         .replace(/{card_no}/g, guestObj?.code || "[Code]")
         .replace(/{aina}/g, guestObj?.cardType || "DOUBLE")
@@ -455,7 +460,7 @@ Karibu sana!`);
         .replace(/{contact_2_phone}/g, eventDetails.contact2 || "")
         .replace(/{contact_3_name}/g, eventDetails.contact3Name || "")
         .replace(/{contact_3_phone}/g, eventDetails.contact3 || "")
-        .replace(/{venue}/g, eventDetails.eventHallName || "")
+        .replace(/{venue}/g, venueCombined)
         .replace(/{time}/g, timeVal)
         .replace(/{card_number}/g, guestObj?.code || "[Code]")
         .replace(/{card_type}/g, guestObj?.cardType || "DOUBLE")

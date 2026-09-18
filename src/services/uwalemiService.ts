@@ -68,7 +68,7 @@ export function getMemberLocationGroup(member: { residence?: string; locationGro
 export function normalizePaymentMethod(method?: string): string {
   if (!method) return 'M Koba';
   const trimmed = method.trim();
-  if (/m-?pesa/i.test(trimmed)) {
+  if (/m-?pesa/i.test(trimmed) || /taslimu/i.test(trimmed) || /cash/i.test(trimmed)) {
     return 'M Koba';
   }
   return trimmed;

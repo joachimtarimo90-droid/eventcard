@@ -2771,15 +2771,15 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
                 <div>
                   <label className="block text-slate-400 font-medium mb-1">Njia ya Malipo</label>
                   <select
-                    value={editingFinePayment.paymentMethod || 'Pesa Taslimu (Cash)'}
+                    value={editingFinePayment.paymentMethod || 'M Koba'}
                     onChange={(e) => setEditingFinePayment({ ...editingFinePayment, paymentMethod: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
                   >
-                    <option value="Pesa Taslimu (Cash)">Pesa Taslimu (Cash)</option>
                     <option value="M Koba">M Koba</option>
                     <option value="TigoPesa">TigoPesa</option>
                     <option value="Airtel Money">Airtel Money</option>
                     <option value="Benki">Benki (NMB/CRDB)</option>
+                    <option value="Pesa Taslimu (Cash)">Pesa Taslimu (Cash)</option>
                   </select>
                 </div>
               </div>

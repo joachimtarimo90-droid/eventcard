@@ -519,12 +519,14 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
                     const val = e.target.value;
                     const extracted = extractCoordinates(val);
                     const extractedLoc = extractLocationNameFromUrl(val);
-                    setFormData({
-                      ...formData,
+                    setFormData(prev => ({
+                      ...prev,
                       mapsLink: val,
-                      coordinates: extracted || formData.coordinates,
-                      venueLocation: formData.venueLocation || extractedLoc || ''
-                    });
+                      coordinates: extracted || prev.coordinates,
+                      venueLocation: (prev.venueLocation && prev.venueLocation.trim().length > 0)
+                        ? prev.venueLocation
+                        : (extractedLoc || prev.venueLocation || '')
+                    }));
                   }}
                   className="flex-1 bg-[#050b18] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-[#2563eb] transition-all placeholder-slate-500"
                 />
@@ -560,8 +562,8 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
                   id="input-hall-name"
                   type="text"
                   required
-                  value={getFieldHelp('eventHallName', 'Kuringe Hall').value}
-                  placeholder={getFieldHelp('eventHallName', 'Kuringe Hall').placeholder}
+                  value={formData.eventHallName || ''}
+                  placeholder={language === 'sw' ? 'Mfano: Best Choice Social Hall' : 'e.g. Best Choice Social Hall'}
                   onChange={(e) => setFormData({ ...formData, eventHallName: e.target.value })}
                   className="w-full bg-[#050b18] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-[#2563eb] transition-all placeholder-slate-500/50"
                 />
@@ -576,8 +578,8 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
                 <input 
                   id="input-venue-location"
                   type="text"
-                  value={getFieldHelp('venueLocation', 'Shamo Industries, Makonde Station, Dar es Salaam').value}
-                  placeholder={getFieldHelp('venueLocation', 'Shamo Industries, Makonde Station, Dar es Salaam').placeholder}
+                  value={formData.venueLocation || ''}
+                  placeholder={language === 'sw' ? 'Mfano: Shamo Industries, Makonde Station, Dar es Salaam' : 'e.g. Shamo Industries, Makonde Station, Dar es Salaam'}
                   onChange={(e) => setFormData({ ...formData, venueLocation: e.target.value })}
                   className="w-full bg-[#050b18] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-[#2563eb] transition-all placeholder-slate-500/50"
                 />
@@ -596,8 +598,8 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
                 <input 
                   id="input-coordinates"
                   type="text"
-                  value={getFieldHelp('coordinates', '-6.7924, 39.2083').value}
-                  placeholder={getFieldHelp('coordinates', '-6.7924, 39.2083').placeholder}
+                  value={formData.coordinates || ''}
+                  placeholder="-6.7924, 39.2083"
                   onChange={(e) => setFormData({ ...formData, coordinates: e.target.value })}
                   className="w-full bg-[#050b18] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-[#2563eb] transition-all font-mono placeholder-slate-500/50"
                 />
@@ -617,8 +619,8 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
                 id="input-host-name"
                 type="text"
                 required
-                value={getFieldHelp('hostName', 'Ramadhani & Family').value}
-                placeholder={getFieldHelp('hostName', 'Ramadhani & Family').placeholder}
+                value={formData.hostName || ''}
+                placeholder={language === 'sw' ? 'Mfano: Fanuel Lema & Familia' : 'e.g. Fanuel Lema & Family'}
                 onChange={(e) => setFormData({ ...formData, hostName: e.target.value })}
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all placeholder-slate-500/50"
               />
@@ -632,8 +634,8 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
               <input 
                 id="input-dress-code"
                 type="text"
-                value={getFieldHelp('dressCode', 'White & Gold').value}
-                placeholder={getFieldHelp('dressCode', 'White & Gold').placeholder}
+                value={formData.dressCode || ''}
+                placeholder={language === 'sw' ? 'Mfano: Royal Blue & Emerald Green' : 'e.g. Royal Blue & Emerald Green'}
                 onChange={(e) => setFormData({ ...formData, dressCode: e.target.value })}
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all placeholder-slate-500/50"
               />
