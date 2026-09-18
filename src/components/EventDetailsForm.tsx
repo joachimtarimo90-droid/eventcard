@@ -20,17 +20,26 @@ const extractCoordinates = (url: string): string => {
   return '';
 };
 
-const extractLocationNameFromUrl = (url: string): string => {
+const extractLocationNameFromUrl = (url: string, hallName?: string): string => {
   if (!url) return '';
   try {
+    let loc = '';
     const dirMatch = url.match(/\/maps\/dir\/[^\/]*\/([^/@]+)/);
     if (dirMatch && dirMatch[1]) {
-      return decodeURIComponent(dirMatch[1].replace(/\+/g, ' ')).trim();
+      loc = decodeURIComponent(dirMatch[1].replace(/\+/g, ' ')).trim();
+    } else {
+      const searchMatch = url.match(/\/maps\/place\/([^/@?]+)/);
+      if (searchMatch && searchMatch[1]) {
+        loc = decodeURIComponent(searchMatch[1].replace(/\+/g, ' ')).trim();
+      }
     }
-    const searchMatch = url.match(/\/maps\/place\/([^/@?]+)/);
-    if (searchMatch && searchMatch[1]) {
-      return decodeURIComponent(searchMatch[1].replace(/\+/g, ' ')).trim();
+    if (!loc) return '';
+    if (hallName && hallName.trim().length > 0) {
+      const escaped = hallName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp('^' + escaped + 's?\\b', 'i');
+      loc = loc.replace(regex, '');
     }
+    return loc.replace(/^[,\s\-_/]+/, '').trim();
   } catch {}
   return '';
 };
@@ -518,7 +527,7 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
                   onChange={(e) => {
                     const val = e.target.value;
                     const extracted = extractCoordinates(val);
-                    const extractedLoc = extractLocationNameFromUrl(val);
+                    const extractedLoc = extractLocationNameFromUrl(val, formData.eventHallName);
                     setFormData(prev => ({
                       ...prev,
                       mapsLink: val,
@@ -579,7 +588,7 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
                   id="input-venue-location"
                   type="text"
                   value={formData.venueLocation || ''}
-                  placeholder={language === 'sw' ? 'Mfano: Shamo Industries, Makonde Station, Dar es Salaam' : 'e.g. Shamo Industries, Makonde Station, Dar es Salaam'}
+                  placeholder={language === 'sw' ? 'Mfano: Bima Flats, Dar es Salaam' : 'e.g. Bima Flats, Dar es Salaam'}
                   onChange={(e) => setFormData({ ...formData, venueLocation: e.target.value })}
                   className="w-full bg-[#050b18] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-[#2563eb] transition-all placeholder-slate-500/50"
                 />

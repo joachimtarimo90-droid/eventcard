@@ -636,6 +636,36 @@ async function notifyAdminAndGuestOnRSVPChange(params: {
   db.notifications = [notifItem, ...(db.notifications || [])].slice(0, 100);
 }
 
+function extractLocationFromMapsUrl(url: string, hallName?: string): string {
+  if (!url) return '';
+  try {
+    let raw = '';
+    const dirMatch = url.match(/\/maps\/dir\/[^\/]*\/([^/@]+)/);
+    if (dirMatch && dirMatch[1]) {
+      raw = decodeURIComponent(dirMatch[1].replace(/\+/g, ' ')).trim();
+    } else {
+      const placeMatch = url.match(/\/maps\/place\/([^/@?]+)/);
+      if (placeMatch && placeMatch[1]) {
+        raw = decodeURIComponent(placeMatch[1].replace(/\+/g, ' ')).trim();
+      } else {
+        const queryMatch = url.match(/[?&]q=([^&]+)/) || url.match(/[?&]query=([^&]+)/);
+        if (queryMatch && queryMatch[1]) {
+          raw = decodeURIComponent(queryMatch[1].replace(/\+/g, ' ')).trim();
+        }
+      }
+    }
+    if (!raw) return '';
+    if (hallName && hallName.trim().length > 0) {
+      const escaped = hallName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp('^' + escaped + 's?\\b', 'i');
+      raw = raw.replace(regex, '');
+    }
+    return raw.replace(/^[,\s\-_/]+/, '').trim();
+  } catch {
+    return '';
+  }
+}
+
 async function processWhatsAppBotLogic(
   fromPhone: string, 
   textBody: string, 
@@ -648,30 +678,46 @@ async function processWhatsAppBotLogic(
 ) {
   const cleanFromPhone = fromPhone ? fromPhone.replace(/\D/g, '') : '';
   const lowerText = (textBody || '').toLowerCase().trim();
-  const event = db.eventDetails || {};
   let guests = db.guests || [];
   let databaseUpdated = false;
 
-  const matchedGuest = (cleanFromPhone && cleanFromPhone.length >= 7)
-    ? guests.find((g: any) => {
+  const matchingGuests = (cleanFromPhone && cleanFromPhone.length >= 7)
+    ? guests.filter((g: any) => {
         if (!g || !g.phone) return false;
         const cleanG = String(g.phone).replace(/\D/g, '');
         if (cleanG.length < 7) return false;
         return cleanG.slice(-9) === cleanFromPhone.slice(-9);
       })
-    : null;
+    : [];
+
+  const matchedGuest = matchingGuests.find((g: any) => String(g.eventId) === String(db.eventDetails?.id)) 
+    || matchingGuests[0] 
+    || null;
+
+  let event = db.eventDetails || {};
+  if (matchedGuest?.eventId && Array.isArray(db.eventsList)) {
+    const found = db.eventsList.find((ev: any) => String(ev.id) === String(matchedGuest.eventId));
+    if (found) {
+      event = found;
+    }
+  } else if ((!event.id || !event.eventHallName) && Array.isArray(db.eventsList) && db.eventsList.length > 0) {
+    event = db.eventsList[0];
+  }
 
   let actionReply = "";
   let actionTaken = false;
   const eventName = event.name || 'sherehe';
-  const venueName = event.eventHallName || event.venue || 'FIMBO SOCIAL HALL';
-  const venueLocation = (event.venueLocation && event.venueLocation.trim().length > 0)
+  const venueName = event.eventHallName || event.venue || 'Ukumbi wa Sherehe';
+  let venueLocation = (event.venueLocation && event.venueLocation.trim().length > 0)
     ? event.venueLocation.trim()
     : (event.location && event.location.trim().length > 0)
     ? event.location.trim()
-    : (db.eventDetails?.venueLocation && db.eventDetails.venueLocation.trim().length > 0)
-    ? db.eventDetails.venueLocation.trim()
-    : 'Shamo Industries, Makonde Station, Dar es Salaam';
+    : '';
+
+  // Intelligently extract location from maps link if not explicitly typed
+  if (!venueLocation && event.mapsLink) {
+    venueLocation = extractLocationFromMapsUrl(event.mapsLink, venueName);
+  }
   
   // Dynamically resolve Google Maps link (custom mapsLink, coordinates, or venue query)
   const resolvedMapsLink = (event.mapsLink && event.mapsLink.trim().length > 0)
@@ -1111,13 +1157,13 @@ Respond strictly in JSON format:
   const mapsPinUrl = resolvedMapsLink;
 
   const aiContext = `
-Tukio: ${event.name || 'Harusi ya Josephat Kimaro'}
-Waandaji: ${event.hostName || 'Jonas Kibenje'}
-Tarehe ya Sherehe: ${event.date || '2026-08-08'}
+Tukio: ${event.name || 'Sherehe Yetu'}
+Waandaji: ${event.hostName || 'Waandaji'}
+Tarehe ya Sherehe: ${event.date || 'Tarehe ya Sherehe'}
 Ukumbi wa Sherehe: ${venueName}
-Mahali Ulipo Ukumbi: ${venueLocation}
+Mahali Ulipo Ukumbi: ${venueLocation || 'Tazama kiungo cha ramani ya Google Maps'}
 Google Maps Pin URL: ${mapsPinUrl}
-Muda: ${event.time || '19:00'} ${event.period || 'Usiku'}
+Muda: ${event.time || ''} ${event.period || ''}
 Kadi ya Mgeni: ${matchedGuest?.cardType || 'Standard Card'}
 
 ${guestContext}
@@ -1141,7 +1187,7 @@ Ujumbe wa Mgeni: "${textBody}"
 MWONGOZO MUHIMU:
 - Jibu kwa Kiswahili kirafiki, kwa heshima na ukarimu.
 - MARUFUKU KUTAJA AU KUTANGAZA LENGO KUU LA MICHANGO YA SHEREHE ("Lengo la michango")! Usiseme kabisa "Lengo la michango ni TZS X".
-- Kama mgeni anauliza kuhusu ukumbi/mahali/ramani/location, mpe jina la ukumbi (${venueName}), mahali ulipo ukumbi (${venueLocation}) na umpe na kiungo cha Google Maps Pin: ${mapsPinUrl}
+- Kama mgeni anauliza kuhusu ukumbi/mahali/ramani/location, mpe jina la ukumbi (${venueName})${venueLocation ? `, mahali ulipo ukumbi (${venueLocation})` : ''} na umpe na kiungo cha Google Maps Pin: ${mapsPinUrl}
 - Kama mgeni hajaweka ahadi bado (Ahadi = TZS 0) na anauliza kuhusu ahadi/mchango wake au anataka kuweka ahadi: Mueleze kwa upendo kwamba hajaweka ahadi kwenye mfumo bado, na umwombe aandike kiasi anachopenda kuahidi (mfano 'Naahidi 100,000' au '100000') na kiasi hicho kitaingia moja kwa moja kwenye mfumo!
 - Kama mgeni anauliza kuhusu ahadi yake, mchango wake, au salio lake:
   1. Kama ameshakamilisha mchango wake (Salio = TZS 0 na ameweka ahadi): Mueleze kwa furaha kuwa ameshakamilisha mchango wake kikamilifu, na umpe shukrani nyingi sana kwa mchango wake.
@@ -1159,9 +1205,9 @@ MWONGOZO MUHIMU:
 
   if (!botReply) {
     if (lowerText.includes("ukumbi") || lowerText.includes("sehemu") || lowerText.includes("mahali") || lowerText.includes("venue") || lowerText.includes("hall")) {
-      botReply = `Habari! Ukumbi wa sherehe ya *${event.name || 'sherehe yetu'}* ni *${venueName}*, mahali ulipo ni *${venueLocation}*. Tarehe ni *${event.date || '2026-08-08'}* kuanzia saa *${event.time || '19:00'} ${event.period || 'Usiku'}*. Karibu sana! 🎉`;
+      botReply = `Habari! Ukumbi wa sherehe ya *${event.name || 'sherehe yetu'}* ni *${venueName}*${venueLocation ? `, mahali ulipo ni *${venueLocation}*` : ''}. Tarehe ni *${event.date || 'Tarehe ya Sherehe'}* kuanzia saa *${event.time || '19:00'} ${event.period || 'Usiku'}*. Karibu sana! 🎉`;
     } else if (lowerText.includes("tarehe") || lowerText.includes("muda") || lowerText.includes("saa") || lowerText.includes("date") || lowerText.includes("time")) {
-      botReply = `Habari! Sherehe ya *${event.name || 'sherehe yetu'}* itafanyika tarehe *${event.date || '2026-08-08'}* kuanzia saa *${event.time || '19:00'} ${event.period || 'Usiku'}* katika ukumbi wa *${venueName}* (${venueLocation}). Karibu! 🎉`;
+      botReply = `Habari! Sherehe ya *${event.name || 'sherehe yetu'}* itafanyika tarehe *${event.date || 'Tarehe ya Sherehe'}* kuanzia saa *${event.time || '19:00'} ${event.period || 'Usiku'}* katika ukumbi wa *${venueName}*${venueLocation ? ` (${venueLocation})` : ''}. Karibu! 🎉`;
     } else if (lowerText.includes("mchango") || lowerText.includes("pesa") || lowerText.includes("lipa") || lowerText.includes("ahadi") || lowerText.includes("pledge") || lowerText.includes("changia") || lowerText.includes("salio") || lowerText.includes("baki")) {
       if (matchedGuest) {
         const pledgeAmt = Number(matchedGuest.pledgeAmount) || 0;
