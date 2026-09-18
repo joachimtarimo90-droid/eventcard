@@ -20,30 +20,6 @@ const extractCoordinates = (url: string): string => {
   return '';
 };
 
-const extractLocationNameFromUrl = (url: string, hallName?: string): string => {
-  if (!url) return '';
-  try {
-    let loc = '';
-    const dirMatch = url.match(/\/maps\/dir\/[^\/]*\/([^/@]+)/);
-    if (dirMatch && dirMatch[1]) {
-      loc = decodeURIComponent(dirMatch[1].replace(/\+/g, ' ')).trim();
-    } else {
-      const searchMatch = url.match(/\/maps\/place\/([^/@?]+)/);
-      if (searchMatch && searchMatch[1]) {
-        loc = decodeURIComponent(searchMatch[1].replace(/\+/g, ' ')).trim();
-      }
-    }
-    if (!loc) return '';
-    if (hallName && hallName.trim().length > 0) {
-      const escaped = hallName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp('^' + escaped + 's?\\b', 'i');
-      loc = loc.replace(regex, '');
-    }
-    return loc.replace(/^[,\s\-_/]+/, '').trim();
-  } catch {}
-  return '';
-};
-
 interface EventDetailsFormProps {
   initialData: EventDetails;
   isAlreadySaved: boolean;
@@ -250,10 +226,14 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
                   <div>
                     <p className="text-slate-400 text-[10px] uppercase font-mono">Ukumbi (Venue Hall)</p>
                     <p className="font-semibold text-white mt-0.5">{formData.eventHallName || 'Not Provided'}</p>
-                    {formData.venueLocation && (
-                      <p className="text-slate-300 text-[11px] mt-0.5 flex items-center gap-1 font-medium">
+                    {formData.venueLocation ? (
+                      <p className="text-emerald-300 text-[11px] mt-0.5 flex items-center gap-1 font-medium">
                         <Navigation className="w-3 h-3 text-emerald-400 shrink-0" />
-                        <span>{formData.venueLocation}</span>
+                        <span><strong>Mahali:</strong> {formData.venueLocation}</span>
+                      </p>
+                    ) : (
+                      <p className="text-slate-500 text-[10px] italic mt-0.5">
+                        {language === 'sw' ? 'Bado hujaweka mahali ulipo ukumbi' : 'No physical location specified'}
                       </p>
                     )}
                   </div>
@@ -527,14 +507,10 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
                   onChange={(e) => {
                     const val = e.target.value;
                     const extracted = extractCoordinates(val);
-                    const extractedLoc = extractLocationNameFromUrl(val, formData.eventHallName);
                     setFormData(prev => ({
                       ...prev,
                       mapsLink: val,
-                      coordinates: extracted || prev.coordinates,
-                      venueLocation: (prev.venueLocation && prev.venueLocation.trim().length > 0)
-                        ? prev.venueLocation
-                        : (extractedLoc || prev.venueLocation || '')
+                      coordinates: extracted || prev.coordinates
                     }));
                   }}
                   className="flex-1 bg-[#050b18] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-[#2563eb] transition-all placeholder-slate-500"
@@ -555,8 +531,8 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
               </div>
               <p className="text-[10px] text-slate-400">
                 {language === 'sw' 
-                  ? 'Ukishikilia na kupaste link ya ramani ya Google Maps hapa, coordinates zitajazwa zenyewe automatically chini.'
-                  : 'Pasting a Google Maps link here will automatically parse and pre-populate the precise latitude/longitude inputs below.'}
+                  ? 'Ukishikilia na kupaste link ya ramani ya Google Maps hapa, coordinates zitajazwa zenyewe chini.'
+                  : 'Pasting a Google Maps link here will automatically parse coordinates below.'}
               </p>
             </div>
 
@@ -580,18 +556,25 @@ export default function EventDetailsForm({ initialData, isAlreadySaved, onSave, 
 
               {/* Venue Physical Location */}
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300 flex items-center gap-1" htmlFor="input-venue-location">
-                  <MapPin className="w-3.5 h-3.5 text-blue-400" />
-                  <span>{language === 'sw' ? 'Mahali Ulipo Ukumbi (Physical Location)' : 'Venue Physical Location / Area'}</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-300 flex items-center gap-1" htmlFor="input-venue-location">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{language === 'sw' ? 'Mahali Ulipo Ukumbi (Physical Location)' : 'Venue Physical Location / Area'}</span>
+                  </label>
+                </div>
                 <input 
                   id="input-venue-location"
                   type="text"
                   value={formData.venueLocation || ''}
-                  placeholder={language === 'sw' ? 'Mfano: Bima Flats, Dar es Salaam' : 'e.g. Bima Flats, Dar es Salaam'}
+                  placeholder={language === 'sw' ? 'Weka eneo ukumbi ulipo (mfano: Bima Flats, Dar es Salaam)' : 'e.g. Bima Flats, Dar es Salaam'}
                   onChange={(e) => setFormData({ ...formData, venueLocation: e.target.value })}
                   className="w-full bg-[#050b18] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-[#2563eb] transition-all placeholder-slate-500/50"
                 />
+                <p className="text-[10px] text-slate-400">
+                  {language === 'sw' 
+                    ? 'Eneo unaloandika hapa ndilo litakalohifadhiwa na kuonekana moja kwa moja.'
+                    : 'The physical location you enter here will be saved and displayed directly.'}
+                </p>
               </div>
 
               {/* Coordinates */}

@@ -75,6 +75,7 @@ export async function ensureTablesExist(): Promise<void> {
         "time" text,
         "period" text,
         "event_hall_name" text,
+        "venue_location" text,
         "coordinates" text,
         "host_name" text,
         "dress_code" text,
@@ -226,6 +227,7 @@ export async function ensureTablesExist(): Promise<void> {
         ALTER TABLE "template_settings" ADD COLUMN IF NOT EXISTS "orientation" text DEFAULT 'portrait';
         ALTER TABLE "guests" ADD COLUMN IF NOT EXISTS "custom_fields" jsonb;
         ALTER TABLE "guests" ADD COLUMN IF NOT EXISTS "tags" jsonb;
+        ALTER TABLE "events" ADD COLUMN IF NOT EXISTS "venue_location" text;
         ALTER TABLE "events" ADD COLUMN IF NOT EXISTS "admin_alert_whatsapp_phone" text;
         ALTER TABLE "sms_gateway_settings" ADD COLUMN IF NOT EXISTS "admin_alert_whatsapp_phone" text;
         ALTER TABLE "sms_gateway_settings" ADD COLUMN IF NOT EXISTS "admin_whatsapp_phone" text;
@@ -277,6 +279,7 @@ export async function seedFromBackupFile(): Promise<boolean> {
           time: ev.time ? String(ev.time) : null,
           period: ev.period ? String(ev.period) : null,
           eventHallName: ev.eventHallName ? String(ev.eventHallName) : null,
+          venueLocation: ev.venueLocation ? String(ev.venueLocation) : null,
           coordinates: ev.coordinates ? String(ev.coordinates) : null,
           hostName: ev.hostName ? String(ev.hostName) : null,
           dressCode: ev.dressCode ? String(ev.dressCode) : null,
@@ -311,6 +314,7 @@ export async function seedFromBackupFile(): Promise<boolean> {
         time: ed.time ? String(ed.time) : null,
         period: ed.period ? String(ed.period) : null,
         eventHallName: ed.eventHallName ? String(ed.eventHallName) : null,
+        venueLocation: ed.venueLocation ? String(ed.venueLocation) : null,
         coordinates: ed.coordinates ? String(ed.coordinates) : null,
         hostName: ed.hostName ? String(ed.hostName) : null,
         dressCode: ed.dressCode ? String(ed.dressCode) : null,
@@ -572,6 +576,7 @@ export async function fetchFullStateFromDB(): Promise<any> {
       time: e.time || "",
       period: e.period || "Jioni",
       eventHallName: e.eventHallName || "",
+      venueLocation: e.venueLocation || "",
       coordinates: e.coordinates || "",
       hostName: e.hostName || "",
       dressCode: e.dressCode || "",
@@ -835,6 +840,7 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
           time: ev.time ? String(ev.time) : null,
           period: ev.period ? String(ev.period) : null,
           eventHallName: ev.eventHallName ? String(ev.eventHallName) : null,
+          venueLocation: ev.venueLocation ? String(ev.venueLocation) : null,
           coordinates: ev.coordinates ? String(ev.coordinates) : null,
           hostName: ev.hostName ? String(ev.hostName) : null,
           dressCode: ev.dressCode ? String(ev.dressCode) : null,
@@ -863,6 +869,7 @@ export async function syncStateToRelationalDB(data: any): Promise<void> {
             time: sql`EXCLUDED.time`,
             period: sql`EXCLUDED.period`,
             eventHallName: sql`EXCLUDED.event_hall_name`,
+            venueLocation: sql`EXCLUDED.venue_location`,
             coordinates: sql`EXCLUDED.coordinates`,
             hostName: sql`EXCLUDED.host_name`,
             dressCode: sql`EXCLUDED.dress_code`,

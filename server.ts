@@ -636,36 +636,6 @@ async function notifyAdminAndGuestOnRSVPChange(params: {
   db.notifications = [notifItem, ...(db.notifications || [])].slice(0, 100);
 }
 
-function extractLocationFromMapsUrl(url: string, hallName?: string): string {
-  if (!url) return '';
-  try {
-    let raw = '';
-    const dirMatch = url.match(/\/maps\/dir\/[^\/]*\/([^/@]+)/);
-    if (dirMatch && dirMatch[1]) {
-      raw = decodeURIComponent(dirMatch[1].replace(/\+/g, ' ')).trim();
-    } else {
-      const placeMatch = url.match(/\/maps\/place\/([^/@?]+)/);
-      if (placeMatch && placeMatch[1]) {
-        raw = decodeURIComponent(placeMatch[1].replace(/\+/g, ' ')).trim();
-      } else {
-        const queryMatch = url.match(/[?&]q=([^&]+)/) || url.match(/[?&]query=([^&]+)/);
-        if (queryMatch && queryMatch[1]) {
-          raw = decodeURIComponent(queryMatch[1].replace(/\+/g, ' ')).trim();
-        }
-      }
-    }
-    if (!raw) return '';
-    if (hallName && hallName.trim().length > 0) {
-      const escaped = hallName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp('^' + escaped + 's?\\b', 'i');
-      raw = raw.replace(regex, '');
-    }
-    return raw.replace(/^[,\s\-_/]+/, '').trim();
-  } catch {
-    return '';
-  }
-}
-
 async function processWhatsAppBotLogic(
   fromPhone: string, 
   textBody: string, 
@@ -708,16 +678,11 @@ async function processWhatsAppBotLogic(
   let actionTaken = false;
   const eventName = event.name || 'sherehe';
   const venueName = event.eventHallName || event.venue || 'Ukumbi wa Sherehe';
-  let venueLocation = (event.venueLocation && event.venueLocation.trim().length > 0)
+  const venueLocation = (event.venueLocation && event.venueLocation.trim().length > 0)
     ? event.venueLocation.trim()
     : (event.location && event.location.trim().length > 0)
     ? event.location.trim()
     : '';
-
-  // Intelligently extract location from maps link if not explicitly typed
-  if (!venueLocation && event.mapsLink) {
-    venueLocation = extractLocationFromMapsUrl(event.mapsLink, venueName);
-  }
   
   // Dynamically resolve Google Maps link (custom mapsLink, coordinates, or venue query)
   const resolvedMapsLink = (event.mapsLink && event.mapsLink.trim().length > 0)

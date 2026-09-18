@@ -1145,6 +1145,7 @@ export default function App() {
                 time: '',
                 period: 'Jioni',
                 eventHallName: '',
+                venueLocation: '',
                 coordinates: '',
                 hostName: '',
                 dressCode: '',

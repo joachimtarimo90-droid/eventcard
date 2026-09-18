@@ -8,6 +8,7 @@ export const events = pgTable("events", {
   time: text("time"),
   period: text("period"),
   eventHallName: text("event_hall_name"),
+  venueLocation: text("venue_location"),
   coordinates: text("coordinates"),
   hostName: text("host_name"),
   dressCode: text("dress_code"),
