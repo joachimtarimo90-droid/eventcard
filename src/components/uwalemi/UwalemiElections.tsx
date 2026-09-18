@@ -47,13 +47,15 @@ interface Props {
   onSaveState: (newState: UwalemiState) => Promise<boolean>;
   onOpenVotingPage?: (token: string) => void;
   onOpenSmsWithTemplate?: (recipients: { name: string; phone: string; memberNo: string }[], templateText: string) => void;
+  readOnly?: boolean;
 }
 
 export const UwalemiElections: React.FC<Props> = ({
   state,
   onSaveState,
   onOpenVotingPage,
-  onOpenSmsWithTemplate
+  onOpenSmsWithTemplate,
+  readOnly
 }) => {
   const elections = state.elections || [];
   const [selectedElectionId, setSelectedElectionId] = useState<string>(
@@ -123,7 +125,7 @@ export const UwalemiElections: React.FC<Props> = ({
 
   // Handle status toggle
   const handleUpdateElectionStatus = async (newStatus: 'draft' | 'active' | 'paused' | 'completed') => {
-    if (!activeElection) return;
+    if (readOnly || !activeElection) return;
     const updatedElections = elections.map(e => {
       if (e.id === activeElection.id) {
         return {
@@ -144,7 +146,7 @@ export const UwalemiElections: React.FC<Props> = ({
 
   // Recompute voter eligibility
   const handleRecomputeVoters = async () => {
-    if (!activeElection) return;
+    if (readOnly || !activeElection) return;
     const refreshedVoters = recomputeElectionVoters(activeElection, state.members, state.monthlyPayments);
     const updatedElections = elections.map(e => {
       if (e.id === activeElection.id) {
@@ -161,6 +163,7 @@ export const UwalemiElections: React.FC<Props> = ({
   // Create new election
   const handleCreateElection = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) return;
     if (!newElectionTitle.trim()) return;
 
     const electionId = `elec-${Date.now()}`;
@@ -255,7 +258,7 @@ export const UwalemiElections: React.FC<Props> = ({
   // Add Position
   const handleAddPosition = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeElection || !newPosTitle.trim()) return;
+    if (readOnly || !activeElection || !newPosTitle.trim()) return;
 
     const newPosition: UwalemiElectionPosition = {
       id: `pos-${Date.now()}`,
@@ -288,7 +291,7 @@ export const UwalemiElections: React.FC<Props> = ({
 
   // Delete Position
   const handleDeletePosition = async (posId: string) => {
-    if (!activeElection) return;
+    if (readOnly || !activeElection) return;
     if (!confirm('Je, una uhakika unataka kufuta nafasi hii ya uongozi?')) return;
 
     const updatedElections = elections.map(elec => {
@@ -310,7 +313,7 @@ export const UwalemiElections: React.FC<Props> = ({
   // Add Candidate to Position
   const handleAddCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeElection || !showAddCandidateModal || !candMemberId) return;
+    if (readOnly || !activeElection || !showAddCandidateModal || !candMemberId) return;
 
     const member = state.members.find(m => m.id === candMemberId);
     if (!member) return;
@@ -361,7 +364,7 @@ export const UwalemiElections: React.FC<Props> = ({
 
   // Remove Candidate
   const handleRemoveCandidate = async (posId: string, candidateId: string) => {
-    if (!activeElection) return;
+    if (readOnly || !activeElection) return;
     if (!confirm('Ondoa mgombea huyu kwenye nafasi hii?')) return;
 
     const updatedElections = elections.map(elec => {
@@ -390,7 +393,7 @@ export const UwalemiElections: React.FC<Props> = ({
 
   // Send SMS Links to voters
   const handleDispatchSmsLinks = async () => {
-    if (!activeElection || isSendingSms) return;
+    if (readOnly || !activeElection || isSendingSms) return;
     setIsSendingSms(true);
     setSmsResultMsg(null);
 
@@ -462,7 +465,7 @@ export const UwalemiElections: React.FC<Props> = ({
 
   // Send SMS to a single voter
   const handleSendIndividualSms = async (voter: UwalemiVoterRecord) => {
-    if (!activeElection || sendingIndividualSmsToken) return;
+    if (readOnly || !activeElection || sendingIndividualSmsToken) return;
     if (!voter.isEligible) {
       alert('Mwanachama huyu hana sifa za kupiga kura kulingana na vigezo vilivyowekwa.');
       return;
@@ -768,22 +771,30 @@ export const UwalemiElections: React.FC<Props> = ({
               </select>
             )}
 
-            <button
-              onClick={() => setShowNewElectionModal(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4 text-emerald-400" />
-              Uchaguzi Mpya
-            </button>
+            {!readOnly ? (
+              <>
+                <button
+                  onClick={() => setShowNewElectionModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-emerald-400" />
+                  Uchaguzi Mpya
+                </button>
 
-            {activeElection && (
-              <button
-                onClick={() => setShowSendSmsModal(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md shadow-emerald-950/40"
-              >
-                <Send className="w-4 h-4" />
-                Tuma Viungo kwa SMS
-              </button>
+                {activeElection && (
+                  <button
+                    onClick={() => setShowSendSmsModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer shadow-md shadow-emerald-950/40"
+                  >
+                    <Send className="w-4 h-4" />
+                    Tuma Viungo kwa SMS
+                  </button>
+                )}
+              </>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+                <span>👁️ Hali ya Kutazama Tu</span>
+              </div>
             )}
           </div>
         </div>
@@ -802,42 +813,44 @@ export const UwalemiElections: React.FC<Props> = ({
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400">Badili Hali:</span>
-              <button
-                onClick={() => handleUpdateElectionStatus('active')}
-                disabled={activeElection.status === 'active'}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                  activeElection.status === 'active' 
-                    ? 'bg-emerald-500 text-white' 
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                Fungua (Live)
-              </button>
-              <button
-                onClick={() => handleUpdateElectionStatus('paused')}
-                disabled={activeElection.status === 'paused'}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                  activeElection.status === 'paused' 
-                    ? 'bg-amber-500 text-white' 
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                Sitisha
-              </button>
-              <button
-                onClick={() => handleUpdateElectionStatus('completed')}
-                disabled={activeElection.status === 'completed'}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                  activeElection.status === 'completed' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                Kamilisha
-              </button>
-            </div>
+            {!readOnly && (
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400">Badili Hali:</span>
+                <button
+                  onClick={() => handleUpdateElectionStatus('active')}
+                  disabled={activeElection.status === 'active'}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                    activeElection.status === 'active' 
+                      ? 'bg-emerald-500 text-white' 
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  Fungua (Live)
+                </button>
+                <button
+                  onClick={() => handleUpdateElectionStatus('paused')}
+                  disabled={activeElection.status === 'paused'}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                    activeElection.status === 'paused' 
+                      ? 'bg-amber-500 text-white' 
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  Sitisha
+                </button>
+                <button
+                  onClick={() => handleUpdateElectionStatus('completed')}
+                  disabled={activeElection.status === 'completed'}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                    activeElection.status === 'completed' 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  Kamilisha
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -852,13 +865,15 @@ export const UwalemiElections: React.FC<Props> = ({
           <p className="text-xs text-slate-400 max-w-md mx-auto mb-6 leading-relaxed">
             Anzisha uchaguzi wa viongozi wa UWALEMI kwa kubofya kitufe hapa chini. Mfumo utaweka nafasi zote kuu za kikatiba na kuandaa daftari la wapiga kura kiotomatiki.
           </p>
-          <button
-            onClick={() => setShowNewElectionModal(true)}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer shadow-lg shadow-emerald-950/50"
-          >
-            <Plus className="w-4 h-4" />
-            Anzisha Uchaguzi wa UWALEMI Sasa
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => setShowNewElectionModal(true)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer shadow-lg shadow-emerald-950/50"
+            >
+              <Plus className="w-4 h-4" />
+              Anzisha Uchaguzi wa UWALEMI Sasa
+            </button>
+          )}
         </div>
       )}
 
@@ -1112,13 +1127,15 @@ export const UwalemiElections: React.FC<Props> = ({
                     Wasio na Sifa ({activeElection.voters?.filter(v => !v.isEligible).length || 0})
                   </button>
 
-                  <button
-                    onClick={handleRecomputeVoters}
-                    title="Sasisha vigezo vya wapiga kura kutoka kwenye ada na wanachama"
-                    className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-all cursor-pointer ml-auto"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
-                  </button>
+                  {!readOnly && (
+                    <button
+                      onClick={handleRecomputeVoters}
+                      title="Sasisha vigezo vya wapiga kura kutoka kwenye ada na wanachama"
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-all cursor-pointer ml-auto"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1195,24 +1212,26 @@ export const UwalemiElections: React.FC<Props> = ({
                               </td>
                               <td className="py-3 px-4 text-right">
                                 <div className="inline-flex items-center gap-1.5 justify-end">
-                                  <button
-                                    onClick={() => handleSendIndividualSms(voter)}
-                                    disabled={!voter.isEligible || sendingIndividualSmsToken === voter.voterToken}
-                                    title="Tuma kiungo cha kura kwa mwanachama huyu kwa SMS"
-                                    className={`p-1.5 rounded-lg text-slate-300 hover:text-white transition-all cursor-pointer ${
-                                      sendingIndividualSmsToken === voter.voterToken
-                                        ? 'bg-slate-800 animate-pulse'
-                                        : voter.smsSentAt
-                                          ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/30'
-                                          : 'bg-slate-800 hover:bg-slate-700'
-                                    }`}
-                                  >
-                                    {sendingIndividualSmsToken === voter.voterToken ? (
-                                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-                                    ) : (
-                                      <Send className="w-3.5 h-3.5 text-slate-300 hover:text-emerald-400" />
-                                    )}
-                                  </button>
+                                  {!readOnly && (
+                                    <button
+                                      onClick={() => handleSendIndividualSms(voter)}
+                                      disabled={!voter.isEligible || sendingIndividualSmsToken === voter.voterToken}
+                                      title="Tuma kiungo cha kura kwa mwanachama huyu kwa SMS"
+                                      className={`p-1.5 rounded-lg text-slate-300 hover:text-white transition-all cursor-pointer ${
+                                        sendingIndividualSmsToken === voter.voterToken
+                                          ? 'bg-slate-800 animate-pulse'
+                                          : voter.smsSentAt
+                                            ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/30'
+                                            : 'bg-slate-800 hover:bg-slate-700'
+                                      }`}
+                                    >
+                                      {sendingIndividualSmsToken === voter.voterToken ? (
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                                      ) : (
+                                        <Send className="w-3.5 h-3.5 text-slate-300 hover:text-emerald-400" />
+                                      )}
+                                    </button>
+                                  )}
 
                                   <button
                                     onClick={() => handleCopyVoterLink(voter.voterToken)}
@@ -1257,13 +1276,15 @@ export const UwalemiElections: React.FC<Props> = ({
                   <p className="text-xs text-slate-400">Weka wagombea wanaowania kila nafasi ya uongozi wa UWALEMI.</p>
                 </div>
 
-                <button
-                  onClick={() => setShowNewPositionModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all cursor-pointer"
-                >
-                  <Plus className="w-4 h-4 text-emerald-400" />
-                  Ongeza Nafasi Mpya
-                </button>
+                {!readOnly && (
+                  <button
+                    onClick={() => setShowNewPositionModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 text-emerald-400" />
+                    Ongeza Nafasi Mpya
+                  </button>
+                )}
               </div>
 
               <div className="space-y-4">
@@ -1288,28 +1309,30 @@ export const UwalemiElections: React.FC<Props> = ({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 self-start sm:self-auto">
-                          <button
-                            onClick={() => setShowAddCandidateModal(pos.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-semibold transition-all cursor-pointer"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Weka Mgombea
-                          </button>
-                          <button
-                            onClick={() => handleDeletePosition(pos.id)}
-                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 transition-all cursor-pointer"
-                            title="Futa nafasi hii"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {!readOnly && (
+                          <div className="flex items-center gap-2 self-start sm:self-auto">
+                            <button
+                              onClick={() => setShowAddCandidateModal(pos.id)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-semibold transition-all cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              Weka Mgombea
+                            </button>
+                            <button
+                              onClick={() => handleDeletePosition(pos.id)}
+                              className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 transition-all cursor-pointer"
+                              title="Futa nafasi hii"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Candidates List in this position */}
                       {pos.candidates.length === 0 ? (
                         <div className="p-4 rounded-xl bg-slate-950/40 border border-dashed border-slate-800 text-center text-xs text-slate-500 italic">
-                          Hakuna wagombea waliowekwa bado kwenye nafasi hii. Bofya "Weka Mgombea" kuongeza mwanachama.
+                          Hakuna wagombea waliowekwa bado kwenye nafasi hii.
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -1333,13 +1356,15 @@ export const UwalemiElections: React.FC<Props> = ({
                                   </div>
                                 </div>
 
-                                <button
-                                  onClick={() => handleRemoveCandidate(pos.id, cand.id)}
-                                  className="text-slate-500 hover:text-rose-400 p-1 cursor-pointer"
-                                  title="Ondoa mgombea"
-                                >
-                                  ✕
-                                </button>
+                                {!readOnly && (
+                                  <button
+                                    onClick={() => handleRemoveCandidate(pos.id, cand.id)}
+                                    className="text-slate-500 hover:text-rose-400 p-1 cursor-pointer"
+                                    title="Ondoa mgombea"
+                                  >
+                                    ✕
+                                  </button>
+                                )}
                               </div>
                             );
                           })}

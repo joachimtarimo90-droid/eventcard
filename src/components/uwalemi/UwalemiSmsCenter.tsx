@@ -47,13 +47,15 @@ interface Props {
   onSaveState: (state: UwalemiState) => Promise<boolean>;
   initialRecipients?: { name: string; phone: string; memberNo: string; memberId?: string }[];
   initialTemplate?: string;
+  readOnly?: boolean;
 }
 
 export const UwalemiSmsCenter: React.FC<Props> = ({
   state,
   onSaveState,
   initialRecipients,
-  initialTemplate
+  initialTemplate,
+  readOnly = false
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'compose' | 'gateway' | 'logs'>('compose');
   
@@ -159,6 +161,7 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   const [testSmsStatus, setTestSmsStatus] = useState<{ loading: boolean; success?: boolean; message?: string } | null>(null);
 
   const handleSendQuickTestSms = async () => {
+    if (readOnly) return;
     if (!testSmsPhone.trim()) {
       alert('Tafadhali weka namba ya simu ya kupokea SMS ya majaribio (mf. 07XXXXXXXX au 2557XXXXXXXX).');
       return;
@@ -221,6 +224,7 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   };
 
   const handleSetMeseji = async (apiKey = '', senderId = 'MESEJI') => {
+    if (readOnly) return;
     try {
       const updatedConfig: UwalemiSmsConfig = {
         ...gatewayConfig,
@@ -249,6 +253,7 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   };
 
   const handleSetEhub = async (targetSenderId = '19f41b59-19d0-4f98-b8c9-9d5b1ac31308') => {
+    if (readOnly) return;
     try {
       const updatedConfig: UwalemiSmsConfig = {
         ...gatewayConfig,
@@ -274,6 +279,7 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   };
 
   const handleSyncGlobalEhub = async () => {
+    if (readOnly) return;
     try {
       const res = await fetch('/api/state');
       let apiKey = 'sk_Y8rB4E2PzMMOQZ3LyCbf8xYKw1tjniyhae85NX3IxKgLx6GD';
@@ -315,6 +321,7 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   };
 
   const handleQuickFixSenderId = async (newSenderId = '19f41b59-19d0-4f98-b8c9-9d5b1ac31308') => {
+    if (readOnly) return;
     const updatedConfig: UwalemiSmsConfig = {
       ...gatewayConfig,
       provider: 'ehub',
@@ -334,6 +341,7 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   };
 
   const handleSyncSwalaSms = async () => {
+    if (readOnly) return;
     const updatedConfig: UwalemiSmsConfig = {
       provider: 'swalasms',
       apiKey: 'swl_live_vtWJVXNYyVpjhUcu3PNFuOvL1WX6nXzE0yz9qVImRwNCP5a3',
@@ -356,6 +364,7 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   };
 
   const handleSwitchToSimulation = async () => {
+    if (readOnly) return;
     const updatedConfig: UwalemiSmsConfig = {
       ...gatewayConfig,
       provider: 'simulation'
@@ -725,6 +734,7 @@ Lema, Nguvu Moja!`);
   }, [messageText, previewDebtInfo]);
 
   const handleSendSms = async () => {
+    if (readOnly) return;
     if (targetRecipients.length === 0) {
       alert('Tafadhali chagua angalau mpokeaji mmoja mwenye namba ya simu.');
       return;
@@ -792,6 +802,7 @@ Lema, Nguvu Moja!`);
   };
 
   const handleResendLog = async (log: any) => {
+    if (readOnly) return;
     const phone = log.recipientPhone || '';
     if (!phone) {
       alert('Hakuna namba ya simu ya mpokeaji iliyopatikana kwenye kumbukumbu hii.');
@@ -837,6 +848,7 @@ Lema, Nguvu Moja!`);
 
   const handleSaveGateway = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) return;
     const updatedSettings = {
       ...state.groupSettings,
       smsConfig: gatewayConfig
@@ -847,6 +859,7 @@ Lema, Nguvu Moja!`);
   };
 
   const handleTriggerTestReminders = async () => {
+    if (readOnly) return;
     if (!confirm('Je, unataka kutuma/kujaribu vikumbusho vya ada ya mwezi huu sasa kwa wanachama wote ambao hawajalipa mwezi huu?')) {
       return;
     }

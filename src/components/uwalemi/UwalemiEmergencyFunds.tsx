@@ -27,6 +27,7 @@ interface Props {
   onOpenSmsWithTemplate?: (recipients: { name: string; phone: string; memberNo: string }[], templateText: string) => void;
   autoOpenNewFund?: boolean;
   onResetAutoOpen?: () => void;
+  readOnly?: boolean;
 }
 
 export const UwalemiEmergencyFunds: React.FC<Props> = ({ 
@@ -34,16 +35,17 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
   onSaveState, 
   onOpenSmsWithTemplate,
   autoOpenNewFund,
-  onResetAutoOpen
+  onResetAutoOpen,
+  readOnly
 }) => {
   useEffect(() => {
-    if (autoOpenNewFund) {
+    if (autoOpenNewFund && !readOnly) {
       setIsNewFundModalOpen(true);
       if (onResetAutoOpen) {
         onResetAutoOpen();
       }
     }
-  }, [autoOpenNewFund, onResetAutoOpen]);
+  }, [autoOpenNewFund, onResetAutoOpen, readOnly]);
 
   const [selectedFundId, setSelectedFundId] = useState<string | null>(
     state.emergencyFunds?.[0]?.id || null
@@ -115,6 +117,10 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
 
   const handleCreateFund = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) {
+      alert('Hali ya Kutazama Tu: Hauruhusiwi kufungua mchango mpya.');
+      return;
+    }
     if (!fundForm.title || !fundForm.beneficiaryName) {
       alert('Tafadhali jaza Jina la Kampeni na Mfaidikaji.');
       return;
@@ -144,6 +150,10 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
 
   const handleSavePayment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) {
+      alert('Hali ya Kutazama Tu: Hauruhusiwi kurekodi mchango.');
+      return;
+    }
     if (!selectedFund || !paymentForm.memberId) return;
 
     const member = members.find(m => m.id === paymentForm.memberId);
@@ -266,26 +276,32 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            setFundForm({
-              title: '',
-              type: 'msiba',
-              targetAmount: 1000000,
-              perMemberTarget: 20000,
-              beneficiaryName: '',
-              beneficiaryPhone: '',
-              beneficiaryRelation: 'Mwanachama',
-              deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-              description: ''
-            });
-            setIsNewFundModalOpen(true);
-          }}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-lg shadow-rose-900/30 transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Fungua Mchango Mpya wa Dharura
-        </button>
+        {!readOnly ? (
+          <button
+            onClick={() => {
+              setFundForm({
+                title: '',
+                type: 'msiba',
+                targetAmount: 1000000,
+                perMemberTarget: 20000,
+                beneficiaryName: '',
+                beneficiaryPhone: '',
+                beneficiaryRelation: 'Mwanachama',
+                deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                description: ''
+              });
+              setIsNewFundModalOpen(true);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-lg shadow-rose-900/30 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Fungua Mchango Mpya wa Dharura
+          </button>
+        ) : (
+          <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+            <span>👁️ Hali ya Kutazama Tu</span>
+          </div>
+        )}
       </div>
 
       {/* Emergency Fund Selector Cards */}
@@ -362,47 +378,51 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
                 Pakua Excel
               </button>
 
-              <button
-                onClick={handleSendReminderToUnpaid}
-                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-600/80 hover:bg-amber-500 text-white text-xs font-semibold shadow-lg shadow-amber-900/30 transition-all cursor-pointer"
-              >
-                <Send className="w-4 h-4" />
-                Kumbusha Wasiochanga
-              </button>
+              {!readOnly && (
+                <>
+                  <button
+                    onClick={handleSendReminderToUnpaid}
+                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-600/80 hover:bg-amber-500 text-white text-xs font-semibold shadow-lg shadow-amber-900/30 transition-all cursor-pointer"
+                  >
+                    <Send className="w-4 h-4" />
+                    Kumbusha Wasiochanga
+                  </button>
 
-              {selectedFund.status === 'active' && (
-                <button
-                  onClick={() => {
-                    setDisburseForm({
-                      amount: totalPaid,
-                      disbursedDate: new Date().toISOString().split('T')[0],
-                      disbursementNote: `Msaada wa TZS ${totalPaid.toLocaleString()} umekabidhiwa kwa ${selectedFund.beneficiaryName}.`
-                    });
-                    setIsDisburseModalOpen(true);
-                  }}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all cursor-pointer"
-                >
-                  <Gift className="w-4 h-4" />
-                  Toa Msaada kwa Mfaidikaji
-                </button>
+                  {selectedFund.status === 'active' && (
+                    <button
+                      onClick={() => {
+                        setDisburseForm({
+                          amount: totalPaid,
+                          disbursedDate: new Date().toISOString().split('T')[0],
+                          disbursementNote: `Msaada wa TZS ${totalPaid.toLocaleString()} umekabidhiwa kwa ${selectedFund.beneficiaryName}.`
+                        });
+                        setIsDisburseModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all cursor-pointer"
+                    >
+                      <Gift className="w-4 h-4" />
+                      Toa Msaada kwa Mfaidikaji
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setPaymentForm({
+                        memberId: members[0]?.id || '',
+                        amount: selectedFund.perMemberTarget || 20000,
+                        paymentDate: new Date().toISOString().split('T')[0],
+                        paymentMethod: 'M Koba',
+                        note: ''
+                      });
+                      setIsRecordPaymentModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-lg shadow-rose-900/30 transition-all cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Rekodi Mchango
+                  </button>
+                </>
               )}
-
-              <button
-                onClick={() => {
-                  setPaymentForm({
-                    memberId: members[0]?.id || '',
-                    amount: selectedFund.perMemberTarget || 20000,
-                    paymentDate: new Date().toISOString().split('T')[0],
-                    paymentMethod: 'M Koba',
-                    note: ''
-                  });
-                  setIsRecordPaymentModalOpen(true);
-                }}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-lg shadow-rose-900/30 transition-all cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                Rekodi Mchango
-              </button>
             </div>
           </div>
 
@@ -483,21 +503,25 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
                           {payment ? `${payment.paymentDate} (${payment.paymentMethod})` : '-'}
                         </td>
                         <td className="p-3 text-right">
-                          <button
-                            onClick={() => {
-                              setPaymentForm({
-                                memberId: m.id,
-                                amount: payment ? payment.amount : targetAmt,
-                                paymentDate: payment?.paymentDate || new Date().toISOString().split('T')[0],
-                                paymentMethod: normalizePaymentMethod(payment?.paymentMethod),
-                                note: payment?.note || ''
-                              });
-                              setIsRecordPaymentModalOpen(true);
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 text-[11px] font-semibold cursor-pointer"
-                          >
-                            {payment ? 'Hariri' : '+ Rekodi'}
-                          </button>
+                          {!readOnly ? (
+                            <button
+                              onClick={() => {
+                                setPaymentForm({
+                                  memberId: m.id,
+                                  amount: payment ? payment.amount : targetAmt,
+                                  paymentDate: payment?.paymentDate || new Date().toISOString().split('T')[0],
+                                  paymentMethod: normalizePaymentMethod(payment?.paymentMethod),
+                                  note: payment?.note || ''
+                                });
+                                setIsRecordPaymentModalOpen(true);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 text-[11px] font-semibold cursor-pointer"
+                            >
+                              {payment ? 'Hariri' : '+ Rekodi'}
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 italic">-</span>
+                          )}
                         </td>
                       </tr>
                     );

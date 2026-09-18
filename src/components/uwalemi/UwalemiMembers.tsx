@@ -37,9 +37,11 @@ interface Props {
   state: UwalemiState;
   onSaveState: (state: UwalemiState) => Promise<boolean>;
   onOpenSmsForMember?: (member: UwalemiMember) => void;
+  onOpenMemberPortal?: (memberNo: string) => void;
+  readOnly?: boolean;
 }
 
-export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsForMember }) => {
+export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsForMember, onOpenMemberPortal, readOnly }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -180,6 +182,10 @@ export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsF
 
   const handleSaveMember = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) {
+      alert('Hali ya Kutazama Tu: Hauruhusiwi kuongeza au kubadilisha mwanachama.');
+      return;
+    }
     if (!formData.fullName || !formData.phone || !formData.memberNo) {
       alert('Tafadhali jaza Jina Kamili, Namba ya Mwanachama, na Namba ya Simu.');
       return;
@@ -606,45 +612,53 @@ export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsF
             Pakua Excel
           </button>
 
-          {/* Bulk Import Button */}
-          <button
-            onClick={() => {
-              setParsedPreview([]);
-              setPasteText('');
-              setBulkError(null);
-              setIsBulkModalOpen(true);
-            }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-900/30 transition-all cursor-pointer"
-          >
-            <Upload className="w-4 h-4" />
-            Ingiza kwa Wingi (Excel / CSV)
-          </button>
+          {!readOnly ? (
+            <>
+              {/* Bulk Import Button */}
+              <button
+                onClick={() => {
+                  setParsedPreview([]);
+                  setPasteText('');
+                  setBulkError(null);
+                  setIsBulkModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-900/30 transition-all cursor-pointer"
+              >
+                <Upload className="w-4 h-4" />
+                Ingiza kwa Wingi (Excel / CSV)
+              </button>
 
-          {/* Add Single Member */}
-          <button
-            onClick={() => {
-              setEditingMember(null);
-              setFormData({
-                memberNo: nextMemberNumber,
-                fullName: '',
-                phone: '',
-                email: '',
-                residence: 'Dar es Salaam',
-                role: 'Mjumbe',
-                status: 'active',
-                registrationFeePaid: false,
-                registrationFeeAmount: 0,
-                monthlyFeeAmount: 0,
-                nextOfKin: { name: '', relation: 'Mwenzi', phone: '' },
-                notes: ''
-              });
-              setIsAddModalOpen(true);
-            }}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Sajili Mwanachama Mpya
-          </button>
+              {/* Add Single Member */}
+              <button
+                onClick={() => {
+                  setEditingMember(null);
+                  setFormData({
+                    memberNo: nextMemberNumber,
+                    fullName: '',
+                    phone: '',
+                    email: '',
+                    residence: 'Dar es Salaam',
+                    role: 'Mjumbe',
+                    status: 'active',
+                    registrationFeePaid: false,
+                    registrationFeeAmount: 0,
+                    monthlyFeeAmount: 0,
+                    nextOfKin: { name: '', relation: 'Mwenzi', phone: '' },
+                    notes: ''
+                  });
+                  setIsAddModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                Sajili Mwanachama Mpya
+              </button>
+            </>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+              <span>👁️ Hali ya Kutazama Tu</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -982,24 +996,28 @@ export const UwalemiMembers: React.FC<Props> = ({ state, onSaveState, onOpenSmsF
                         >
                           <CreditCard className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => {
-                            setEditingMember(member);
-                            setFormData(member);
-                            setIsAddModalOpen(true);
-                          }}
-                          title="Hariri Mjumbe"
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors cursor-pointer"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteMember(member.id, member.fullName)}
-                          title="Futa Mjumbe"
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-rose-400 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {!readOnly && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setEditingMember(member);
+                                setFormData(member);
+                                setIsAddModalOpen(true);
+                              }}
+                              title="Hariri Mjumbe"
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-400 transition-colors cursor-pointer"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteMember(member.id, member.fullName)}
+                              title="Futa Mjumbe"
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-rose-400 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

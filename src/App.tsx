@@ -130,13 +130,44 @@ export default function App() {
   });
 
   // App Navigation state
-  const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<AppTab>(() => {
+    try {
+      const search = typeof window !== 'undefined' ? window.location.search || '' : '';
+      const path = typeof window !== 'undefined' ? (window.location.pathname || '').toLowerCase() : '';
+      const hash = typeof window !== 'undefined' ? window.location.hash || '' : '';
+      if (search.includes('uwalemi') || search.includes('voteToken') || path.includes('/uwalemi') || hash.includes('uwalemi')) {
+        return 'uwalemi';
+      }
+    } catch {}
+    return 'dashboard';
+  });
   const [deviceViewMode, setDeviceViewMode] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [searchQuery, setSearchQuery] = useState('');
   const [guestListSearch, setGuestListSearch] = useState('');
   const [sentListSearch, setSentListSearch] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [showLanding, setShowLanding] = useState(!user);
+  const [showLanding, setShowLanding] = useState(() => {
+    try {
+      const search = typeof window !== 'undefined' ? window.location.search || '' : '';
+      const path = typeof window !== 'undefined' ? (window.location.pathname || '').toLowerCase() : '';
+      const hash = typeof window !== 'undefined' ? window.location.hash || '' : '';
+      if (search.includes('uwalemi') || search.includes('voteToken') || path.includes('/uwalemi') || hash.includes('uwalemi')) {
+        return false;
+      }
+    } catch {}
+    return !user;
+  });
+  const [uwalemiReadOnlyParam, setUwalemiReadOnlyParam] = useState<boolean>(() => {
+    try {
+      const search = typeof window !== 'undefined' ? window.location.search || '' : '';
+      const params = new URLSearchParams(search);
+      const rawView = params.get('view') || '';
+      const rawMode = params.get('mode') || '';
+      const uwalemiParam = params.get('uwalemi') || '';
+      return rawView === 'uwalemi-view' || rawView === 'view' || rawMode === 'readOnly' || rawMode === 'view' || uwalemiParam === 'view';
+    } catch {}
+    return false;
+  });
 
   // Core Data state from SWR-backed EventCardContext
   const {
@@ -191,12 +222,24 @@ export default function App() {
   useEffect(() => {
     try {
       const searchStr = window.location.search || '';
+      const pathStr = (window.location.pathname || '').toLowerCase();
+      const hashStr = window.location.hash || '';
       const params = new URLSearchParams(searchStr);
 
-      // Check UWALEMI parameters
-      const uwalemiVote = params.get('uwalemiVote') || params.get('voteToken') || params.get('uwalemi_vote');
-      const uwalemiMember = params.get('uwalemiMember') || params.get('uwalemi_member') || params.get('uwalemi');
+      // Check UWALEMI parameters from search or hash
+      let uwalemiVote = params.get('uwalemiVote') || params.get('voteToken') || params.get('uwalemi_vote');
+      let uwalemiMember = params.get('uwalemiMember') || params.get('uwalemi_member') || params.get('uwalemi');
       const moduleParam = params.get('module');
+
+      if (!uwalemiVote && hashStr) {
+        const hashMatch = hashStr.match(/(?:uwalemiVote|voteToken|uwalemi_vote)=([^&]+)/i);
+        if (hashMatch) uwalemiVote = decodeURIComponent(hashMatch[1]);
+      }
+      if (!uwalemiMember && hashStr) {
+        const memberMatch = hashStr.match(/(?:uwalemiMember|uwalemi_member)=([^&]+)/i);
+        if (memberMatch) uwalemiMember = decodeURIComponent(memberMatch[1]);
+      }
+
       if (uwalemiVote) {
         setUwalemiVoteToken(uwalemiVote);
         setShowLanding(false);
@@ -210,7 +253,7 @@ export default function App() {
       let rawEventId = params.get('eventId') || params.get('event_id');
       let rawView = params.get('view') || params.get('mode') || params.get('v');
 
-      if (rawView === 'uwalemi' || moduleParam === 'uwalemi') {
+      if (rawView === 'uwalemi' || moduleParam === 'uwalemi' || pathStr.includes('/uwalemi') || hashStr.toLowerCase().includes('uwalemi')) {
         setActiveTab('uwalemi');
         setShowLanding(false);
       }
@@ -1075,6 +1118,18 @@ export default function App() {
     );
   }
 
+  if (activeTab === 'uwalemi') {
+    return (
+      <UwalemiModule 
+        initialReadOnly={uwalemiReadOnlyParam}
+        onBackToMainApp={() => {
+          setActiveTab('dashboard');
+          if (!user) setShowLanding(true);
+        }} 
+      />
+    );
+  }
+
   if (showLanding) {
     return (
       <LandingPage 
@@ -1082,6 +1137,10 @@ export default function App() {
         onLoginClick={() => {
           setShowLanding(false);
           setActiveTab('dashboard');
+        }}
+        onOpenUwalemi={() => {
+          setShowLanding(false);
+          setActiveTab('uwalemi');
         }}
       />
     );
@@ -1111,6 +1170,17 @@ export default function App() {
   };
 
   const renderContent = () => {
+    if (activeTab === 'uwalemi') {
+      return (
+        <UwalemiModule 
+          onBackToMainApp={() => {
+            setActiveTab('dashboard');
+            if (!user) setShowLanding(true);
+          }} 
+        />
+      );
+    }
+
     if (isLoading && !eventDetails && eventsList.length === 0) {
       return (
         <div className="flex items-center justify-center h-full text-white">
@@ -1119,12 +1189,12 @@ export default function App() {
       );
     }
 
-    if (!eventDetails && activeTab !== 'dashboard' && activeTab !== 'settings') {
+    if (!eventDetails && activeTab !== 'dashboard' && activeTab !== 'settings' && activeTab !== 'uwalemi') {
       setTimeout(() => setActiveTab('dashboard'), 0);
       return null;
     }
 
-    if ((!eventDetails && eventsList.length === 0) || isCreatingEvent) {
+    if (((!eventDetails && eventsList.length === 0) || isCreatingEvent) && activeTab !== 'uwalemi') {
       if (!draftEvent) {
         return (
           <CreateEventPage 

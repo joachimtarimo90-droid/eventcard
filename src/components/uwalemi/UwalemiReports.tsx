@@ -64,9 +64,10 @@ interface Props {
   state: UwalemiState;
   onSaveState?: (state: UwalemiState) => Promise<boolean>;
   onOpenSmsWithTemplate?: (recipients: { name: string; phone: string; memberNo: string }[], templateText: string) => void;
+  readOnly?: boolean;
 }
 
-export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsWithTemplate }) => {
+export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsWithTemplate, readOnly }) => {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
 

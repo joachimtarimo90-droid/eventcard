@@ -25,6 +25,7 @@ interface Props {
   onOpenNewEmergencyModal: () => void;
   onOpenNewExpenseModal: () => void;
   onOpenNewMeetingModal: () => void;
+  readOnly?: boolean;
 }
 
 export const UwalemiOverview: React.FC<Props> = ({
@@ -33,7 +34,8 @@ export const UwalemiOverview: React.FC<Props> = ({
   onOpenNewFeeModal,
   onOpenNewEmergencyModal,
   onOpenNewExpenseModal,
-  onOpenNewMeetingModal
+  onOpenNewMeetingModal,
+  readOnly
 }) => {
   const members = state.members || [];
   const activeMembers = members.filter(m => m.status === 'active');
@@ -119,19 +121,34 @@ export const UwalemiOverview: React.FC<Props> = ({
           </div>
 
           <div className="flex flex-wrap gap-2.5">
+            {!readOnly ? (
+              <>
+                <button
+                  onClick={onOpenNewFeeModal}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  Rekodi Ada ya Mwezi
+                </button>
+                <button
+                  onClick={onOpenNewEmergencyModal}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-rose-600/90 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-rose-900/30 transition-all cursor-pointer"
+                >
+                  <HeartHandshake className="w-4 h-4" />
+                  Fungua Mchango wa Dharura
+                </button>
+              </>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+                <span>👁️ Hali ya Kutazama Tu</span>
+              </div>
+            )}
             <button
-              onClick={onOpenNewFeeModal}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
+              onClick={() => onNavigateTab('reports')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold border border-slate-700 transition-all cursor-pointer"
             >
-              <PlusCircle className="w-4 h-4" />
-              Rekodi Ada ya Mwezi
-            </button>
-            <button
-              onClick={onOpenNewEmergencyModal}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-rose-600/90 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-rose-900/30 transition-all cursor-pointer"
-            >
-              <HeartHandshake className="w-4 h-4" />
-              Fungua Mchango wa Dharura
+              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+              Tazama Ripoti & Taarifa
             </button>
             <button
               onClick={() => onNavigateTab('elections')}
@@ -287,14 +304,16 @@ export const UwalemiOverview: React.FC<Props> = ({
             <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl bg-slate-950/40">
               <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2 opacity-60" />
               <p className="text-sm text-slate-300 font-medium">Hakuna kampeni ya dharura inayoendelea sasa</p>
-              <p className="text-xs text-slate-500 mt-1">Mjumbe akipata shida au msiba, fungua mchango hapa kusaidiana.</p>
-              <button
-                onClick={onOpenNewEmergencyModal}
-                className="mt-3.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600/80 hover:bg-rose-500 text-white text-xs font-semibold cursor-pointer"
-              >
-                <PlusCircle className="w-3.5 h-3.5" />
-                Fungua Mchango wa Dharura
-              </button>
+              <p className="text-xs text-slate-500 mt-1">Mjumbe akipata shida au msiba, taarifa zote zitarekodiwa hapa kusaidiana.</p>
+              {!readOnly && (
+                <button
+                  onClick={onOpenNewEmergencyModal}
+                  className="mt-3.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600/80 hover:bg-rose-500 text-white text-xs font-semibold cursor-pointer"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  Fungua Mchango wa Dharura
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -401,12 +420,14 @@ export const UwalemiOverview: React.FC<Props> = ({
             ) : (
               <div className="text-center py-6 border border-dashed border-slate-800 rounded-xl">
                 <p className="text-xs text-slate-400">Hakuna kikao kilichopangwa kwa sasa</p>
-                <button
-                  onClick={onOpenNewMeetingModal}
-                  className="mt-2 text-xs text-blue-400 hover:text-blue-300 font-semibold cursor-pointer"
-                >
-                  + Panga Kikao Kipya
-                </button>
+                {!readOnly && (
+                  <button
+                    onClick={onOpenNewMeetingModal}
+                    className="mt-2 text-xs text-blue-400 hover:text-blue-300 font-semibold cursor-pointer"
+                  >
+                    + Panga Kikao Kipya
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -416,26 +437,28 @@ export const UwalemiOverview: React.FC<Props> = ({
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Njia za Mkato (Quick Actions)</h3>
             
             <button
-              onClick={() => onNavigateTab('sms')}
+              onClick={() => onNavigateTab('sms_center')}
               className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-950/60 hover:bg-slate-800/80 border border-slate-800 text-left text-xs font-semibold text-slate-200 transition-all cursor-pointer"
             >
               <span className="flex items-center gap-2.5">
                 <Send className="w-4 h-4 text-emerald-400" />
-                Tuma SMS / WhatsApp kwa Wajumbe
+                {readOnly ? 'Kituo cha Kumbukumbu za SMS' : 'Tuma SMS / WhatsApp kwa Wajumbe'}
               </span>
               <ArrowUpRight className="w-4 h-4 text-slate-500" />
             </button>
 
-            <button
-              onClick={onOpenNewExpenseModal}
-              className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-950/60 hover:bg-slate-800/80 border border-slate-800 text-left text-xs font-semibold text-slate-200 transition-all cursor-pointer"
-            >
-              <span className="flex items-center gap-2.5">
-                <ArrowDownRight className="w-4 h-4 text-rose-400" />
-                Rekodi Matumizi ya Hazina
-              </span>
-              <PlusCircle className="w-4 h-4 text-slate-500" />
-            </button>
+            {!readOnly && (
+              <button
+                onClick={onOpenNewExpenseModal}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-950/60 hover:bg-slate-800/80 border border-slate-800 text-left text-xs font-semibold text-slate-200 transition-all cursor-pointer"
+              >
+                <span className="flex items-center gap-2.5">
+                  <ArrowDownRight className="w-4 h-4 text-rose-400" />
+                  Rekodi Matumizi ya Hazina
+                </span>
+                <PlusCircle className="w-4 h-4 text-slate-500" />
+              </button>
+            )}
 
             <button
               onClick={() => onNavigateTab('expenses')}

@@ -28,6 +28,7 @@ import {
 interface Props {
   state: UwalemiState;
   onSaveState: (state: UwalemiState) => Promise<boolean>;
+  readOnly?: boolean;
 }
 
 const LEADERSHIP_ROLES: { role: UwalemiMemberRole; label: string; badgeColor: string; description: string }[] = [
@@ -40,7 +41,7 @@ const LEADERSHIP_ROLES: { role: UwalemiMemberRole; label: string; badgeColor: st
   { role: 'Mlezi', label: 'Mlezi / Mshauri', badgeColor: 'bg-purple-500/10 text-purple-400 border-purple-500/20', description: 'Mshauri Mkuu na Mlezi wa Umoja' },
 ];
 
-export const UwalemiSettings: React.FC<Props> = ({ state, onSaveState }) => {
+export const UwalemiSettings: React.FC<Props> = ({ state, onSaveState, readOnly = false }) => {
   const [settings, setSettings] = useState<UwalemiGroupSettings>(state.groupSettings);
   const [members, setMembers] = useState<UwalemiMember[]>(state.members || []);
   const [isSaved, setIsSaved] = useState(false);

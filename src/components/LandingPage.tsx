@@ -6,9 +6,10 @@ import { useLanguage } from '../context/LanguageContext';
 interface LandingPageProps {
   onStart: () => void;
   onLoginClick: () => void;
+  onOpenUwalemi?: () => void;
 }
 
-export default function LandingPage({ onStart, onLoginClick }: LandingPageProps) {
+export default function LandingPage({ onStart, onLoginClick, onOpenUwalemi }: LandingPageProps) {
   const { language, setLanguage, t } = useLanguage();
   const [activePolicyTab, setActivePolicyTab] = useState<'privacy' | 'terms' | 'delete' | null>(null);
 
@@ -51,9 +52,27 @@ export default function LandingPage({ onStart, onLoginClick }: LandingPageProps)
             <a href="#contact" className="hover:text-white transition-colors">
               {language === 'sw' ? 'Mawasiliano' : 'Contact Us'}
             </a>
+            {onOpenUwalemi && (
+              <button
+                onClick={onOpenUwalemi}
+                className="text-emerald-400 hover:text-emerald-300 font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Shield className="w-4 h-4 text-emerald-400" />
+                <span>UWALEMI (Kikundi)</span>
+              </button>
+            )}
           </nav>
 
           <div className="flex items-center space-x-3">
+            {onOpenUwalemi && (
+              <button
+                onClick={onOpenUwalemi}
+                className="hidden sm:inline-flex items-center gap-1.5 text-xs font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 hover:bg-emerald-900/60 px-3 py-1.5 rounded-xl transition shadow-sm cursor-pointer"
+              >
+                <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                <span>UWALEMI</span>
+              </button>
+            )}
             {/* Language Selector */}
             <div className="flex bg-white/5 p-0.5 rounded-xl border border-white/10 shadow-inner mr-1">
               <button
@@ -132,6 +151,15 @@ export default function LandingPage({ onStart, onLoginClick }: LandingPageProps)
                 >
                   <span>{t('landing.btnHowItWorks')}</span>
                 </a>
+                {onOpenUwalemi && (
+                  <button 
+                    onClick={onOpenUwalemi}
+                    className="border border-emerald-500/40 backdrop-blur-md bg-emerald-950/50 hover:bg-emerald-900/70 text-emerald-300 font-semibold px-6 py-4 rounded-xl transition inline-flex items-center justify-center space-x-2 cursor-pointer shadow-lg"
+                  >
+                    <Shield className="w-5 h-5 text-emerald-400" />
+                    <span>UWALEMI (Kikundi)</span>
+                  </button>
+                )}
               </div>
 
               {/* Trust/Live Counters REMOVED per user request */}

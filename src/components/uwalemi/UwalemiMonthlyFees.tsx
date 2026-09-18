@@ -54,6 +54,7 @@ interface Props {
   onOpenSmsWithTemplate?: (recipients: { name: string; phone: string; memberNo: string }[], templateText: string) => void;
   autoOpenRecordModal?: boolean;
   onResetAutoOpen?: () => void;
+  readOnly?: boolean;
 }
 
 export const UwalemiMonthlyFees: React.FC<Props> = ({ 
@@ -61,16 +62,17 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
   onSaveState, 
   onOpenSmsWithTemplate,
   autoOpenRecordModal,
-  onResetAutoOpen
+  onResetAutoOpen,
+  readOnly
 }) => {
   useEffect(() => {
-    if (autoOpenRecordModal) {
+    if (autoOpenRecordModal && !readOnly) {
       setIsRecordModalOpen(true);
       if (onResetAutoOpen) {
         onResetAutoOpen();
       }
     }
-  }, [autoOpenRecordModal, onResetAutoOpen]);
+  }, [autoOpenRecordModal, onResetAutoOpen, readOnly]);
 
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
@@ -423,6 +425,10 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
 
   const handleSavePayment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) {
+      alert('Hali ya Kutazama Tu: Hauruhusiwi kurekodi malipo.');
+      return;
+    }
     if (!paymentForm.memberId) {
       alert('Tafadhali chagua mwanachama.');
       return;
@@ -1088,6 +1094,7 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
 
   // Toggle single cell in Matrix Mode
   const handleToggleMonthCell = async (member: UwalemiMember, year: number, month: number) => {
+    if (readOnly) return;
     const existing = monthlyPayments.find(p => 
       (p.memberId === member.id || (member.memberNo && p.memberNo === member.memberNo)) && 
       Number(p.year) === Number(year) && 
@@ -1580,38 +1587,46 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
               </button>
             </div>
 
-            <button
-              onClick={() => handleOpenAnnualModal('all', selectedYear)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-400 hover:to-emerald-500 text-slate-950 font-black text-xs shadow-lg shadow-emerald-950/40 transition-all cursor-pointer transform hover:-translate-y-0.5"
-            >
-              <Sparkles className="w-4 h-4 text-slate-950" />
-              ⚡ Jaza Mwaka Mzima (Jan - Des)
-            </button>
+            {!readOnly ? (
+              <>
+                <button
+                  onClick={() => handleOpenAnnualModal('all', selectedYear)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-400 hover:to-emerald-500 text-slate-950 font-black text-xs shadow-lg shadow-emerald-950/40 transition-all cursor-pointer transform hover:-translate-y-0.5"
+                >
+                  <Sparkles className="w-4 h-4 text-slate-950" />
+                  ⚡ Jaza Mwaka Mzima (Jan - Des)
+                </button>
 
-            <button
-              onClick={() => setIsBulkModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-md shadow-purple-900/30 transition-all cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Miezi Mingi (Bulk)
-            </button>
+                <button
+                  onClick={() => setIsBulkModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-md shadow-purple-900/30 transition-all cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Miezi Mingi (Bulk)
+                </button>
 
-            <button
-              onClick={() => setIsImportModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold shadow-md shadow-teal-900/30 transition-all cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              Pakia Excel Ada
-            </button>
+                <button
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold shadow-md shadow-teal-900/30 transition-all cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  Pakia Excel Ada
+                </button>
 
-            {onOpenSmsWithTemplate && (
-              <button
-                onClick={handleSendFeeDebtOnlyReminder}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all cursor-pointer shadow-sm"
-              >
-                <Send className="w-3.5 h-3.5 text-emerald-400" />
-                💳 Kumbusha Ada Pekee (SMS)
-              </button>
+                {onOpenSmsWithTemplate && (
+                  <button
+                    onClick={handleSendFeeDebtOnlyReminder}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all cursor-pointer shadow-sm"
+                  >
+                    <Send className="w-3.5 h-3.5 text-emerald-400" />
+                    💳 Kumbusha Ada Pekee (SMS)
+                  </button>
+                )}
+              </>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+                <span>👁️ Hali ya Kutazama Tu</span>
+              </div>
             )}
 
             <button
@@ -1622,25 +1637,27 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
               Pakua
             </button>
 
-            <button
-              onClick={() => {
-                setPaymentForm({
-                  memberId: members[0]?.id || '',
-                  year: selectedYear,
-                  month: selectedMonth,
-                  amount: getDefaultFeeForMonth(selectedYear, selectedMonth, members[0]?.monthlyFeeAmount),
-                  paymentDate: new Date().toISOString().split('T')[0],
-                  paymentMethod: 'M Koba',
-                  referenceNo: '',
-                  note: ''
-                });
-                setIsRecordModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Mwezi Mmoja
-            </button>
+            {!readOnly && (
+              <button
+                onClick={() => {
+                  setPaymentForm({
+                    memberId: members[0]?.id || '',
+                    year: selectedYear,
+                    month: selectedMonth,
+                    amount: getDefaultFeeForMonth(selectedYear, selectedMonth, members[0]?.monthlyFeeAmount),
+                    paymentDate: new Date().toISOString().split('T')[0],
+                    paymentMethod: 'M Koba',
+                    referenceNo: '',
+                    note: ''
+                  });
+                  setIsRecordModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Mwezi Mmoja
+              </button>
+            )}
           </div>
         </div>
 
@@ -1837,34 +1854,38 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                               </button>
                             )}
 
-                            <button
-                              onClick={() => {
-                                setPaymentForm({
-                                  memberId: member.id,
-                                  year: selectedYear,
-                                  month: selectedMonth,
-                                  amount: payment ? payment.paidAmount : expected,
-                                  paymentDate: payment?.paymentDate || new Date().toISOString().split('T')[0],
-                                  paymentMethod: normalizePaymentMethod(payment?.paymentMethod),
-                                  referenceNo: payment?.referenceNo || '',
-                                  note: payment?.note || ''
-                                });
-                                setIsRecordModalOpen(true);
-                              }}
-                              title="Rekodi / Hariri Kiasi Maalumu cha Mwezi Huu"
-                              className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
-                            >
-                              <CreditCard className="w-3.5 h-3.5" />
-                            </button>
+                            {!readOnly && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setPaymentForm({
+                                      memberId: member.id,
+                                      year: selectedYear,
+                                      month: selectedMonth,
+                                      amount: payment ? payment.paidAmount : expected,
+                                      paymentDate: payment?.paymentDate || new Date().toISOString().split('T')[0],
+                                      paymentMethod: normalizePaymentMethod(payment?.paymentMethod),
+                                      referenceNo: payment?.referenceNo || '',
+                                      note: payment?.note || ''
+                                    });
+                                    setIsRecordModalOpen(true);
+                                  }}
+                                  title="Rekodi / Hariri Kiasi Maalumu cha Mwezi Huu"
+                                  className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                                >
+                                  <CreditCard className="w-3.5 h-3.5" />
+                                </button>
 
-                            <button
-                              onClick={() => handleOpenAnnualModal(member.id, selectedYear)}
-                              title={`Jaza Taarifa za Mwaka Mzima wa ${selectedYear} (Jan - Des) kwa ${member.fullName}`}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500 hover:text-slate-950 text-amber-400 border border-amber-500/30 text-[10.5px] font-bold transition-all cursor-pointer whitespace-nowrap"
-                            >
-                              <Sparkles className="w-3 h-3" />
-                              Mwaka
-                            </button>
+                                <button
+                                  onClick={() => handleOpenAnnualModal(member.id, selectedYear)}
+                                  title={`Jaza Taarifa za Mwaka Mzima wa ${selectedYear} (Jan - Des) kwa ${member.fullName}`}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500 hover:text-slate-950 text-amber-400 border border-amber-500/30 text-[10.5px] font-bold transition-all cursor-pointer whitespace-nowrap"
+                                >
+                                  <Sparkles className="w-3 h-3" />
+                                  Mwaka
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1915,19 +1936,27 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
               </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => handleOpenAnnualModal('all', selectedYear)}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-400 hover:to-emerald-500 text-slate-950 font-black cursor-pointer text-xs whitespace-nowrap shadow-md flex items-center gap-1.5"
-              >
-                <Zap className="w-4 h-4 text-slate-950" />
-                Jaza Mwaka Mzima (Jan - Des)
-              </button>
-              <button
-                onClick={() => setIsBulkModalOpen(true)}
-                className="px-3.5 py-2 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 font-semibold hover:bg-slate-700 cursor-pointer text-xs whitespace-nowrap"
-              >
-                Miezi Mingi (Bulk)
-              </button>
+              {!readOnly ? (
+                <>
+                  <button
+                    onClick={() => handleOpenAnnualModal('all', selectedYear)}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-400 hover:to-emerald-500 text-slate-950 font-black cursor-pointer text-xs whitespace-nowrap shadow-md flex items-center gap-1.5"
+                  >
+                    <Zap className="w-4 h-4 text-slate-950" />
+                    Jaza Mwaka Mzima (Jan - Des)
+                  </button>
+                  <button
+                    onClick={() => setIsBulkModalOpen(true)}
+                    className="px-3.5 py-2 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 font-semibold hover:bg-slate-700 cursor-pointer text-xs whitespace-nowrap"
+                  >
+                    Miezi Mingi (Bulk)
+                  </button>
+                </>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+                  <span>👁️ Hali ya Kutazama Tu</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1997,12 +2026,15 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                           return (
                             <td key={mNum} className="py-2.5 px-1 text-center border-r border-slate-800/40">
                               <button
-                                onClick={() => handleToggleMonthCell(m, selectedYear, mNum)}
-                                title={`Mwezi ${mNum} (${monthNamesSw[mNum - 1]} ${selectedYear}) - Bonyeza kubadili malipo`}
-                                className={`px-1.5 py-1.5 rounded font-mono text-[9.5px] font-medium transition-all w-[64px] inline-block text-center cursor-pointer ${
+                                onClick={!readOnly ? () => handleToggleMonthCell(m, selectedYear, mNum) : undefined}
+                                disabled={readOnly}
+                                title={readOnly ? `Mwezi ${mNum} (${monthNamesSw[mNum - 1]} ${selectedYear})` : `Mwezi ${mNum} (${monthNamesSw[mNum - 1]} ${selectedYear}) - Bonyeza kubadili malipo`}
+                                className={`px-1.5 py-1.5 rounded font-mono text-[9.5px] font-medium transition-all w-[64px] inline-block text-center ${
+                                  readOnly ? 'cursor-default' : 'cursor-pointer'
+                                } ${
                                   isPaid
-                                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25'
-                                    : 'bg-slate-950 text-slate-500 border border-slate-800/60 hover:border-slate-700 hover:text-slate-400'
+                                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' + (!readOnly ? ' hover:bg-emerald-500/25' : '')
+                                    : 'bg-slate-950 text-slate-500 border border-slate-800/60' + (!readOnly ? ' hover:border-slate-700 hover:text-slate-400' : '')
                                 }`}
                               >
                                 {paidAmountValue > 0 
@@ -2019,31 +2051,37 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
 
                         <td className="py-2.5 px-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            {mDebt.totalDebt > 0 && (
-                              <button
-                                onClick={() => handleOpenRecordModalForMember(m, mDebt.lateFeePenalty > 0 ? 'ada_late_fee' : 'smart')}
-                                title={`Rekodi malipo ya ${mDebt.lateFeePenalty > 0 ? 'Faini au Ada' : 'Ada'} kwa ${m.fullName}`}
-                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10.5px] font-bold shadow-sm transition-all cursor-pointer whitespace-nowrap inline-flex items-center gap-1"
-                              >
-                                <CreditCard className="w-3 h-3" />
-                                Rekodi Malipo
-                              </button>
+                            {!readOnly ? (
+                              <>
+                                {mDebt.totalDebt > 0 && (
+                                  <button
+                                    onClick={() => handleOpenRecordModalForMember(m, mDebt.lateFeePenalty > 0 ? 'ada_late_fee' : 'smart')}
+                                    title={`Rekodi malipo ya ${mDebt.lateFeePenalty > 0 ? 'Faini au Ada' : 'Ada'} kwa ${m.fullName}`}
+                                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10.5px] font-bold shadow-sm transition-all cursor-pointer whitespace-nowrap inline-flex items-center gap-1"
+                                  >
+                                    <CreditCard className="w-3 h-3" />
+                                    Rekodi Malipo
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleOpenAnnualModal(m.id, selectedYear)}
+                                  title={`Jaza kiasi maalum kwa miezi yote 12 ya mwaka ${selectedYear} kwa ${m.fullName}`}
+                                  className="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 hover:text-slate-950 text-amber-400 text-[10px] font-bold border border-amber-500/30 transition-all cursor-pointer whitespace-nowrap inline-flex items-center gap-1"
+                                >
+                                  <Sparkles className="w-3 h-3" />
+                                  Jaza Mwaka
+                                </button>
+                                <button
+                                  onClick={() => handleMarkWholeYearPaid(m, selectedYear)}
+                                  title="Weka miezi yote 12 kuwa imelipwa ada kamili mara moja"
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 hover:text-white text-emerald-400 text-[10px] font-bold border border-emerald-500/30 transition-all cursor-pointer whitespace-nowrap"
+                                >
+                                  ⚡ Mwaka Wote
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-slate-500 italic">Kutazama tu</span>
                             )}
-                            <button
-                              onClick={() => handleOpenAnnualModal(m.id, selectedYear)}
-                              title={`Jaza kiasi maalum kwa miezi yote 12 ya mwaka ${selectedYear} kwa ${m.fullName}`}
-                              className="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 hover:text-slate-950 text-amber-400 text-[10px] font-bold border border-amber-500/30 transition-all cursor-pointer whitespace-nowrap inline-flex items-center gap-1"
-                            >
-                              <Sparkles className="w-3 h-3" />
-                              Jaza Mwaka
-                            </button>
-                            <button
-                              onClick={() => handleMarkWholeYearPaid(m, selectedYear)}
-                              title="Weka miezi yote 12 kuwa imelipwa ada kamili mara moja"
-                              className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 hover:text-white text-emerald-400 text-[10px] font-bold border border-emerald-500/30 transition-all cursor-pointer whitespace-nowrap"
-                            >
-                              ⚡ Mwaka Wote
-                            </button>
                           </div>
                         </td>
                       </tr>
