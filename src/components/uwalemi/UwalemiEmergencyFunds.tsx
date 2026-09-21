@@ -21,7 +21,7 @@ import {
   Edit3
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { sortMembersByLeadership, triggerAutoReceiptSms, normalizePaymentMethod } from '../../services/uwalemiService';
+import { sortMembersByLeadership, triggerAutoReceiptSms, normalizePaymentMethod, formatSwahiliDate } from '../../services/uwalemiService';
 
 interface Props {
   state: UwalemiState;
@@ -260,31 +260,42 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
 
   const handleResendBereavementAnnouncement = (fund: UwalemiEmergencyFund) => {
     if (!fund) return;
-    const perMember = fund.perMemberTarget || 10000;
-    const deadlineFormatted = fund.deadline || 'Haraka iwezekanavyo';
-    const beneficiary = fund.beneficiaryName || 'Mwanachama';
-    const relation = fund.beneficiaryRelation || 'Familia';
+    const perMember = fund.perMemberTarget || 5000;
+    const amountWordsStr = perMember === 5000 
+      ? 'Shilingi Elfu Tano Tu' 
+      : (perMember === 10000 ? 'Shilingi Elfu Kumi Tu' : `Shilingi ${perMember.toLocaleString()} Tu`);
+    const deadlineFormatted = fund.deadline ? formatSwahiliDate(fund.deadline) : '25 Septemba 2026';
+    const beneficiary = fund.beneficiaryName || 'Hamphrey Raymond Lema';
+    const relation = fund.beneficiaryRelation || 'mama yake mkwe';
+
+    let rawLoc = fund.description 
+      ? fund.description.split('\n')[0].replace(/^Eneo\s*la\s*msiba\s*:\s*/i, '').replace(/^Msiba\s*upo\s*:\s*/i, '').replace(/^Taarifa\s*ya\s*msiba\s*wa[^.]*\.\s*/i, '').replace(/Eneo\s*la\s*msiba\s*:\s*/i, '').trim() 
+      : 'Mbezi Makabe - Kwa Paulo';
+    if (!rawLoc) rawLoc = 'Mbezi Makabe - Kwa Paulo';
+    if (!rawLoc.endsWith('.')) rawLoc += '.';
 
     const officialSms = `Habari {name},
 
-TAARIFA YA MSIBA NA MICHANGO - UWALEMI
-
-Uongozi wa UWALEMI, KWA MASIKITIKO MAKUBWA unapenda kuwataarifu wanachama wote kuwa mwanachama mwenzetu ${beneficiary} amepatwa na msiba wa ${relation}.
+Uongozi wa UWALEMI, kwa masikitiko makubwa unapenda kukutaarifu kuwa mwanachama mwenzetu ${beneficiary} amepatwa na msiba  wa kuondokewa na ${relation}.
 
 ENEO LA MSIBA:
-${fund.description ? fund.description.split('\n')[0] : 'Tutaendelea kuwataarifu.'}
+Msiba upo: ${rawLoc}
 
 MCHANGO WA RAMBIRAMBI (KILA MWANACHAMA):
-Kulingana na Mwongozo wa kikundi chetu, kiwango cha mchango kinachopaswa kutolewa na kila mwanachama ni TZS ${perMember.toLocaleString()} kama rambirambi na mkono wa pole kwa familia.
+Kulingana na Katiba na Mwongozo wa kikundi chetu cha UWALEMI, kiwango cha mchango kinachopaswa kutolewa na kila mwanachama ni TZS ${perMember.toLocaleString()} (${amountWordsStr}) kama rambirambi na mkono wa pole kwa familia.
 
 NJIA YA KUWASILISHA MCHANGO:
-Tafadhali wasilisha mchango wako mapema kupitia M-Koba au kwa Mtunza Hazina.
+Tafadhali wasilisha mchango wako haraka iwezekanavyo kupitia:
+ Simu ya Mweka Hazina: 0758219298 - Eva O. Lema
 
 TAREHE YA MWISHO WA KUCHANGA:
 Mwisho wa kuwasilisha michango yote ni tarehe ${deadlineFormatted}. Tunaombwa kukamilisha kwa wakati ili uongozi ukabidhi mkono wa pole mapema.
 
+RATIBA YA MAZISHI:
+Ratiba rasmi ya mazishi, kuaga na safari itatolewa mara baada ya taratibu za kifamilia kukamilika.
+
 "Bwana alitoa, na Bwana ametwaa; jina la Bwana lihimidiwe." (Ayubu 1:21)
-Tunaombwa wanachama wote tushirikiane kwa sala, kutoa pole na kuwasilisha michango yetu kwa uaminifu.
+Tunaombwa wanachama wote tushirikiane kwa sala, kutoa pole msibani na kuwasilisha michango yetu kwa uaminifu ili kumfariji mwenzetu katika kipindi hiki cha majonzi.
 
 Uongozi wa UWALEMI
 Lema, Nguvu Moja!`;

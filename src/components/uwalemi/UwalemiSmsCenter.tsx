@@ -7,6 +7,7 @@ import {
   calculateMemberFeeDebt,
   formatPersonalizedUwalemiSms,
   getSwahiliDayAndDate,
+  formatSwahiliDate,
   triggerMonthlyAutoRemindersApi,
   UwalemiMemberFeeDebtInfo 
 } from '../../services/uwalemiService';
@@ -64,14 +65,42 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   const [activeSubTab, setActiveSubTab] = useState<'compose' | 'gateway' | 'logs'>('compose');
   
   // Default templates
+  const defaultBereavementTemplate = `Habari {name},
+
+Uongozi wa UWALEMI, kwa masikitiko makubwa unapenda kukutaarifu kuwa mwanachama mwenzetu Hamphrey Raymond Lema amepatwa na msiba  wa kuondokewa na mama yake mkwe, Mama Grace Fransic Masawe.
+
+ENEO LA MSIBA:
+Msiba upo: Mbezi Makabe - Kwa Paulo.
+
+MCHANGO WA RAMBIRAMBI (KILA MWANACHAMA):
+Kulingana na Katiba na Mwongozo wa kikundi chetu cha UWALEMI, kiwango cha mchango kinachopaswa kutolewa na kila mwanachama ni TZS 5,000 (Shilingi Elfu Tano Tu) kama rambirambi na mkono wa pole kwa familia.
+
+NJIA YA KUWASILISHA MCHANGO:
+Tafadhali wasilisha mchango wako haraka iwezekanavyo kupitia:
+ Simu ya Mweka Hazina: 0758219298 - Eva O. Lema
+
+TAREHE YA MWISHO WA KUCHANGA:
+Mwisho wa kuwasilisha michango yote ni tarehe 25 Septemba 2026. Tunaombwa kukamilisha kwa wakati ili uongozi ukabidhi mkono wa pole mapema.
+
+RATIBA YA MAZISHI:
+Ratiba rasmi ya mazishi, kuaga na safari itatolewa mara baada ya taratibu za kifamilia kukamilika.
+
+"Bwana alitoa, na Bwana ametwaa; jina la Bwana lihimidiwe." (Ayubu 1:21)
+Tunaombwa wanachama wote tushirikiane kwa sala, kutoa pole msibani na kuwasilisha michango yetu kwa uaminifu ili kumfariji mwenzetu katika kipindi hiki cha majonzi.
+
+Uongozi wa UWALEMI
+Lema, Nguvu Moja!`;
+
   const defaultSmartTemplate = `Habari {name}, kikundi cha UWALEMI kinakukumbusha kulipa ada zako: unadaiwa ada {feeDebt} {periodSummary} ({unpaidMonths}). Faini: {fainiSummary}. Jumla unayopaswa kulipa: {jumlaKuu}. Kamilisha kupitia {lipaNamba}. Lema, Nguvu Moja!`;
   const defaultFinesOnlyTemplate = `Habari {name} ({memberNo}), Taarifa ya UWALEMI: Unakumbushwa kulipa faini zako: {fainiSummary}. Jumla ya faini unayodaiwa ni {faini}. Tafadhali lipa kupitia {lipaNamba}. Ahsante, Lema, Nguvu Moja!`;
 
   // Compose State
   const [recipientFilter, setRecipientFilter] = useState<'all' | 'all_debtors' | 'fines_only' | 'meeting_fines_only' | 'late_fee_fines_only' | 'unpaid_month' | 'custom'>(
-    initialTemplate && initialTemplate.toLowerCase().includes('faini')
-      ? (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'fines_only')
-      : (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'all_debtors')
+    initialTemplate
+      ? (initialTemplate.toLowerCase().includes('faini')
+          ? (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'fines_only')
+          : (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'all'))
+      : 'all'
   );
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>(
     initialRecipients && initialRecipients.length > 0
@@ -81,9 +110,11 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   const [memberSearchTerm, setMemberSearchTerm] = useState<string>('');
   
   const [messageText, setMessageText] = useState<string>(
-    initialTemplate || defaultSmartTemplate
+    initialTemplate || defaultBereavementTemplate
   );
-  const [messageType, setMessageType] = useState<'broadcast' | 'reminder' | 'emergency' | 'meeting' | 'receipt'>('reminder');
+  const [messageType, setMessageType] = useState<'broadcast' | 'reminder' | 'emergency' | 'meeting' | 'receipt'>(
+    initialTemplate ? 'reminder' : 'emergency'
+  );
   const [isSending, setIsSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null);
   const [previewMemberIndex, setPreviewMemberIndex] = useState<number>(0);
@@ -684,20 +715,19 @@ Lema, Nguvu Moja!`);
     autoCreateFund: boolean;
     includeGreeting: boolean;
   }>(() => {
-    const defaultPayment = state.groupSettings?.paymentMethods?.[0]
-      ? `${state.groupSettings.paymentMethods[0].name}: ${state.groupSettings.paymentMethods[0].accountNumber} (${state.groupSettings.paymentMethods[0].accountName})`
-      : 'M-Koba / Simu ya Mweka Hazina: 0758219298 - Eva O. Lema';
-    const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const defaultPayment = 'Simu ya Mweka Hazina: 0758219298 - Eva O. Lema';
+    const futureDate = '2026-09-25';
+    const hamphrey = members.find(m => m.fullName.toLowerCase().includes('hamphrey')) || members[0];
 
     return {
-      memberId: '',
-      relationType: 'mzazi_mama',
-      deceasedName: '',
-      location: '',
-      contributionAmount: 10000,
+      memberId: hamphrey?.id || '',
+      relationType: 'mkwe_mama',
+      deceasedName: 'Mama Grace Fransic Masawe',
+      location: 'Mbezi Makabe - Kwa Paulo',
+      contributionAmount: 5000,
       paymentDetails: defaultPayment,
       deadlineDate: futureDate,
-      burialSchedule: '',
+      burialSchedule: 'Ratiba rasmi ya mazishi, kuaga na safari itatolewa mara baada ya taratibu za kifamilia kukamilika.',
       autoCreateFund: true,
       includeGreeting: true
     };
@@ -801,59 +831,61 @@ Lema, Nguvu Moja!`);
   const generateLongBereavementMessage = (form: typeof bereavementForm) => {
     const selectedMember = members.find(m => m.id === form.memberId);
     const relInfo = getBereavementRelationInfo(form.relationType);
-    // Remove member number (e.g. UWL-001) as requested by user
-    const memberNameStr = selectedMember ? selectedMember.fullName : 'Mwanachama Mwenzetu';
+    const memberNameStr = selectedMember ? selectedMember.fullName : 'Hamphrey Raymond Lema';
     const deceasedStr = form.deceasedName.trim() 
       ? form.deceasedName.trim() 
       : (form.relationType === 'mwanachama' ? memberNameStr : relInfo.relationText);
-    const locationStr = form.location.trim() ? form.location.trim() : 'Eneo litataarifiwa rasmi';
-    const amountNum = Number(form.contributionAmount) || 10000;
+    
+    // Clean location (prevent duplicate "Msiba upo:" prefix if user entered it)
+    let rawLocation = form.location.trim() || 'Mbezi Makabe - Kwa Paulo';
+    let locationStr = rawLocation.replace(/^Msiba\s+upo\s*:\s*/i, '').replace(/^Eneo\s+la\s+msiba\s*:\s*/i, '').trim();
+    if (!locationStr.endsWith('.')) {
+      locationStr += '.';
+    }
+
+    const amountNum = Number(form.contributionAmount) || 5000;
     const amountStr = `TZS ${amountNum.toLocaleString()}`;
     const amountWordsStr = amountNum === 5000 
       ? 'Shilingi Elfu Tano Tu' 
-      : (amountNum === 10000 ? 'Shilingi Elfu Kumi Tu' : `Shilingi ${amountNum.toLocaleString()}`);
+      : (amountNum === 10000 ? 'Shilingi Elfu Kumi Tu' : `Shilingi ${amountNum.toLocaleString()} Tu`);
     
-    let deadlineStr = 'siku 7 kuanzia leo';
+    let deadlineStr = '25 Septemba 2026';
     if (form.deadlineDate) {
-      try {
-        const dObj = new Date(form.deadlineDate);
-        deadlineStr = dObj.toLocaleDateString('sw-TZ', { day: 'numeric', month: 'long', year: 'numeric' });
-      } catch {
-        deadlineStr = form.deadlineDate;
-      }
+      deadlineStr = formatSwahiliDate(form.deadlineDate);
     }
 
-    // Pure clean text without emojis (prevents '?' and '[Mahali]' symbols on carrier SMS)
     const burialSection = form.burialSchedule.trim() 
-      ? `RATIBA YA MAZISHI NA MAELEZO:\n${form.burialSchedule.trim()}\n`
+      ? `RATIBA YA MAZISHI:\n${form.burialSchedule.trim()}\n`
       : `RATIBA YA MAZISHI:\nRatiba rasmi ya mazishi, kuaga na safari itatolewa mara baada ya taratibu za kifamilia kukamilika.\n`;
 
     const openingLine = form.relationType === 'mwanachama'
-      ? `Uongozi wa UWALEMI, KWA MASIKITIKO MAKUBWA unapenda kuwataarifu wanachama wote kuhusu msiba mzito wa kuondokewa na mwanachama mwenzetu ${memberNameStr}.`
-      : `Uongozi wa UWALEMI, KWA MASIKITIKO MAKUBWA unapenda kuwataarifu wanachama wote kuwa mwanachama mwenzetu ${memberNameStr} amepatwa na msiba wa ${relInfo.relationText}${form.deceasedName ? `, ${deceasedStr}` : ''}.`;
+      ? `Uongozi wa UWALEMI, kwa masikitiko makubwa unapenda kukutaarifu kuhusu msiba mzito wa kuondokewa na mwanachama mwenzetu ${memberNameStr}.`
+      : `Uongozi wa UWALEMI, kwa masikitiko makubwa unapenda kukutaarifu kuwa mwanachama mwenzetu ${memberNameStr} amepatwa na msiba  wa kuondokewa na ${relInfo.relationText}${form.deceasedName ? `, ${deceasedStr}` : ''}.`;
+
+    const paymentLine = form.paymentDetails.trim()
+      ? form.paymentDetails.trim()
+      : 'Simu ya Mweka Hazina: 0758219298 - Eva O. Lema';
 
     const greetingPrefix = form.includeGreeting !== false ? 'Habari {name},\n\n' : '';
 
-    return `${greetingPrefix}TAARIFA YA MSIBA NA MICHANGO - UWALEMI
-
-${openingLine}
+    return `${greetingPrefix}${openingLine}
 
 ENEO LA MSIBA:
-${locationStr}
+Msiba upo: ${locationStr}
 
 MCHANGO WA RAMBIRAMBI (KILA MWANACHAMA):
-Kulingana na Mwongozo wa kikundi chetu cha UWALEMI, kiwango cha mchango kinachopaswa kutolewa na kila mwanachama ni ${amountStr} (${amountWordsStr}) kama rambirambi na mkono wa pole kwa familia.
+Kulingana na Katiba na Mwongozo wa kikundi chetu cha UWALEMI, kiwango cha mchango kinachopaswa kutolewa na kila mwanachama ni ${amountStr} (${amountWordsStr}) kama rambirambi na mkono wa pole kwa familia.
 
 NJIA YA KUWASILISHA MCHANGO:
-Tafadhali wasilisha mchango wako mapema kupitia:
-${form.paymentDetails || 'M-Koba / Simu ya Mweka Hazina: 0758 219 298 - Eva O. Lema'}
+Tafadhali wasilisha mchango wako haraka iwezekanavyo kupitia:
+ ${paymentLine}
 
 TAREHE YA MWISHO WA KUCHANGA:
 Mwisho wa kuwasilisha michango yote ni tarehe ${deadlineStr}. Tunaombwa kukamilisha kwa wakati ili uongozi ukabidhi mkono wa pole mapema.
 
 ${burialSection}
 "Bwana alitoa, na Bwana ametwaa; jina la Bwana lihimidiwe." (Ayubu 1:21)
-Tunaombwa wanachama wote tushirikiane kwa sala, kutoa pole na kuwasilisha michango yetu kwa uaminifu.
+Tunaombwa wanachama wote tushirikiane kwa sala, kutoa pole msibani na kuwasilisha michango yetu kwa uaminifu ili kumfariji mwenzetu katika kipindi hiki cha majonzi.
 
 Uongozi wa UWALEMI
 Lema, Nguvu Moja!`;
@@ -1325,6 +1357,18 @@ Lema, Nguvu Moja!`;
                   className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-slate-700 cursor-pointer"
                 >
                   💳 Ada ya Mwezi Huu Pekee
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessageText(defaultBereavementTemplate);
+                    setMessageType('emergency');
+                    setRecipientFilter('all');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-rose-600/30 hover:bg-rose-600/40 text-rose-200 text-[11px] font-bold border border-rose-500/50 cursor-pointer flex items-center gap-1 shadow-sm"
+                  title="Weka ujumbe rasmi wa msiba wa Hamphrey Raymond Lema (Mama Mkwe) mara moja"
+                >
+                  🕊️ Tangazo la Msiba (Hamphrey - Mama Mkwe)
                 </button>
                 <button
                   type="button"

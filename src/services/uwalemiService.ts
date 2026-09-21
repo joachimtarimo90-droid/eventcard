@@ -823,6 +823,11 @@ export function getSwahiliDayAndDate(dateStr?: string): { dayName: string; forma
   }
 }
 
+export function formatSwahiliDate(dateStr?: string): string {
+  if (!dateStr) return '';
+  return getSwahiliDayAndDate(dateStr).formattedDate;
+}
+
 /**
  * Replaces dynamic variables in a template message for a specific member.
  */
