@@ -265,7 +265,9 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
     const beneficiary = fund.beneficiaryName || 'Mwanachama';
     const relation = fund.beneficiaryRelation || 'Familia';
 
-    const officialSms = `TAARIFA YA MSIBA NA MICHANGO - UWALEMI
+    const officialSms = `Habari {name},
+
+TAARIFA YA MSIBA NA MICHANGO - UWALEMI
 
 Uongozi wa UWALEMI, KWA MASIKITIKO MAKUBWA unapenda kuwataarifu wanachama wote kuwa mwanachama mwenzetu ${beneficiary} amepatwa na msiba wa ${relation}.
 

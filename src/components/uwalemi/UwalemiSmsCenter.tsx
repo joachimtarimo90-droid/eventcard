@@ -699,7 +699,7 @@ Lema, Nguvu Moja!`);
       deadlineDate: futureDate,
       burialSchedule: '',
       autoCreateFund: true,
-      includeGreeting: false
+      includeGreeting: true
     };
   });
 
@@ -829,29 +829,31 @@ Lema, Nguvu Moja!`);
       : `RATIBA YA MAZISHI:\nRatiba rasmi ya mazishi, kuaga na safari itatolewa mara baada ya taratibu za kifamilia kukamilika.\n`;
 
     const openingLine = form.relationType === 'mwanachama'
-      ? `Uongozi wa UWALEMI, kwa masikitiko makubwa unapenda kukutaarifu kuhusu msiba mzito wa kuondokewa na mwanachama mwenzetu ${memberNameStr}.`
-      : `Uongozi wa UWALEMI, kwa masikitiko makubwa unapenda kukutaarifu kuwa mwanachama mwenzetu ${memberNameStr} amepatwa na msiba mzito wa kuondokewa na ${relInfo.relationText}, ${deceasedStr}.`;
+      ? `Uongozi wa UWALEMI, KWA MASIKITIKO MAKUBWA unapenda kuwataarifu wanachama wote kuhusu msiba mzito wa kuondokewa na mwanachama mwenzetu ${memberNameStr}.`
+      : `Uongozi wa UWALEMI, KWA MASIKITIKO MAKUBWA unapenda kuwataarifu wanachama wote kuwa mwanachama mwenzetu ${memberNameStr} amepatwa na msiba wa ${relInfo.relationText}${form.deceasedName ? `, ${deceasedStr}` : ''}.`;
 
-    const greetingPrefix = form.includeGreeting ? 'Habari {name},\n\n' : '';
+    const greetingPrefix = form.includeGreeting !== false ? 'Habari {name},\n\n' : '';
 
-    return `${greetingPrefix}${openingLine}
+    return `${greetingPrefix}TAARIFA YA MSIBA NA MICHANGO - UWALEMI
+
+${openingLine}
 
 ENEO LA MSIBA:
-Msiba upo: ${locationStr}.
+${locationStr}
 
 MCHANGO WA RAMBIRAMBI (KILA MWANACHAMA):
-Kulingana na Katiba na Mwongozo wa kikundi chetu cha UWALEMI, kiwango cha mchango kinachopaswa kutolewa na kila mwanachama ni ${amountStr} (${amountWordsStr}) kama rambirambi na mkono wa pole kwa familia.
+Kulingana na Mwongozo wa kikundi chetu cha UWALEMI, kiwango cha mchango kinachopaswa kutolewa na kila mwanachama ni ${amountStr} (${amountWordsStr}) kama rambirambi na mkono wa pole kwa familia.
 
 NJIA YA KUWASILISHA MCHANGO:
-Tafadhali wasilisha mchango wako haraka iwezekanavyo kupitia:
-${form.paymentDetails || 'M-Koba / Simu ya Mweka Hazina: 0758219298 - Eva O. Lema'}
+Tafadhali wasilisha mchango wako mapema kupitia:
+${form.paymentDetails || 'M-Koba / Simu ya Mweka Hazina: 0758 219 298 - Eva O. Lema'}
 
 TAREHE YA MWISHO WA KUCHANGA:
 Mwisho wa kuwasilisha michango yote ni tarehe ${deadlineStr}. Tunaombwa kukamilisha kwa wakati ili uongozi ukabidhi mkono wa pole mapema.
 
 ${burialSection}
 "Bwana alitoa, na Bwana ametwaa; jina la Bwana lihimidiwe." (Ayubu 1:21)
-Tunaombwa wanachama wote tushirikiane kwa sala, kutoa pole msibani na kuwasilisha michango yetu kwa uaminifu ili kumfariji mwenzetu katika kipindi hiki cha majonzi.
+Tunaombwa wanachama wote tushirikiane kwa sala, kutoa pole na kuwasilisha michango yetu kwa uaminifu.
 
 Uongozi wa UWALEMI
 Lema, Nguvu Moja!`;
