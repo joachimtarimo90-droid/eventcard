@@ -671,6 +671,7 @@ Lema, Nguvu Moja!`);
 
   // Bereavement SMS Announcement State (Kanuni: Elfu 10 / Elfu 5)
   const [isBereavementModalOpen, setIsBereavementModalOpen] = useState(false);
+  const [editingBereavementFundId, setEditingBereavementFundId] = useState<string>('');
   const [bereavementForm, setBereavementForm] = useState<{
     memberId: string;
     relationType: 'mwanachama' | 'mke' | 'mume' | 'mtoto' | 'mzazi_baba' | 'mzazi_mama' | 'mkwe_baba' | 'mkwe_mama' | 'nyingine';
@@ -870,8 +871,31 @@ Lema, Nguvu Moja!`;
     setMessageType('emergency');
     setRecipientFilter('all');
 
-    // Auto create emergency fund tracking if checked and not readOnly
-    if (bereavementForm.autoCreateFund && !readOnly) {
+    // If user was editing an existing fund, update it directly
+    if (editingBereavementFundId && !readOnly) {
+      const fundTitle = `Msiba: ${relInfo.label} (${selectedMember?.fullName || 'Mwanachama'})`;
+      const updatedFunds = (state.emergencyFunds || []).map(f => {
+        if (f.id === editingBereavementFundId) {
+          return {
+            ...f,
+            title: f.title || fundTitle,
+            perMemberTarget: Number(bereavementForm.contributionAmount),
+            targetAmount: Number(bereavementForm.contributionAmount) * (members.length || 1),
+            beneficiaryName: selectedMember?.fullName || f.beneficiaryName,
+            beneficiaryPhone: selectedMember?.phone || f.beneficiaryPhone,
+            beneficiaryRelation: relInfo.label,
+            deadline: bereavementForm.deadlineDate,
+            description: `Taarifa ya msiba wa ${bereavementForm.deceasedName || relInfo.label}. Eneo la msiba: ${bereavementForm.location || 'Haijawekwa'}. Kiwango cha mchango wa kila mwanachama ni TZS ${Number(bereavementForm.contributionAmount).toLocaleString()}. ${bereavementForm.burialSchedule ? 'Ratiba: ' + bereavementForm.burialSchedule : ''}`
+          };
+        }
+        return f;
+      });
+      await onSaveState({
+        ...state,
+        emergencyFunds: updatedFunds
+      });
+    } else if (bereavementForm.autoCreateFund && !readOnly) {
+      // Auto create emergency fund tracking if checked and not readOnly
       const fundTitle = `Msiba: ${relInfo.label} (${selectedMember?.fullName || 'Mwanachama'})`;
       const alreadyExists = (state.emergencyFunds || []).some(
         f => f.title.toLowerCase() === fundTitle.toLowerCase() && f.status === 'active'
@@ -2803,6 +2827,84 @@ Lema, Nguvu Moja!`;
                   </div>
                 </div>
               </div>
+
+              {/* Edit Existing Announcement / Resend Selector */}
+              {state.emergencyFunds && state.emergencyFunds.length > 0 && (
+                <div className="bg-purple-950/30 border border-purple-500/30 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-purple-300 font-bold text-xs flex items-center gap-1.5">
+                      <HeartHandshake className="w-4 h-4 text-purple-400" />
+                      Je, unataka kuhariri tangazo lililopo na kulituma tena?
+                    </label>
+                    {editingBereavementFundId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingBereavementFundId('');
+                          setBereavementForm(prev => ({
+                            ...prev,
+                            autoCreateFund: true
+                          }));
+                        }}
+                        className="text-[11px] text-purple-400 hover:text-white underline cursor-pointer"
+                      >
+                        Badilisha uandae tangazo jipya
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    value={editingBereavementFundId}
+                    onChange={(e) => {
+                      const fId = e.target.value;
+                      setEditingBereavementFundId(fId);
+                      if (fId) {
+                        const targetFund = state.emergencyFunds?.find(f => f.id === fId);
+                        if (targetFund) {
+                          const matchedMember = members.find(
+                            m => m.fullName.toLowerCase() === (targetFund.beneficiaryName || '').toLowerCase() || 
+                                 targetFund.title.toLowerCase().includes(m.fullName.toLowerCase()) || 
+                                 m.phone === targetFund.beneficiaryPhone
+                          );
+
+                          let guessedRel: any = 'mzazi_mama';
+                          const relLower = (targetFund.beneficiaryRelation || '').toLowerCase();
+                          if (relLower.includes('mama mkwe')) guessedRel = 'mkwe_mama';
+                          else if (relLower.includes('baba mkwe')) guessedRel = 'mkwe_baba';
+                          else if (relLower.includes('mama')) guessedRel = 'mzazi_mama';
+                          else if (relLower.includes('baba')) guessedRel = 'mzazi_baba';
+                          else if (relLower.includes('mke')) guessedRel = 'mke';
+                          else if (relLower.includes('mume')) guessedRel = 'mume';
+                          else if (relLower.includes('mtoto')) guessedRel = 'mtoto';
+                          else if (relLower.includes('mwanachama')) guessedRel = 'mwanachama';
+
+                          setBereavementForm(prev => ({
+                            ...prev,
+                            memberId: matchedMember?.id || prev.memberId,
+                            relationType: guessedRel,
+                            contributionAmount: targetFund.perMemberTarget || 10000,
+                            deadlineDate: targetFund.deadline || prev.deadlineDate,
+                            location: targetFund.description?.includes('Kimara') ? 'Kimara Temboni' : (targetFund.description?.split('.')[0] || ''),
+                            autoCreateFund: false
+                          }));
+                        }
+                      }
+                    }}
+                    className="w-full bg-slate-950 border border-purple-500/40 rounded-xl px-3 py-2 text-white text-xs focus:border-purple-400 focus:outline-none"
+                  >
+                    <option value="">-- Andaa Tangazo Jipya (Mpya Kabisa) --</option>
+                    {state.emergencyFunds.map(f => (
+                      <option key={f.id} value={f.id}>
+                        {f.title} ({f.status === 'active' ? 'Inaendelea' : f.status}) - TZS {(f.perMemberTarget || 0).toLocaleString()}
+                      </option>
+                    ))}
+                  </select>
+                  {editingBereavementFundId && (
+                    <p className="text-[11px] text-purple-300/90">
+                      Ukihariri na kubofya &quot;Weka Kwenye Kisanduku cha SMS&quot;, taarifa za mfuko huu zitahuishwa na ujumbe mpya utawekwa tayari kutumwa tena kwa wanachama wote!
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Form Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">

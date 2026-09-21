@@ -57,6 +57,8 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
   const [isNewFundModalOpen, setIsNewFundModalOpen] = useState(false);
   const [isRecordPaymentModalOpen, setIsRecordPaymentModalOpen] = useState(false);
   const [isDisburseModalOpen, setIsDisburseModalOpen] = useState(false);
+  const [isEditFundModalOpen, setIsEditFundModalOpen] = useState(false);
+  const [editingFund, setEditingFund] = useState<UwalemiEmergencyFund | null>(null);
 
   // New Fund Form State
   const [fundForm, setFundForm] = useState<{
@@ -238,6 +240,74 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
     await onSaveState({ ...state, emergencyFunds: updatedFunds });
   };
 
+  const handleOpenEditFund = (fund: UwalemiEmergencyFund) => {
+    if (readOnly) {
+      alert('Hali ya Kutazama Tu: Hauruhusiwi kuhariri mchango.');
+      return;
+    }
+    setEditingFund({ ...fund });
+    setIsEditFundModalOpen(true);
+  };
+
+  const handleSaveEditFund = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (readOnly || !editingFund) return;
+
+    const updatedFunds = emergencyFunds.map(f => f.id === editingFund.id ? editingFund : f);
+    await onSaveState({ ...state, emergencyFunds: updatedFunds });
+    setIsEditFundModalOpen(false);
+  };
+
+  const handleResendBereavementAnnouncement = (fund: UwalemiEmergencyFund) => {
+    if (!fund) return;
+    const perMember = fund.perMemberTarget || 10000;
+    const deadlineFormatted = fund.deadline || 'Haraka iwezekanavyo';
+    const beneficiary = fund.beneficiaryName || 'Mwanachama';
+    const relation = fund.beneficiaryRelation || 'Familia';
+
+    const officialSms = `TAARIFA YA MSIBA NA MICHANGO - UWALEMI
+
+Uongozi wa UWALEMI, KWA MASIKITIKO MAKUBWA unapenda kuwataarifu wanachama wote kuwa mwanachama mwenzetu ${beneficiary} amepatwa na msiba wa ${relation}.
+
+ENEO LA MSIBA:
+${fund.description ? fund.description.split('\n')[0] : 'Tutaendelea kuwataarifu.'}
+
+MCHANGO WA RAMBIRAMBI (KILA MWANACHAMA):
+Kulingana na Mwongozo wa kikundi chetu, kiwango cha mchango kinachopaswa kutolewa na kila mwanachama ni TZS ${perMember.toLocaleString()} kama rambirambi na mkono wa pole kwa familia.
+
+NJIA YA KUWASILISHA MCHANGO:
+Tafadhali wasilisha mchango wako mapema kupitia M-Koba au kwa Mtunza Hazina.
+
+TAREHE YA MWISHO WA KUCHANGA:
+Mwisho wa kuwasilisha michango yote ni tarehe ${deadlineFormatted}. Tunaombwa kukamilisha kwa wakati ili uongozi ukabidhi mkono wa pole mapema.
+
+"Bwana alitoa, na Bwana ametwaa; jina la Bwana lihimidiwe." (Ayubu 1:21)
+Tunaombwa wanachama wote tushirikiane kwa sala, kutoa pole na kuwasilisha michango yetu kwa uaminifu.
+
+Uongozi wa UWALEMI
+Lema, Nguvu Moja!`;
+
+    if (onOpenSmsWithTemplate) {
+      const allRecipients = members.map(m => ({
+        name: m.fullName,
+        phone: m.phone,
+        memberNo: m.memberNo
+      }));
+      onOpenSmsWithTemplate(allRecipients, officialSms);
+    } else {
+      navigator.clipboard.writeText(officialSms);
+      alert('Ujumbe rasmi wa tangazo la msiba umenakiliwa! Unaweza kuutuma sasa kwa wanachama kupitia Kituo cha SMS au WhatsApp.');
+    }
+  };
+
+  const handleSaveAndResendAnnouncement = async (fund: UwalemiEmergencyFund) => {
+    if (readOnly) return;
+    const updatedFunds = emergencyFunds.map(f => f.id === fund.id ? fund : f);
+    await onSaveState({ ...state, emergencyFunds: updatedFunds });
+    setIsEditFundModalOpen(false);
+    handleResendBereavementAnnouncement(fund);
+  };
+
   const handleDisburseFund = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedFund) return;
@@ -397,17 +467,30 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
                   </span>
 
                   {!readOnly && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteFund(fund.id);
-                      }}
-                      title="Futa Mchango / Tangazo Hili la Msiba"
-                      className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenEditFund(fund);
+                        }}
+                        title="Hariri Tangazo na Taarifa za Mchango Huu"
+                        className="p-1 rounded-lg hover:bg-purple-500/20 text-slate-500 hover:text-purple-400 transition-colors cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteFund(fund.id);
+                        }}
+                        title="Futa Mchango / Tangazo Hili la Msiba"
+                        className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -461,10 +544,29 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
               {!readOnly && (
                 <>
                   <button
-                    onClick={handleSendReminderToUnpaid}
-                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-600/80 hover:bg-amber-500 text-white text-xs font-semibold shadow-lg shadow-amber-900/30 transition-all cursor-pointer"
+                    onClick={() => handleOpenEditFund(selectedFund)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 hover:text-white border border-purple-500/30 text-xs font-semibold transition-all cursor-pointer"
+                    title="Hariri taarifa za msiba, kiasi, au eneo"
+                  >
+                    <Edit3 className="w-4 h-4 text-purple-400" />
+                    Hariri Tangazo
+                  </button>
+
+                  <button
+                    onClick={() => handleResendBereavementAnnouncement(selectedFund)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-lg shadow-purple-900/30 transition-all cursor-pointer"
+                    title="Tuma tena tangazo hili rasmi la msiba kwa wanachama wote kwa SMS"
                   >
                     <Send className="w-4 h-4" />
+                    Tuma Tangazo Tena (SMS)
+                  </button>
+
+                  <button
+                    onClick={handleSendReminderToUnpaid}
+                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-600/80 hover:bg-amber-500 text-white text-xs font-semibold shadow-lg shadow-amber-900/30 transition-all cursor-pointer"
+                    title="Tuma ujumbe wa kuwakumbusha wanachama ambao hawajachanga bado"
+                  >
+                    <Clock className="w-4 h-4" />
                     Kumbusha Wasiochanga
                   </button>
 
@@ -999,6 +1101,208 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
                 >
                   Thibitisha Makabidhiano
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDIT EMERGENCY FUND / TANGZO LA MSIBA */}
+      {isEditFundModalOpen && editingFund && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl my-8">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-purple-400" />
+                Hariri Tangazo & Taarifa za Msiba / Mchango
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setIsEditFundModalOpen(false)} 
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditFund} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Aina ya Mchango</label>
+                  <select
+                    value={editingFund.type}
+                    onChange={(e) => setEditingFund({ ...editingFund, type: e.target.value as UwalemiEmergencyType })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                  >
+                    <option value="msiba">Msiba / Rambirambi</option>
+                    <option value="ugonjwa">Ugonjwa / Matibabu</option>
+                    <option value="harusi">Harusi / Sherehe</option>
+                    <option value="pongezi">Pongezi / Uzazi</option>
+                    <option value="dharura">Dharura Nyingine</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Hali ya Mchango</label>
+                  <select
+                    value={editingFund.status}
+                    onChange={(e) => setEditingFund({ ...editingFund, status: e.target.value as 'active' | 'disbursed' | 'closed' })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                  >
+                    <option value="active">Inaendelea (Active)</option>
+                    <option value="disbursed">Imekabidhiwa (Disbursed)</option>
+                    <option value="closed">Imefungwa (Closed)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Kichwa cha Tangazo / Mchango *</label>
+                <input
+                  type="text"
+                  required
+                  value={editingFund.title}
+                  onChange={(e) => setEditingFund({ ...editingFund, title: e.target.value })}
+                  placeholder="Mfano: Msiba: Mama Mkwe wa Jimson Lema"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Mfaidikaji / Aliyefiwa *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingFund.beneficiaryName}
+                    onChange={(e) => setEditingFund({ ...editingFund, beneficiaryName: e.target.value })}
+                    placeholder="Jina la Mjumbe au Mfiwa"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Simu ya Mfaidikaji</label>
+                  <input
+                    type="text"
+                    value={editingFund.beneficiaryPhone || ''}
+                    onChange={(e) => setEditingFund({ ...editingFund, beneficiaryPhone: e.target.value })}
+                    placeholder="Mfano: 0743788734"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Uhusiano wa Aliyefariki / Mgonjwa</label>
+                <input
+                  type="text"
+                  value={editingFund.beneficiaryRelation}
+                  onChange={(e) => setEditingFund({ ...editingFund, beneficiaryRelation: e.target.value })}
+                  placeholder="Mfano: Mama Mkwe wa Mwanachama / Mama Mzazi / Mke / Mtoto"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                />
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {[
+                    { label: 'Mama Mzazi (10k)', relation: 'Mama Mzazi wa Mwanachama', amount: 10000 },
+                    { label: 'Baba Mzazi (10k)', relation: 'Baba Mzazi wa Mwanachama', amount: 10000 },
+                    { label: 'Mama Mkwe (5k)', relation: 'Mama Mkwe wa Mwanachama', amount: 5000 },
+                    { label: 'Baba Mkwe (5k)', relation: 'Baba Mkwe wa Mwanachama', amount: 5000 },
+                    { label: 'Mke/Mume (10k)', relation: 'Mke / Mume wa Mwanachama', amount: 10000 },
+                    { label: 'Mtoto (10k)', relation: 'Mtoto wa Mwanachama', amount: 10000 },
+                  ].map(quick => (
+                    <button
+                      key={quick.label}
+                      type="button"
+                      onClick={() => {
+                        setEditingFund(prev => prev ? {
+                          ...prev,
+                          beneficiaryRelation: quick.relation,
+                          perMemberTarget: quick.amount,
+                          targetAmount: quick.amount * (members.length || 1)
+                        } : null);
+                      }}
+                      className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] border border-slate-700 cursor-pointer"
+                    >
+                      {quick.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Kila Mjumbe Achange (TZS) *</label>
+                  <input
+                    type="number"
+                    required
+                    value={editingFund.perMemberTarget || 0}
+                    onChange={(e) => {
+                      const perVal = Number(e.target.value);
+                      setEditingFund(prev => prev ? {
+                        ...prev,
+                        perMemberTarget: perVal,
+                        targetAmount: perVal * (members.length || 1)
+                      } : null);
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono font-bold text-rose-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Jumla ya Lengo (TZS)</label>
+                  <input
+                    type="number"
+                    value={editingFund.targetAmount || 0}
+                    onChange={(e) => setEditingFund({ ...editingFund, targetAmount: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Tarehe ya Mwisho ya Kuchanga (Deadline) *</label>
+                <input
+                  type="date"
+                  required
+                  value={editingFund.deadline}
+                  onChange={(e) => setEditingFund({ ...editingFund, deadline: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Maelezo ya Ziada (Eneo la Msiba, Ratiba ya Mazishi, n.k.)</label>
+                <textarea
+                  rows={3}
+                  value={editingFund.description || ''}
+                  onChange={(e) => setEditingFund({ ...editingFund, description: e.target.value })}
+                  placeholder="Mfano: Msiba upo Kimara Temboni. Ratiba rasmi ya mazishi itatolewa mara baada ya taratibu za kifamilia kukamilika."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsEditFundModalOpen(false)}
+                  className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+                >
+                  Ghairi
+                </button>
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/40 text-xs font-semibold cursor-pointer"
+                  >
+                    Hifadhi Tu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveAndResendAnnouncement(editingFund)}
+                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-lg shadow-purple-900/30 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    Hifadhi & Tuma Tangazo Tena (SMS)
+                  </button>
+                </div>
               </div>
             </form>
           </div>
