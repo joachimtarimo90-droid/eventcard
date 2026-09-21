@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UwalemiState } from '../../types/uwalemi';
 import { 
   FileText, 
@@ -101,6 +101,16 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
   const [selectedEmergencyId, setSelectedEmergencyId] = useState<string>(
     state.emergencyFunds?.[0]?.id || ''
   );
+
+  // Synchronize selectedEmergencyId when emergencyFunds change
+  useEffect(() => {
+    if (state.emergencyFunds && state.emergencyFunds.length > 0) {
+      if (!selectedEmergencyId || !state.emergencyFunds.some(f => f.id === selectedEmergencyId)) {
+        setSelectedEmergencyId(state.emergencyFunds[0].id);
+      }
+    }
+  }, [state.emergencyFunds, selectedEmergencyId]);
+
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [downloadSuccessToast, setDownloadSuccessToast] = useState<{
     show: boolean;
@@ -119,6 +129,28 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
   const monthlyPayments = state.monthlyPayments || [];
   const emergencyFunds = state.emergencyFunds || [];
   const expenses = state.expenses || [];
+
+  const handleDeleteEmergencyFundInReports = async (fundId: string) => {
+    if (readOnly) {
+      alert('Hali ya Kutazama Tu: Hauruhusiwi kufuta mchango.');
+      return;
+    }
+    const targetFund = emergencyFunds.find(f => f.id === fundId);
+    if (!targetFund) return;
+
+    const totalCollected = (targetFund.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    const confirmMsg = `Je, una uhakika unataka kufuta kabisa tangazo na mfuko huu wa msiba:\n"${targetFund.title}"?\n\nKiasi kilichokusanywa: TZS ${totalCollected.toLocaleString()} (${targetFund.payments?.length || 0} michango).\n\nTangazo hili litaondolewa kabisa kwenye mfumo mzima (Ripoti, SMS na Daftari la Michango).`;
+
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+
+    const updatedFunds = emergencyFunds.filter(f => f.id !== fundId);
+    await onSaveState({ ...state, emergencyFunds: updatedFunds });
+    if (selectedEmergencyId === fundId) {
+      setSelectedEmergencyId(updatedFunds[0]?.id || '');
+    }
+  };
 
   const handleDeleteFinePaymentInReports = async (fp: any) => {
     const amt = (Number(fp.amount) || Number(fp.paidAmount) || 0).toLocaleString();
@@ -1019,18 +1051,34 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
             </div>
           ) : (
             <div className="w-full">
-              <label className="text-xs text-slate-400 block mb-1">Chagua Mchango wa Dharura:</label>
-              <select
-                value={selectedEmergencyId}
-                onChange={(e) => setSelectedEmergencyId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-              >
-                {emergencyFunds.map(f => (
-                  <option key={f.id} value={f.id}>
-                    {f.title} (Mfaidikaji: {f.beneficiaryName}) - TZS {(f.targetAmount || 0).toLocaleString()}
-                  </option>
-                ))}
-              </select>
+              <label className="text-xs text-slate-400 block mb-1">Chagua Mchango wa Dharura / Msiba:</label>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <select
+                  value={selectedEmergencyId || emergencyFunds[0]?.id || ''}
+                  onChange={(e) => setSelectedEmergencyId(e.target.value)}
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                >
+                  {emergencyFunds.map(f => {
+                    const pSum = (f.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+                    return (
+                      <option key={f.id} value={f.id}>
+                        {f.title} — Mfaidikaji: {f.beneficiaryName} | Zilizokusanywa: TZS {pSum.toLocaleString()} ({f.payments?.length || 0} michango)
+                      </option>
+                    );
+                  })}
+                </select>
+                {!readOnly && currentEmergencyFund && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteEmergencyFundInReports(currentEmergencyFund.id)}
+                    className="px-3 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-semibold border border-rose-500/30 transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1.5"
+                    title="Futa Mchango / Tangazo Hili la Msiba"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Futa Mchango
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -2433,65 +2481,205 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
         })()}
 
         {/* 4. EMERGENCY FUND REPORT PREVIEW */}
-        {reportType === 'emergency' && currentEmergencyFund && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
-                <span className="text-[11px] text-slate-400 block">Lengo la Mchango (Target)</span>
-                <span className="text-lg font-black text-rose-400">{formatTZS(currentEmergencyFund.targetAmount)}</span>
-                <span className="text-[10px] text-slate-500 block mt-1">Kila mjumbe: {formatTZS(currentEmergencyFund.perMemberTarget || 20000)}</span>
-              </div>
-
-              <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
-                <span className="text-[11px] text-slate-400 block">Kiasi Kilichokusanywa</span>
-                <span className="text-lg font-black text-emerald-400">
-                  {formatTZS((currentEmergencyFund.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0))}
-                </span>
-                <span className="text-[10px] text-emerald-500/80 block mt-1">
-                  {currentEmergencyFund.payments?.length || 0} wamechanga
-                </span>
-              </div>
-
-              <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
-                <span className="text-[11px] text-slate-400 block">Mfaidikaji</span>
-                <span className="text-lg font-black text-white">{currentEmergencyFund.beneficiaryName}</span>
-                <span className="text-[10px] text-slate-400 block mt-1">Uhusiano: {currentEmergencyFund.beneficiaryRelation || 'Mwanachama'}</span>
-              </div>
+        {reportType === 'emergency' && (
+          !currentEmergencyFund ? (
+            <div className="text-center py-12 border border-dashed border-slate-800 rounded-2xl bg-slate-950/40">
+              <HeartHandshake className="w-12 h-12 text-slate-600 mx-auto mb-2" />
+              <h3 className="text-base font-bold text-slate-300">Hakuna Mfuko au Tangazo la Dharura lililopo</h3>
+              <p className="text-xs text-slate-500 mt-1">Hakuna taarifa za michango ya dharura zilizosajiliwa kwa sasa.</p>
             </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Fund Title & Metadata Banner */}
+              <div className="bg-slate-950/90 p-5 rounded-2xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                      {currentEmergencyFund.type === 'msiba' ? 'Msiba & Rambirambi' : currentEmergencyFund.type}
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      Mwisho wa Kuchanga: <strong className="text-slate-200">{currentEmergencyFund.deadline || 'Bila Kikomo'}</strong>
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold text-white mt-1.5">{currentEmergencyFund.title}</h3>
+                  {currentEmergencyFund.description && (
+                    <p className="text-xs text-slate-300 mt-1 max-w-2xl">{currentEmergencyFund.description}</p>
+                  )}
+                </div>
 
-            {/* List of payments */}
-            <div>
-              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">
-                Orodha ya Wajumbe Waliochanga ({currentEmergencyFund.payments?.length || 0}):
-              </h4>
-              <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-900 text-slate-400 font-semibold border-b border-slate-800">
-                    <tr>
-                      <th className="p-3">#</th>
-                      <th className="p-3">Namba</th>
-                      <th className="p-3">Jina la Mjumbe</th>
-                      <th className="p-3">Tarehe</th>
-                      <th className="p-3">Njia ya Malipo</th>
-                      <th className="p-3 text-right">Kiasi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {(currentEmergencyFund.payments || []).map((p, idx) => (
-                      <tr key={p.id || idx} className="hover:bg-slate-900/40">
-                        <td className="p-3 text-slate-500">{idx + 1}</td>
-                        <td className="p-3 font-mono font-bold text-emerald-400">{p.memberNo}</td>
-                        <td className="p-3 font-semibold text-white">{p.memberName}</td>
-                        <td className="p-3 text-slate-400">{p.paymentDate}</td>
-                        <td className="p-3 text-slate-400">{normalizePaymentMethod(p.paymentMethod)}</td>
-                        <td className="p-3 text-right font-bold text-emerald-400">{formatTZS(p.amount)}</td>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteEmergencyFundInReports(currentEmergencyFund.id)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-800/60 text-xs font-semibold transition-all cursor-pointer shrink-0"
+                    title="Futa Kabisa Tangazo na Mchango Huu"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Futa Mchango Huu
+                  </button>
+                )}
+              </div>
+
+              {/* Metric Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+                  <span className="text-[11px] text-slate-400 block">Lengo la Mchango (Target)</span>
+                  <span className="text-lg font-black text-rose-400 font-mono">{formatTZS(currentEmergencyFund.targetAmount)}</span>
+                  <span className="text-[10px] text-slate-500 block mt-1">Kila mjumbe: {formatTZS(currentEmergencyFund.perMemberTarget || 20000)}</span>
+                </div>
+
+                <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+                  <span className="text-[11px] text-slate-400 block">Kiasi Kilichokusanywa</span>
+                  <span className="text-lg font-black text-emerald-400 font-mono">
+                    {formatTZS((currentEmergencyFund.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0))}
+                  </span>
+                  <span className="text-[10px] text-emerald-500/80 block mt-1">
+                    {currentEmergencyFund.payments?.length || 0} ya {members.length} wajumbe
+                  </span>
+                </div>
+
+                <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+                  <span className="text-[11px] text-slate-400 block">Mfaidikaji</span>
+                  <span className="text-base font-bold text-white line-clamp-1">{currentEmergencyFund.beneficiaryName}</span>
+                  <span className="text-[10px] text-slate-400 block mt-1">Uhusiano: {currentEmergencyFund.beneficiaryRelation || 'Mwanachama'}</span>
+                </div>
+
+                <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+                  <span className="text-[11px] text-slate-400 block">Hali ya Mfuko</span>
+                  <span className={`text-base font-bold block ${
+                    currentEmergencyFund.status === 'active' ? 'text-emerald-400' :
+                    currentEmergencyFund.status === 'disbursed' ? 'text-blue-400' : 'text-slate-400'
+                  }`}>
+                    {currentEmergencyFund.status === 'active' ? 'Inaendelea Kupokea' :
+                     currentEmergencyFund.status === 'disbursed' ? 'Imekabidhiwa' : 'Imefungwa'}
+                  </span>
+                  {currentEmergencyFund.disbursedAmount ? (
+                    <span className="text-[10px] text-blue-400 block mt-1">Kiasi Kilichotolewa: {formatTZS(currentEmergencyFund.disbursedAmount)}</span>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* List of payments received */}
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    Orodha ya Malipo ya Michango Yaliyopokelewa ({currentEmergencyFund.payments?.length || 0}):
+                  </h4>
+                  <span className="text-xs font-mono font-bold text-emerald-400">
+                    Jumla: {formatTZS((currentEmergencyFund.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0))}
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-900 text-slate-400 font-semibold border-b border-slate-800">
+                      <tr>
+                        <th className="p-3">#</th>
+                        <th className="p-3">Namba</th>
+                        <th className="p-3">Jina la Mjumbe</th>
+                        <th className="p-3">Tarehe ya Malipo</th>
+                        <th className="p-3">Njia ya Malipo</th>
+                        <th className="p-3">Risiti / Kumbukumbu</th>
+                        <th className="p-3 text-right">Kiasi Kilichopokewa</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {(!currentEmergencyFund.payments || currentEmergencyFund.payments.length === 0) ? (
+                        <tr>
+                          <td colSpan={7} className="p-6 text-center text-slate-500 text-xs">
+                            Bado hakuna malipo ya michango yaliyorekodiwa kwa mfuko huu.
+                          </td>
+                        </tr>
+                      ) : (
+                        (currentEmergencyFund.payments || []).map((p, idx) => (
+                          <tr key={p.id || idx} className="hover:bg-slate-900/40">
+                            <td className="p-3 text-slate-500">{idx + 1}</td>
+                            <td className="p-3 font-mono font-bold text-emerald-400">{p.memberNo}</td>
+                            <td className="p-3 font-semibold text-white">{p.memberName}</td>
+                            <td className="p-3 text-slate-400">{p.paymentDate || '—'}</td>
+                            <td className="p-3 text-slate-400">{normalizePaymentMethod(p.paymentMethod)}</td>
+                            <td className="p-3 font-mono text-[11px] text-slate-400">{p.receiptNo || '—'}</td>
+                            <td className="p-3 text-right font-mono font-bold text-emerald-400">{formatTZS(Number(p.amount) || 0)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                    {(currentEmergencyFund.payments && currentEmergencyFund.payments.length > 0) && (
+                      <tfoot className="bg-slate-900/90 font-bold border-t border-slate-800 text-slate-200">
+                        <tr>
+                          <td colSpan={6} className="p-3 text-right uppercase tracking-wider text-[11px]">
+                            Jumla Kuu Iliyokusanywa:
+                          </td>
+                          <td className="p-3 text-right font-mono text-emerald-400 font-black text-sm">
+                            {formatTZS((currentEmergencyFund.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0))}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </div>
+
+              {/* Full Members Contribution Matrix (Waliochanga & Wasiochanga) */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">
+                  Uchanganuzi wa Wanachama Wote kwa Mchango Huu ({members.length} Wajumbe):
+                </h4>
+                <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-900 text-slate-400 font-semibold border-b border-slate-800">
+                      <tr>
+                        <th className="p-3">#</th>
+                        <th className="p-3">Namba</th>
+                        <th className="p-3">Jina la Mjumbe</th>
+                        <th className="p-3">Lengo (TZS)</th>
+                        <th className="p-3">Kiasi Kilichotolewa</th>
+                        <th className="p-3">Hali</th>
+                        <th className="p-3">Tarehe & Njia</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {members.map((m, idx) => {
+                        const payment = (currentEmergencyFund.payments || []).find(
+                          p => p.memberId === m.id || p.memberNo === m.memberNo
+                        );
+                        const targetAmt = currentEmergencyFund.perMemberTarget || 20000;
+                        const paidAmt = payment ? (Number(payment.amount) || 0) : 0;
+                        const isComplete = paidAmt >= targetAmt;
+                        const isPartial = paidAmt > 0 && paidAmt < targetAmt;
+
+                        return (
+                          <tr key={m.id} className="hover:bg-slate-900/40">
+                            <td className="p-3 text-slate-500">{idx + 1}</td>
+                            <td className="p-3 font-mono font-bold text-emerald-400">{m.memberNo}</td>
+                            <td className="p-3 font-semibold text-white">{m.fullName}</td>
+                            <td className="p-3 font-mono text-slate-400">{formatTZS(targetAmt)}</td>
+                            <td className="p-3 font-mono font-bold">
+                              <span className={isComplete ? 'text-emerald-400' : isPartial ? 'text-amber-400' : 'text-slate-600'}>
+                                {formatTZS(paidAmt)}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                isComplete ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
+                                isPartial ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' :
+                                'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                              }`}>
+                                {isComplete ? 'Amekamilisha' : isPartial ? 'Amelipa Nusu' : 'Hajachanga'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-slate-400 text-[11px]">
+                              {payment ? `${payment.paymentDate || '—'} (${normalizePaymentMethod(payment.paymentMethod)})` : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          </div>
+          )
         )}
 
         {/* Signatures & Official Stamp Preview */}

@@ -16,7 +16,9 @@ import {
   AlertTriangle,
   Gift,
   Activity,
-  Award
+  Award,
+  Trash2,
+  Edit3
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { sortMembersByLeadership, triggerAutoReceiptSms, normalizePaymentMethod } from '../../services/uwalemiService';
@@ -174,7 +176,7 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
       note: paymentForm.note
     };
 
-    const updatedPayments = [...(selectedFund.payments || []).filter(p => p.memberId !== member.id), newPayment];
+    const updatedPayments = [...(selectedFund.payments || []).filter(p => p.memberId !== member.id && p.memberNo !== member.memberNo), newPayment];
     const updatedFund = { ...selectedFund, payments: updatedPayments };
     const updatedFunds = emergencyFunds.map(f => f.id === selectedFund.id ? updatedFund : f);
 
@@ -194,6 +196,46 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
         paymentMethod: paymentForm.paymentMethod
       }).catch(err => console.warn('[Auto Receipt SMS Error]:', err));
     }
+  };
+
+  const handleDeleteFund = async (fundId: string) => {
+    if (readOnly) {
+      alert('Hali ya Kutazama Tu: Hauruhusiwi kufuta mchango.');
+      return;
+    }
+    const targetFund = emergencyFunds.find(f => f.id === fundId);
+    if (!targetFund) return;
+
+    const totalCollected = (targetFund.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    const confirmMsg = `Je, una uhakika unataka kufuta kabisa tangazo na mfuko huu wa msiba:\n"${targetFund.title}"?\n\nKiasi kilichokusanywa: TZS ${totalCollected.toLocaleString()} (${targetFund.payments?.length || 0} michango).\n\nTangazo hili litaondolewa kabisa kwenye mfumo mzima (Ripoti, SMS na Daftari la Michango).`;
+
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+
+    const updatedFunds = emergencyFunds.filter(f => f.id !== fundId);
+    await onSaveState({ ...state, emergencyFunds: updatedFunds });
+    if (selectedFundId === fundId) {
+      setSelectedFundId(updatedFunds[0]?.id || '');
+    }
+  };
+
+  const handleDeletePayment = async (memberId: string, memberName: string) => {
+    if (readOnly) {
+      alert('Hali ya Kutazama Tu: Hauruhusiwi kufuta malipo.');
+      return;
+    }
+    if (!selectedFund) return;
+
+    if (!window.confirm(`Je, una uhakika unataka kufuta rekodi ya mchango wa ${memberName} kwa mchango wa "${selectedFund.title}"?`)) {
+      return;
+    }
+
+    const updatedPayments = (selectedFund.payments || []).filter(p => p.memberId !== memberId && p.id !== memberId && p.memberNo !== memberId);
+    const updatedFund = { ...selectedFund, payments: updatedPayments };
+    const updatedFunds = emergencyFunds.map(f => f.id === selectedFund.id ? updatedFund : f);
+
+    await onSaveState({ ...state, emergencyFunds: updatedFunds });
   };
 
   const handleDisburseFund = async (e: React.FormEvent) => {
@@ -328,10 +370,9 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
           const pCount = (fund.payments || []).length;
 
           return (
-            <button
+            <div
               key={fund.id}
-              onClick={() => setSelectedFundId(fund.id)}
-              className={`p-4 rounded-xl text-left border transition-all cursor-pointer ${
+              className={`p-4 rounded-xl text-left border transition-all relative group ${
                 isSelected 
                   ? 'bg-rose-950/30 border-rose-500/60 shadow-lg shadow-rose-950/50' 
                   : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
@@ -345,21 +386,44 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
                 }`}>
                   {fund.type}
                 </span>
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                  fund.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' :
-                  fund.status === 'disbursed' ? 'bg-blue-500/10 text-blue-400' :
-                  'bg-slate-800 text-slate-400'
-                }`}>
-                  {fund.status === 'active' ? 'Inaendelea' : fund.status === 'disbursed' ? 'Imekabidhiwa' : 'Imefungwa'}
-                </span>
+                
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                    fund.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' :
+                    fund.status === 'disbursed' ? 'bg-blue-500/10 text-blue-400' :
+                    'bg-slate-800 text-slate-400'
+                  }`}>
+                    {fund.status === 'active' ? 'Inaendelea' : fund.status === 'disbursed' ? 'Imekabidhiwa' : 'Imefungwa'}
+                  </span>
+
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteFund(fund.id);
+                      }}
+                      title="Futa Mchango / Tangazo Hili la Msiba"
+                      className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
-              <h3 className="text-sm font-bold text-white line-clamp-1">{fund.title}</h3>
-              <div className="text-xs text-slate-400 mt-0.5">Mfaidikaji: {fund.beneficiaryName}</div>
-              <div className="flex items-center justify-between text-xs mt-3 pt-2 border-t border-slate-800">
-                <span className="font-bold text-rose-400">TZS {pSum.toLocaleString()}</span>
-                <span className="text-slate-400">{pCount}/{members.length} wajumbe</span>
+
+              <div 
+                onClick={() => setSelectedFundId(fund.id)}
+                className="cursor-pointer"
+              >
+                <h3 className="text-sm font-bold text-white line-clamp-1">{fund.title}</h3>
+                <div className="text-xs text-slate-400 mt-0.5">Mfaidikaji: {fund.beneficiaryName}</div>
+                <div className="flex items-center justify-between text-xs mt-3 pt-2 border-t border-slate-800">
+                  <span className="font-bold text-rose-400 font-mono">TZS {pSum.toLocaleString()}</span>
+                  <span className="text-slate-400">{pCount}/{members.length} wajumbe</span>
+                </div>
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -385,7 +449,7 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
               <button
                 onClick={handleExportExcel}
                 className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all cursor-pointer"
@@ -436,6 +500,15 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
                   >
                     <Plus className="w-4 h-4" />
                     Rekodi Mchango
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteFund(selectedFund.id)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-800/60 text-xs font-semibold transition-all cursor-pointer"
+                    title="Futa Kabisa Mchango na Tangazo Hili"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Futa Mchango
                   </button>
                 </>
               )}
@@ -520,21 +593,34 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
                         </td>
                         <td className="p-3 text-right">
                           {!readOnly ? (
-                            <button
-                              onClick={() => {
-                                setPaymentForm({
-                                  memberId: m.id,
-                                  amount: payment ? payment.amount : targetAmt,
-                                  paymentDate: payment?.paymentDate || new Date().toISOString().split('T')[0],
-                                  paymentMethod: normalizePaymentMethod(payment?.paymentMethod),
-                                  note: payment?.note || ''
-                                });
-                                setIsRecordPaymentModalOpen(true);
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 text-[11px] font-semibold cursor-pointer"
-                            >
-                              {payment ? 'Hariri' : '+ Rekodi'}
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setPaymentForm({
+                                    memberId: m.id,
+                                    amount: payment ? payment.amount : targetAmt,
+                                    paymentDate: payment?.paymentDate || new Date().toISOString().split('T')[0],
+                                    paymentMethod: normalizePaymentMethod(payment?.paymentMethod),
+                                    note: payment?.note || ''
+                                  });
+                                  setIsRecordPaymentModalOpen(true);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 text-[11px] font-semibold cursor-pointer"
+                              >
+                                {payment ? 'Hariri' : '+ Rekodi'}
+                              </button>
+
+                              {payment && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePayment(m.id, m.fullName)}
+                                  title="Futa Malipo Haya"
+                                  className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             <span className="text-[10px] text-slate-500 italic">-</span>
                           )}

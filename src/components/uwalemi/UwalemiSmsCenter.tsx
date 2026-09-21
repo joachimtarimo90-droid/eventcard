@@ -42,7 +42,8 @@ import {
   Copy,
   HeartHandshake,
   MapPin,
-  Info
+  Info,
+  Trash2
 } from 'lucide-react';
 
 interface Props {
@@ -1083,6 +1084,23 @@ Lema, Nguvu Moja!`;
     } finally {
       setResendingLogId(null);
     }
+  };
+
+  const handleDeleteLog = async (logId: string) => {
+    if (readOnly) return;
+    if (!window.confirm('Je, una uhakika unataka kufuta kumbukumbu hii ya ujumbe uliotumwa?')) {
+      return;
+    }
+    const updatedLogs = messageLogs.filter(l => l.id !== logId);
+    await onSaveState({ ...state, messageLogs: updatedLogs });
+  };
+
+  const handleClearAllLogs = async () => {
+    if (readOnly) return;
+    if (!window.confirm(`Je, una uhakika unataka kufuta kumbukumbu zote ${messageLogs.length} za ujumbe? Hatua hii haiwezi kurudishwa.`)) {
+      return;
+    }
+    await onSaveState({ ...state, messageLogs: [] });
   };
 
   const handleSaveGateway = async (e: React.FormEvent) => {
@@ -2373,6 +2391,17 @@ Lema, Nguvu Moja!`;
               <span className="text-xs px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 font-mono">
                 Jumla: {messageLogs.length}
               </span>
+              {!readOnly && messageLogs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAllLogs}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-950/40 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-800/60 text-xs font-semibold transition-all cursor-pointer"
+                  title="Futa Kumbukumbu Zote za Ujumbe"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Futa Zote
+                </button>
+              )}
             </div>
           </div>
 
@@ -2553,6 +2582,16 @@ Lema, Nguvu Moja!`;
                                 <Share2 className="w-3 h-3" />
                                 WhatsApp
                               </button>
+                              {!readOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteLog(log.id)}
+                                  className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                                  title="Futa Kumbukumbu Hii"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -2657,13 +2696,30 @@ Lema, Nguvu Moja!`;
 
             {/* Modal Actions */}
             <div className="p-4 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedLogForModal(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Funga
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedLogForModal(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Funga
+                </button>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = selectedLogForModal.id;
+                      setSelectedLogForModal(null);
+                      handleDeleteLog(id);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-800/60 text-xs font-semibold transition-all cursor-pointer"
+                    title="Futa Kumbukumbu Hii"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Futa
+                  </button>
+                )}
+              </div>
 
               <div className="flex items-center gap-2">
                 <button
