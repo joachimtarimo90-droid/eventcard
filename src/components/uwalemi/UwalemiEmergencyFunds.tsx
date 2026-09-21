@@ -277,26 +277,42 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
         </div>
 
         {!readOnly ? (
-          <button
-            onClick={() => {
-              setFundForm({
-                title: '',
-                type: 'msiba',
-                targetAmount: 1000000,
-                perMemberTarget: 20000,
-                beneficiaryName: '',
-                beneficiaryPhone: '',
-                beneficiaryRelation: 'Mwanachama',
-                deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                description: ''
-              });
-              setIsNewFundModalOpen(true);
-            }}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-lg shadow-rose-900/30 transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Fungua Mchango Mpya wa Dharura
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => {
+                if (onOpenSmsWithTemplate) {
+                  onOpenSmsWithTemplate(
+                    members.map(m => ({ name: m.fullName, phone: m.phone, memberNo: m.memberNo })),
+                    'emergency_alert_open_modal'
+                  );
+                }
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-lg shadow-purple-900/30 transition-all cursor-pointer"
+            >
+              <Send className="w-4 h-4" />
+              🕊️ Tangaza Msiba & Tuma SMS
+            </button>
+            <button
+              onClick={() => {
+                setFundForm({
+                  title: '',
+                  type: 'msiba',
+                  targetAmount: 10000 * (members.length || 1),
+                  perMemberTarget: 10000,
+                  beneficiaryName: '',
+                  beneficiaryPhone: '',
+                  beneficiaryRelation: 'Mwanachama',
+                  deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                  description: ''
+                });
+                setIsNewFundModalOpen(true);
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-lg shadow-rose-900/30 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Fungua Mchango Mpya wa Dharura
+            </button>
+          </div>
         ) : (
           <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
             <span>👁️ Hali ya Kutazama Tu</span>
@@ -569,6 +585,84 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
                 </select>
               </div>
 
+              {/* Special Bereavement Helpers if Type is Msiba */}
+              {fundForm.type === 'msiba' && (
+                <div className="bg-rose-950/40 border border-rose-500/30 rounded-xl p-3 space-y-2.5">
+                  <div className="flex items-center gap-2 text-rose-300 font-bold text-xs">
+                    <HeartHandshake className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>Mwongozo wa Michango ya Msiba (UWALEMI):</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    • <strong>TZS 10,000</strong>: Mwanachama, Mke, Mume, Mtoto, na Wazazi (Baba / Mama).<br/>
+                    • <strong>TZS 5,000</strong>: Wakwe wa mwanachama (Baba Mkwe au Mama Mkwe).
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    <div>
+                      <label className="text-slate-300 font-bold block mb-1">Chagua Mwanachama Aliyefiwa</label>
+                      <select
+                        onChange={(e) => {
+                          const mId = e.target.value;
+                          const selectedM = members.find(m => m.id === mId);
+                          if (selectedM) {
+                            setFundForm(prev => ({
+                              ...prev,
+                              beneficiaryName: selectedM.fullName,
+                              beneficiaryPhone: selectedM.phone,
+                              title: prev.title || `Msiba: ${prev.beneficiaryRelation} (${selectedM.fullName})`
+                            }));
+                          }
+                        }}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white"
+                      >
+                        <option value="">-- Chagua kutoka kwa Wanachama --</option>
+                        {members.map(m => (
+                          <option key={m.id} value={m.id}>
+                            {m.memberNo} - {m.fullName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-slate-300 font-bold block mb-1">Uhusiano wa Aliyefariki *</label>
+                      <select
+                        value={fundForm.beneficiaryRelation}
+                        onChange={(e) => {
+                          const rel = e.target.value;
+                          const isMkwe = rel.toLowerCase().includes('mkwe');
+                          const perAmount = isMkwe ? 5000 : 10000;
+                          setFundForm(prev => ({
+                            ...prev,
+                            beneficiaryRelation: rel,
+                            perMemberTarget: perAmount,
+                            targetAmount: perAmount * (members.length || 1),
+                            title: `Msiba: ${rel} wa ${prev.beneficiaryName || 'Mwanachama'}`
+                          }));
+                        }}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-rose-300 font-bold"
+                      >
+                        <optgroup label="Kiwango: TZS 10,000">
+                          <option value="Mwanachama Mwenyewe">Mwanachama Mwenyewe (TZS 10,000)</option>
+                          <option value="Mke wa Mwanachama">Mke wa Mwanachama (TZS 10,000)</option>
+                          <option value="Mume wa Mwanachama">Mume wa Mwanachama (TZS 10,000)</option>
+                          <option value="Mtoto wa Mwanachama">Mtoto wa Mwanachama (TZS 10,000)</option>
+                          <option value="Mama Mzazi wa Mwanachama">Mama Mzazi wa Mwanachama (TZS 10,000)</option>
+                          <option value="Baba Mzazi wa Mwanachama">Baba Mzazi wa Mwanachama (TZS 10,000)</option>
+                        </optgroup>
+                        <optgroup label="Kiwango: TZS 5,000">
+                          <option value="Mama Mkwe wa Mwanachama">Mama Mkwe wa Mwanachama (TZS 5,000)</option>
+                          <option value="Baba Mkwe wa Mwanachama">Baba Mkwe wa Mwanachama (TZS 5,000)</option>
+                        </optgroup>
+                        <optgroup label="Nyingine">
+                          <option value="Ndugu wa Karibu">Ndugu wa Karibu</option>
+                        </optgroup>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="text-slate-300 font-semibold block mb-1">Kichwa cha Mchango *</label>
                 <input
@@ -576,7 +670,7 @@ export const UwalemiEmergencyFunds: React.FC<Props> = ({
                   required
                   value={fundForm.title}
                   onChange={(e) => setFundForm({ ...fundForm, title: e.target.value })}
-                  placeholder="Mfano: Mchango wa Msiba wa Mama yake Mjumbe UWL-015"
+                  placeholder="Mfano: Msiba: Mama Mzazi wa Jimmy Lema (UWL-003)"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
                 />
               </div>

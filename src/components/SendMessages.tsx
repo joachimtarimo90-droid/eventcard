@@ -72,7 +72,7 @@ export default function SendMessages({ event, settings, guests, language, onUpda
   const [currentSendingIndex, setCurrentSendingIndex] = useState(-1);
   const [sendLogs, setSendLogs] = useState<string[]>([]);
   const [sendingProgress, setSendingProgress] = useState(0);
-  const [messageType, setMessageType] = useState<'invitation' | 'reminder' | 'thank-you'>('thank-you');
+  const [messageType, setMessageType] = useState<'invitation' | 'reminder' | 'thank-you'>('invitation');
   const [thankYouAudience, setThankYouAudience] = useState<'all' | 'confirmed' | 'attended'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending-sms' | 'pending-wa' | 'sent' | 'wa-only' | 'sms-only'>('all');
