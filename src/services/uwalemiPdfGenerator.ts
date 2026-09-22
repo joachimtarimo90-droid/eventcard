@@ -2070,7 +2070,7 @@ export const generateFinesReportPDF = (
       [
         'Wanachama Wenye Deni la Faini',
         `${totalMembersWithFineDebt} kati ya ${members.length}`,
-        `Wenye madeni ya faini bado hawajalipa (${totalMembersWithFinePaid} wameshalipa faini zao). Wakilipa ada au faini idadi inapungua`
+        `Wanachama ${totalMembersWithFineDebt} wana madeni ya faini ambayo hayajalipwa (${totalMembersWithFinePaid} wamekamilisha kulipa faini zao zote).`
       ],
       [
         '1. Faini ya Kuchelewesha Ada (Kuanzia Mwezi wa 6 / Juni 2026)',

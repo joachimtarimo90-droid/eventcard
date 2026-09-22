@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
+  Activity,
   BarChart3, 
   Calendar, 
+  Clock,
   Trash2,
   Users, 
   Send, 
@@ -91,6 +93,172 @@ type AppTab =
   | 'audit-logs'
   | 'debug'
   | 'uwalemi';
+
+interface EventCountdownProps {
+  eventDate?: string;
+  eventTime?: string;
+  language: string;
+}
+
+const EventCountdownTimer: React.FC<EventCountdownProps> = ({ eventDate, eventTime, language }) => {
+  const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number; isPassed: boolean }>({
+    days: 0,
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+    isPassed: false,
+  });
+
+  useEffect(() => {
+    const parseTargetDate = (): Date | null => {
+      if (!eventDate) return null;
+      let year = 0, month = 0, day = 0;
+      const cleanDate = eventDate.trim();
+      if (cleanDate.includes('-')) {
+        const parts = cleanDate.split('-');
+        if (parts[0].length === 4) {
+          year = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10) - 1;
+          day = parseInt(parts[2], 10);
+        } else {
+          day = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10) - 1;
+          year = parseInt(parts[2], 10);
+        }
+      } else if (cleanDate.includes('/')) {
+        const parts = cleanDate.split('/');
+        if (parts[2] && parts[2].length === 4) {
+          day = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10) - 1;
+          year = parseInt(parts[2], 10);
+        } else {
+          year = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10) - 1;
+          day = parseInt(parts[2], 10);
+        }
+      } else {
+        return null;
+      }
+
+      let hour = 18;
+      let minute = 0;
+      if (eventTime) {
+        const timeParts = eventTime.split(':');
+        if (timeParts.length >= 2) {
+          hour = parseInt(timeParts[0], 10) || 18;
+          minute = parseInt(timeParts[1], 10) || 0;
+        }
+      }
+
+      const target = new Date(year, month, day, hour, minute, 0);
+      return isNaN(target.getTime()) ? null : target;
+    };
+
+    const updateCountdown = () => {
+      const target = parseTargetDate();
+      if (!target) {
+        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, isPassed: true });
+        return;
+      }
+
+      const now = new Date();
+      const diffMs = target.getTime() - now.getTime();
+
+      if (diffMs <= 0) {
+        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, isPassed: true });
+      } else {
+        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+        setTimeLeft({ days, hours, minutes, seconds, isPassed: false });
+      }
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [eventDate, eventTime]);
+
+  const isSw = language === 'sw';
+
+  if (!eventDate) {
+    return (
+      <div className="bg-[#080d1c] border border-white/5 rounded-2xl p-3 text-center text-slate-400 text-xs font-medium">
+        {isSw ? "Tafadhali weka tarehe ya sherehe ili kuona muda uliosalia." : "Please set the event date to activate the countdown timer."}
+      </div>
+    );
+  }
+
+  if (timeLeft.isPassed) {
+    return (
+      <div className="bg-gradient-to-r from-emerald-950/40 via-teal-950/40 to-emerald-950/40 border border-emerald-500/30 rounded-2xl p-3 text-center flex items-center justify-center space-x-2 text-emerald-300 shadow-inner">
+        <Sparkles className="w-4 h-4 text-emerald-400 animate-spin" />
+        <span className="font-extrabold text-xs tracking-wide">
+          {isSw ? "Siku ya Sherehe Imewadia / Sherehe Imekamilika! 🎉" : "The Event Date Has Arrived! 🎉"}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-gradient-to-r from-emerald-950/30 via-slate-900/60 to-blue-950/30 border border-emerald-500/20 rounded-2xl p-3.5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3" id="event-realtime-countdown-block">
+      <div className="flex items-center space-x-2.5">
+        <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)] shrink-0">
+          <Clock className="w-4 h-4 animate-pulse" />
+        </div>
+        <div>
+          <h4 className="text-xs font-extrabold text-white flex items-center gap-1.5">
+            <span>{isSw ? "Muda Uliobaki Mpaka Sherehe" : "Countdown to Event"}</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+          </h4>
+          <p className="text-[10px] text-slate-400 font-medium">
+            {isSw ? "Siku, masaa, dakika na segundi halisi" : "Real-time countdown in days, hours, mins & secs"}
+          </p>
+        </div>
+      </div>
+
+      {/* Metric digit boxes */}
+      <div className="grid grid-cols-4 gap-2 text-center shrink-0">
+        <div className="bg-[#060a14] border border-white/10 rounded-xl p-2 min-w-[55px]">
+          <span className="block font-mono font-black text-sm sm:text-base text-emerald-400 leading-tight">
+            {String(timeLeft.days).padStart(2, '0')}
+          </span>
+          <span className="text-[9px] font-bold uppercase text-slate-400 block font-sans tracking-wider">
+            {isSw ? "Siku" : "Days"}
+          </span>
+        </div>
+
+        <div className="bg-[#060a14] border border-white/10 rounded-xl p-2 min-w-[55px]">
+          <span className="block font-mono font-black text-sm sm:text-base text-blue-400 leading-tight">
+            {String(timeLeft.hours).padStart(2, '0')}
+          </span>
+          <span className="text-[9px] font-bold uppercase text-slate-400 block font-sans tracking-wider">
+            {isSw ? "Masaa" : "Hours"}
+          </span>
+        </div>
+
+        <div className="bg-[#060a14] border border-white/10 rounded-xl p-2 min-w-[55px]">
+          <span className="block font-mono font-black text-sm sm:text-base text-indigo-400 leading-tight">
+            {String(timeLeft.minutes).padStart(2, '0')}
+          </span>
+          <span className="text-[9px] font-bold uppercase text-slate-400 block font-sans tracking-wider">
+            {isSw ? "Dakika" : "Mins"}
+          </span>
+        </div>
+
+        <div className="bg-[#060a14] border border-white/10 rounded-xl p-2 min-w-[55px]">
+          <span className="block font-mono font-black text-sm sm:text-base text-teal-400 leading-tight animate-pulse">
+            {String(timeLeft.seconds).padStart(2, '0')}
+          </span>
+          <span className="text-[9px] font-bold uppercase text-slate-400 block font-sans tracking-wider">
+            {isSw ? "Segundi" : "Secs"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default function App() {
   const { language, setLanguage, t } = useLanguage();
@@ -2093,6 +2261,179 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+                {/* Real-time Countdown Timer */}
+                <EventCountdownTimer 
+                  eventDate={eventDetails?.date} 
+                  eventTime={eventDetails?.time} 
+                  language={language} 
+                />
+
+                {/* At-a-Glance Event Health Status Indicators */}
+                {(() => {
+                  const summaryGuests = eventDetails 
+                    ? guests.filter(g => g.eventId === eventDetails.id || (!g.eventId && eventDetails.id === 'event-starter'))
+                    : guests;
+
+                  const totalSummaryGuests = summaryGuests.length;
+                  const dispatchedSummaryGuests = summaryGuests.filter(
+                    g => g.smsStatus === 'Imetumia' || g.whatsappStatus === 'Imetumia'
+                  ).length;
+                  const attendingSummaryCount = summaryGuests.filter(g => g.rsvpStatus === 'Atahudhuria').length;
+                  const totalRsvpResponded = summaryGuests.filter(g => g.rsvpStatus && g.rsvpStatus !== 'Bado').length;
+                  const pendingPledgesList = summaryGuests.filter(g => (g.pledgeAmount || 0) > (g.paidAmount || 0));
+                  const totalPendingPledgeAmount = summaryGuests.reduce(
+                    (sum, g) => sum + Math.max(0, (g.pledgeAmount || 0) - (g.paidAmount || 0)),
+                    0
+                  );
+                  const checkedInSummaryCount = summaryGuests.filter(g => g.checkedIn).length;
+
+                  return (
+                    <div className="bg-[#070d1e]/80 border border-white/10 rounded-2xl p-4 space-y-3" id="event-health-status-indicators">
+                      <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                        <div className="flex items-center space-x-2">
+                          <div className="p-1.5 rounded-lg bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                            <Activity className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="text-xs font-extrabold text-white uppercase tracking-wider">
+                            {language === 'sw' ? 'Afya & Hali ya Sherehe' : 'Event Health & Status Check'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono font-bold text-slate-400 bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+                          {totalSummaryGuests} {language === 'sw' ? 'Wageni Jumla' : 'Total Guests'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        {/* Indicator 1: Dispatched Invitations */}
+                        <div 
+                          onClick={() => setActiveTab('send')}
+                          className="bg-[#0b1328] hover:bg-[#0f1a36] border border-white/10 hover:border-emerald-500/30 rounded-xl p-3 transition duration-200 cursor-pointer flex flex-col justify-between space-y-2 group"
+                          id="status-indicator-dispatched"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">
+                              <Send className="w-3 h-3 text-emerald-400" />
+                              <span>{language === 'sw' ? 'Mialiko Iliyotumwa' : 'Invitations Dispatched'}</span>
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold font-mono border ${
+                              dispatchedSummaryGuests === totalSummaryGuests && totalSummaryGuests > 0
+                                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                : dispatchedSummaryGuests > 0
+                                ? 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                                : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                            }`}>
+                              {dispatchedSummaryGuests === totalSummaryGuests && totalSummaryGuests > 0
+                                ? (language === 'sw' ? 'Mialiko Yote' : 'Fully Dispatched')
+                                : dispatchedSummaryGuests > 0
+                                ? (language === 'sw' ? 'Inaendelea' : 'In Progress')
+                                : (language === 'sw' ? 'Inasubiri' : 'Pending')}
+                            </span>
+                          </div>
+
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-sm font-extrabold text-white font-mono">
+                              {dispatchedSummaryGuests} <span className="text-xs text-slate-400 font-normal">/ {totalSummaryGuests}</span>
+                            </span>
+                            <span className="text-[10px] font-mono text-emerald-400 font-bold group-hover:translate-x-0.5 transition-transform">
+                              {totalSummaryGuests > 0 ? Math.round((dispatchedSummaryGuests / totalSummaryGuests) * 100) : 0}% →
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Indicator 2: Pledges Pending */}
+                        <div 
+                          onClick={() => setActiveTab('contributions')}
+                          className="bg-[#0b1328] hover:bg-[#0f1a36] border border-white/10 hover:border-amber-500/30 rounded-xl p-3 transition duration-200 cursor-pointer flex flex-col justify-between space-y-2 group"
+                          id="status-indicator-pledges"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">
+                              <Wallet className="w-3 h-3 text-amber-400" />
+                              <span>{language === 'sw' ? 'Ahadi Inayosubiriwa' : 'Pledges Pending'}</span>
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold font-mono border ${
+                              totalPendingPledgeAmount > 0
+                                ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                            }`}>
+                              {totalPendingPledgeAmount > 0
+                                ? `${pendingPledgesList.length} ${language === 'sw' ? 'Inasubiri' : 'Pending'}`
+                                : (language === 'sw' ? 'Zimelipwa Yote' : 'Fully Cleared')}
+                            </span>
+                          </div>
+
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-xs sm:text-sm font-extrabold text-white font-mono truncate">
+                              TZS {totalPendingPledgeAmount.toLocaleString()}
+                            </span>
+                            <span className="text-[10px] font-mono text-amber-400 font-bold group-hover:translate-x-0.5 transition-transform">
+                              {language === 'sw' ? 'Fungua' : 'View'} →
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Indicator 3: RSVP Confirmed */}
+                        <div 
+                          onClick={() => setActiveTab('rsvp')}
+                          className="bg-[#0b1328] hover:bg-[#0f1a36] border border-white/10 hover:border-blue-500/30 rounded-xl p-3 transition duration-200 cursor-pointer flex flex-col justify-between space-y-2 group"
+                          id="status-indicator-rsvp"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">
+                              <Users className="w-3 h-3 text-blue-400" />
+                              <span>{language === 'sw' ? 'Majibu ya RSVP' : 'RSVP Responses'}</span>
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold font-mono bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                              {attendingSummaryCount} {language === 'sw' ? 'Wamethibitisha' : 'Confirmed'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-sm font-extrabold text-white font-mono">
+                              {totalRsvpResponded} <span className="text-xs text-slate-400 font-normal">{language === 'sw' ? 'wamejibu' : 'responded'}</span>
+                            </span>
+                            <span className="text-[10px] font-mono text-blue-400 font-bold group-hover:translate-x-0.5 transition-transform">
+                              {language === 'sw' ? 'Orodha' : 'List'} →
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Indicator 4: Event Check-In Status */}
+                        <div 
+                          onClick={() => setActiveTab('scan')}
+                          className="bg-[#0b1328] hover:bg-[#0f1a36] border border-white/10 hover:border-purple-500/30 rounded-xl p-3 transition duration-200 cursor-pointer flex flex-col justify-between space-y-2 group"
+                          id="status-indicator-checkin"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">
+                              <QrCode className="w-3 h-3 text-purple-400" />
+                              <span>{language === 'sw' ? 'Uingiaji Ukumbini' : 'Gate Check-In'}</span>
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold font-mono border ${
+                              checkedInSummaryCount > 0
+                                ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                                : 'bg-white/5 text-slate-400 border-white/10'
+                            }`}>
+                              {checkedInSummaryCount > 0
+                                ? (language === 'sw' ? 'Lango Wazi' : 'Active Gate')
+                                : (language === 'sw' ? 'Tayari' : 'Ready')}
+                            </span>
+                          </div>
+
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-sm font-extrabold text-white font-mono">
+                              {checkedInSummaryCount} <span className="text-xs text-slate-400 font-normal">/ {totalSummaryGuests} {language === 'sw' ? 'waliuingia' : 'in'}</span>
+                            </span>
+                            <span className="text-[10px] font-mono text-purple-400 font-bold group-hover:translate-x-0.5 transition-transform">
+                              {language === 'sw' ? 'Skana' : 'Scan'} →
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Grid layout containing the details */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 pt-4 pb-2 border-t border-white/5" id="details-fields-grid">

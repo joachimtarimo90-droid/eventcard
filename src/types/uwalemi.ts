@@ -69,6 +69,14 @@ export interface UwalemiEmergencyFund {
   beneficiaryName: string; // Nani anayesaidiwa
   beneficiaryPhone?: string;
   beneficiaryRelation?: string;
+  deceasedName?: string;
+  deathDate?: string;
+  deathPlace?: string;
+  location?: string;
+  meetingLocation?: string;
+  meetingDate?: string;
+  meetingTime?: string;
+  burialSchedule?: string;
   startDate: string;
   deadline: string;
   status: 'active' | 'closed' | 'disbursed';

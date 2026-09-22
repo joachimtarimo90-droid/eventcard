@@ -9,7 +9,9 @@ import {
   getSwahiliDayAndDate,
   formatSwahiliDate,
   triggerMonthlyAutoRemindersApi,
-  UwalemiMemberFeeDebtInfo 
+  UwalemiMemberFeeDebtInfo,
+  buildOfficialBereavementSms,
+  getAmountInSwahiliWords
 } from '../../services/uwalemiService';
 import { 
   Send, 
@@ -43,9 +45,12 @@ import {
   Copy,
   HeartHandshake,
   MapPin,
+  Building2,
   Info,
+  Lock,
   Trash2
 } from 'lucide-react';
+import { FuneralScheduleBuilder } from './FuneralScheduleBuilder';
 
 interface Props {
   state: UwalemiState;
@@ -67,28 +72,24 @@ export const UwalemiSmsCenter: React.FC<Props> = ({
   // Default templates
   const defaultBereavementTemplate = `Habari {name},
 
-Uongozi wa UWALEMI, kwa masikitiko makubwa unapenda kukutaarifu kuwa mwanachama mwenzetu Hamphrey Raymond Lema amepatwa na msiba  wa kuondokewa na mama yake mkwe, Mama Grace Fransic Masawe.
+Uongozi wa UWALEMI unasikitika kukutaarifu kuwa mwanachama mwenzetu [Jina la Mwanachama] amefiwa na mama mkwe wake [Jina la Marehemu], amefariki tarehe 20 Septemba 2026 katika Hospitali ya Muhimbili.
 
-ENEO LA MSIBA:
-Msiba upo: Mbezi Makabe - Kwa Paulo.
+MAHALI MSIBA ULIPO : Msiba upo [Eneo la Msiba].
 
 MCHANGO WA RAMBIRAMBI (KILA MWANACHAMA):
-Kulingana na Katiba na Mwongozo wa kikundi chetu cha UWALEMI, kiwango cha mchango kinachopaswa kutolewa na kila mwanachama ni TZS 5,000 (Shilingi Elfu Tano Tu) kama rambirambi na mkono wa pole kwa familia.
+Kulingana na Mwongozo wa kikundi chetu cha UWALEMI, kiwango cha mchango kinachopaswa kutolewa na kila mwanachama ni TZS 5,000 (Shilingi Elfu Tano Tu) kama rambirambi na mkono wa pole kwa familia.
 
-NJIA YA KUWASILISHA MCHANGO:
-Tafadhali wasilisha mchango wako haraka iwezekanavyo kupitia:
- Simu ya Mweka Hazina: 0758219298 - Eva O. Lema
+NJIA YA KUWASILISHA MCHANGO: M Koba au 0758219298 (Eva O. Lema).
 
-TAREHE YA MWISHO WA KUCHANGA:
-Mwisho wa kuwasilisha michango yote ni tarehe 25 Septemba 2026. Tunaombwa kukamilisha kwa wakati ili uongozi ukabidhi mkono wa pole mapema.
+Mwisho wa kuwasilisha michango yote ni tarehe 24 Septemba 2026, tunaombwa kukamilisha kwa wakati.
 
-RATIBA YA MAZISHI:
-Ratiba rasmi ya mazishi, kuaga na safari itatolewa mara baada ya taratibu za kifamilia kukamilika.
+RATIBA YA MAZISHI: Kuaga kutafanyika nyumbani kuanzia saa 6:00 mchana, na mazishi yatafanyika saa 9:00 alasiri makaburini.
+Tunaombwa wanachama wote tushirikiane kwa sala, pole msibani na michango kumfariji mwenzetu.
 
 "Bwana alitoa, na Bwana ametwaa; jina la Bwana lihimidiwe." (Ayubu 1:21)
-Tunaombwa wanachama wote tushirikiane kwa sala, kutoa pole msibani na kuwasilisha michango yetu kwa uaminifu ili kumfariji mwenzetu katika kipindi hiki cha majonzi.
 
-Uongozi wa UWALEMI
+Uongozi wa UWALEMI 
+
 Lema, Nguvu Moja!`;
 
   const defaultSmartTemplate = `Habari {name}, kikundi cha UWALEMI kinakukumbusha kulipa ada zako: unadaiwa ada {feeDebt} {periodSummary} ({unpaidMonths}). Faini: {fainiSummary}. Jumla unayopaswa kulipa: {jumlaKuu}. Kamilisha kupitia {lipaNamba}. Lema, Nguvu Moja!`;
@@ -707,7 +708,12 @@ Lema, Nguvu Moja!`);
     memberId: string;
     relationType: 'mwanachama' | 'mke' | 'mume' | 'mtoto' | 'mzazi_baba' | 'mzazi_mama' | 'mkwe_baba' | 'mkwe_mama' | 'nyingine';
     deceasedName: string;
+    deathDate: string;
+    deathPlace: string;
     location: string;
+    meetingLocation: string;
+    meetingDate: string;
+    meetingTime: string;
     contributionAmount: number;
     paymentDetails: string;
     deadlineDate: string;
@@ -715,19 +721,24 @@ Lema, Nguvu Moja!`);
     autoCreateFund: boolean;
     includeGreeting: boolean;
   }>(() => {
-    const defaultPayment = 'Simu ya Mweka Hazina: 0758219298 - Eva O. Lema';
-    const futureDate = '2026-09-25';
+    const defaultPayment = 'M Koba au 0758219298 (Eva O. Lema)';
+    const futureDate = '2026-09-24';
     const hamphrey = members.find(m => m.fullName.toLowerCase().includes('hamphrey')) || members[0];
 
     return {
-      memberId: hamphrey?.id || '',
+      memberId: '',
       relationType: 'mkwe_mama',
-      deceasedName: 'Mama Grace Fransic Masawe',
-      location: 'Mbezi Makabe - Kwa Paulo',
+      deceasedName: '',
+      deathDate: '',
+      deathPlace: '',
+      location: '',
+      meetingLocation: '',
+      meetingDate: '',
+      meetingTime: '',
       contributionAmount: 5000,
       paymentDetails: defaultPayment,
-      deadlineDate: futureDate,
-      burialSchedule: 'Ratiba rasmi ya mazishi, kuaga na safari itatolewa mara baada ya taratibu za kifamilia kukamilika.',
+      deadlineDate: '',
+      burialSchedule: '',
       autoCreateFund: true,
       includeGreeting: true
     };
@@ -831,64 +842,25 @@ Lema, Nguvu Moja!`);
   const generateLongBereavementMessage = (form: typeof bereavementForm) => {
     const selectedMember = members.find(m => m.id === form.memberId);
     const relInfo = getBereavementRelationInfo(form.relationType);
-    const memberNameStr = selectedMember ? selectedMember.fullName : 'Hamphrey Raymond Lema';
-    const deceasedStr = form.deceasedName.trim() 
-      ? form.deceasedName.trim() 
-      : (form.relationType === 'mwanachama' ? memberNameStr : relInfo.relationText);
-    
-    // Clean location (prevent duplicate "Msiba upo:" prefix if user entered it)
-    let rawLocation = form.location.trim() || 'Mbezi Makabe - Kwa Paulo';
-    let locationStr = rawLocation.replace(/^Msiba\s+upo\s*:\s*/i, '').replace(/^Eneo\s+la\s+msiba\s*:\s*/i, '').trim();
-    if (!locationStr.endsWith('.')) {
-      locationStr += '.';
-    }
+    const memberName = selectedMember ? selectedMember.fullName : '[Jina la Mwanachama]';
 
-    const amountNum = Number(form.contributionAmount) || 5000;
-    const amountStr = `TZS ${amountNum.toLocaleString()}`;
-    const amountWordsStr = amountNum === 5000 
-      ? 'Shilingi Elfu Tano Tu' 
-      : (amountNum === 10000 ? 'Shilingi Elfu Kumi Tu' : `Shilingi ${amountNum.toLocaleString()} Tu`);
-    
-    let deadlineStr = '25 Septemba 2026';
-    if (form.deadlineDate) {
-      deadlineStr = formatSwahiliDate(form.deadlineDate);
-    }
-
-    const burialSection = form.burialSchedule.trim() 
-      ? `RATIBA YA MAZISHI:\n${form.burialSchedule.trim()}\n`
-      : `RATIBA YA MAZISHI:\nRatiba rasmi ya mazishi, kuaga na safari itatolewa mara baada ya taratibu za kifamilia kukamilika.\n`;
-
-    const openingLine = form.relationType === 'mwanachama'
-      ? `Uongozi wa UWALEMI, kwa masikitiko makubwa unapenda kukutaarifu kuhusu msiba mzito wa kuondokewa na mwanachama mwenzetu ${memberNameStr}.`
-      : `Uongozi wa UWALEMI, kwa masikitiko makubwa unapenda kukutaarifu kuwa mwanachama mwenzetu ${memberNameStr} amepatwa na msiba  wa kuondokewa na ${relInfo.relationText}${form.deceasedName ? `, ${deceasedStr}` : ''}.`;
-
-    const paymentLine = form.paymentDetails.trim()
-      ? form.paymentDetails.trim()
-      : 'Simu ya Mweka Hazina: 0758219298 - Eva O. Lema';
-
-    const greetingPrefix = form.includeGreeting !== false ? 'Habari {name},\n\n' : '';
-
-    return `${greetingPrefix}${openingLine}
-
-ENEO LA MSIBA:
-Msiba upo: ${locationStr}
-
-MCHANGO WA RAMBIRAMBI (KILA MWANACHAMA):
-Kulingana na Katiba na Mwongozo wa kikundi chetu cha UWALEMI, kiwango cha mchango kinachopaswa kutolewa na kila mwanachama ni ${amountStr} (${amountWordsStr}) kama rambirambi na mkono wa pole kwa familia.
-
-NJIA YA KUWASILISHA MCHANGO:
-Tafadhali wasilisha mchango wako haraka iwezekanavyo kupitia:
- ${paymentLine}
-
-TAREHE YA MWISHO WA KUCHANGA:
-Mwisho wa kuwasilisha michango yote ni tarehe ${deadlineStr}. Tunaombwa kukamilisha kwa wakati ili uongozi ukabidhi mkono wa pole mapema.
-
-${burialSection}
-"Bwana alitoa, na Bwana ametwaa; jina la Bwana lihimidiwe." (Ayubu 1:21)
-Tunaombwa wanachama wote tushirikiane kwa sala, kutoa pole msibani na kuwasilisha michango yetu kwa uaminifu ili kumfariji mwenzetu katika kipindi hiki cha majonzi.
-
-Uongozi wa UWALEMI
-Lema, Nguvu Moja!`;
+    return buildOfficialBereavementSms({
+      memberName,
+      relationType: form.relationType,
+      relationCustomLabel: relInfo.relationText || relInfo.label,
+      deceasedName: form.deceasedName,
+      deathDate: form.deathDate,
+      deathPlace: form.deathPlace,
+      location: form.location,
+      meetingLocation: form.meetingLocation,
+      meetingDate: form.meetingDate,
+      meetingTime: form.meetingTime,
+      contributionAmount: Number(form.contributionAmount) || 5000,
+      paymentMethod: form.paymentDetails || 'M Koba au 0758219298 (Eva O. Lema)',
+      deadlineDate: form.deadlineDate,
+      burialSchedule: form.burialSchedule,
+      includeGreeting: form.includeGreeting !== false
+    });
   };
 
   const handleApplyBereavementAnnouncement = async () => {
@@ -918,6 +890,14 @@ Lema, Nguvu Moja!`;
             beneficiaryName: selectedMember?.fullName || f.beneficiaryName,
             beneficiaryPhone: selectedMember?.phone || f.beneficiaryPhone,
             beneficiaryRelation: relInfo.label,
+            deceasedName: bereavementForm.deceasedName,
+            deathDate: bereavementForm.deathDate,
+            deathPlace: bereavementForm.deathPlace,
+            location: bereavementForm.location,
+            meetingLocation: bereavementForm.meetingLocation,
+            meetingDate: bereavementForm.meetingDate,
+            meetingTime: bereavementForm.meetingTime,
+            burialSchedule: bereavementForm.burialSchedule,
             deadline: bereavementForm.deadlineDate,
             description: `Taarifa ya msiba wa ${bereavementForm.deceasedName || relInfo.label}. Eneo la msiba: ${bereavementForm.location || 'Haijawekwa'}. Kiwango cha mchango wa kila mwanachama ni TZS ${Number(bereavementForm.contributionAmount).toLocaleString()}. ${bereavementForm.burialSchedule ? 'Ratiba: ' + bereavementForm.burialSchedule : ''}`
           };
@@ -945,6 +925,14 @@ Lema, Nguvu Moja!`;
           beneficiaryName: selectedMember?.fullName || 'Mwanachama',
           beneficiaryPhone: selectedMember?.phone || '',
           beneficiaryRelation: relInfo.label,
+          deceasedName: bereavementForm.deceasedName,
+          deathDate: bereavementForm.deathDate,
+          deathPlace: bereavementForm.deathPlace,
+          location: bereavementForm.location,
+          meetingLocation: bereavementForm.meetingLocation,
+          meetingDate: bereavementForm.meetingDate,
+          meetingTime: bereavementForm.meetingTime,
+          burialSchedule: bereavementForm.burialSchedule,
           startDate: new Date().toISOString().split('T')[0],
           deadline: bereavementForm.deadlineDate,
           status: 'active',
@@ -1366,9 +1354,9 @@ Lema, Nguvu Moja!`;
                     setRecipientFilter('all');
                   }}
                   className="px-2.5 py-1 rounded-lg bg-rose-600/30 hover:bg-rose-600/40 text-rose-200 text-[11px] font-bold border border-rose-500/50 cursor-pointer flex items-center gap-1 shadow-sm"
-                  title="Weka ujumbe rasmi wa msiba wa Hamphrey Raymond Lema (Mama Mkwe) mara moja"
+                  title="Weka mfano wa ujumbe rasmi wa msiba mara moja"
                 >
-                  🕊️ Tangazo la Msiba (Hamphrey - Mama Mkwe)
+                  🕊️ Mfano wa Tangazo la Msiba
                 </button>
                 <button
                   type="button"
@@ -2960,7 +2948,7 @@ Lema, Nguvu Moja!`;
                     Mwanachama Aliyepatwa na Msiba *
                   </label>
                   <select
-                    value={bereavementForm.memberId}
+                    value={bereavementForm.memberId || ''}
                     onChange={(e) => {
                       const mId = e.target.value;
                       const selectedM = members.find(m => m.id === mId);
@@ -2987,7 +2975,7 @@ Lema, Nguvu Moja!`;
                     Aliyefariki ni Nani kwa Mwanachama? *
                   </label>
                   <select
-                    value={bereavementForm.relationType}
+                    value={bereavementForm.relationType || 'mkwe_mama'}
                     onChange={(e) => {
                       const newType = e.target.value as any;
                       const rel = getBereavementRelationInfo(newType);
@@ -3026,26 +3014,103 @@ Lema, Nguvu Moja!`;
                   </label>
                   <input
                     type="text"
-                    value={bereavementForm.deceasedName}
+                    value={bereavementForm.deceasedName || ''}
                     onChange={(e) => setBereavementForm({ ...bereavementForm, deceasedName: e.target.value })}
-                    placeholder="Mfano: Marehemu Mzee James Tarimo"
+                    placeholder="Mfano: Mama Grace Fransic Masawe"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:border-rose-500 focus:outline-none"
                   />
                 </div>
 
-                {/* Location */}
+                {/* Tarehe Aliyofariki & Mahali Alipofia */}
                 <div>
                   <label className="text-slate-300 font-bold block mb-1 flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-rose-400" />
-                    Eneo la Msiba Ulipo *
+                    <Calendar className="w-3.5 h-3.5 text-rose-400" />
+                    Tarehe Aliyofariki (Hiari)
+                  </label>
+                  <input
+                    type="date"
+                    value={bereavementForm.deathDate || ''}
+                    onChange={(e) => setBereavementForm({ ...bereavementForm, deathDate: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:border-rose-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1">
+                    Mahali Alipofia (Amefia wapi?)
                   </label>
                   <input
                     type="text"
-                    value={bereavementForm.location}
-                    onChange={(e) => setBereavementForm({ ...bereavementForm, location: e.target.value })}
-                    placeholder="Mfano: Kimara Korogwe, Dar es Salaam / Moshi Vijijini"
+                    value={bereavementForm.deathPlace || ''}
+                    onChange={(e) => setBereavementForm({ ...bereavementForm, deathPlace: e.target.value })}
+                    placeholder="Mfano: Hospitali ya Muhimbili / Nyumbani Mbezi"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:border-rose-500 focus:outline-none"
                   />
+                </div>
+
+                {/* Location of Condolences */}
+                <div>
+                  <label className="text-slate-300 font-bold block mb-1 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-rose-400" />
+                    Eneo la Msiba Ulipo (Kufariji / Kutoa Pole) *
+                  </label>
+                  <input
+                    type="text"
+                    value={bereavementForm.location || ''}
+                    onChange={(e) => setBereavementForm({ ...bereavementForm, location: e.target.value })}
+                    placeholder="Mfano: Mbezi Makabe - Kwa Paulo"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:border-rose-500 focus:outline-none"
+                  />
+                </div>
+
+                {/* Meeting Location & Schedule Section */}
+                <div className="sm:col-span-2 p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl space-y-3">
+                  <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
+                    <Building2 className="w-4 h-4" />
+                    <span>Taarifa za Vikao vya Msiba (Hiari)</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-slate-300 font-medium block mb-1 text-xs">
+                        Ukumbi / Eneo la Kikao
+                      </label>
+                      <input
+                        type="text"
+                        value={bereavementForm.meetingLocation || ''}
+                        onChange={(e) => setBereavementForm({ ...bereavementForm, meetingLocation: e.target.value })}
+                        placeholder="Mfano: Riverside Hall"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-slate-300 font-medium block mb-1 text-xs flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-amber-400" />
+                        Tarehe ya Kikao
+                      </label>
+                      <input
+                        type="date"
+                        value={bereavementForm.meetingDate || ''}
+                        onChange={(e) => setBereavementForm({ ...bereavementForm, meetingDate: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-slate-300 font-medium block mb-1 text-xs flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-400" />
+                        Muda wa Kikao
+                      </label>
+                      <input
+                        type="text"
+                        value={bereavementForm.meetingTime || ''}
+                        onChange={(e) => setBereavementForm({ ...bereavementForm, meetingTime: e.target.value })}
+                        placeholder="Mfano: Saa 11:00 Jioni"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Amount to be contributed */}
@@ -3056,7 +3121,7 @@ Lema, Nguvu Moja!`;
                   <div className="relative">
                     <input
                       type="number"
-                      value={bereavementForm.contributionAmount}
+                      value={bereavementForm.contributionAmount || 0}
                       onChange={(e) => setBereavementForm({ ...bereavementForm, contributionAmount: Number(e.target.value) })}
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-emerald-400 font-bold font-mono focus:border-rose-500 focus:outline-none"
                     />
@@ -3081,38 +3146,44 @@ Lema, Nguvu Moja!`;
                   </label>
                   <input
                     type="date"
-                    value={bereavementForm.deadlineDate}
+                    value={bereavementForm.deadlineDate || ''}
                     onChange={(e) => setBereavementForm({ ...bereavementForm, deadlineDate: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:border-rose-500 focus:outline-none"
                   />
                 </div>
 
-                {/* Payment info */}
+                {/* Payment info (Locked per UWALEMI policy) */}
                 <div className="sm:col-span-2">
-                  <label className="text-slate-300 font-bold block mb-1 flex items-center gap-1">
-                    <CreditCard className="w-3.5 h-3.5 text-purple-400" />
-                    Njia ya Kuwasilisha Mchango (M-Koba / Mtunza Hazina)
-                  </label>
-                  <input
-                    type="text"
-                    value={bereavementForm.paymentDetails}
-                    onChange={(e) => setBereavementForm({ ...bereavementForm, paymentDetails: e.target.value })}
-                    placeholder="M-Koba au simu ya mtunza hazina..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:border-rose-500 focus:outline-none"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-slate-300 font-bold flex items-center gap-1.5 text-xs">
+                      <CreditCard className="w-3.5 h-3.5 text-purple-400" />
+                      Njia ya Kuwasilisha Mchango (M-Koba / Mtunza Hazina)
+                    </label>
+                    <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                      <Lock className="w-3 h-3 text-amber-400" /> Rasmi (Haiwezi Kubadilishwa)
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      readOnly
+                      disabled
+                      value="M Koba au 0758219298 (Eva O. Lema)"
+                      className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-slate-200 font-semibold cursor-not-allowed select-none opacity-90 shadow-inner"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    * Njia hii ya malipo imefungwa na imewekwa kama ya msingi kulingana na muongozo wa UWALEMI.
+                  </p>
                 </div>
 
-                {/* Burial / Funeral schedule notes */}
+                {/* Burial / Funeral schedule builder with farewell venue, dates & any region */}
                 <div className="sm:col-span-2">
-                  <label className="text-slate-300 font-bold block mb-1">
-                    Ratiba ya Mazishi na Maelezo ya Ziada (Hiari)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={bereavementForm.burialSchedule}
-                    onChange={(e) => setBereavementForm({ ...bereavementForm, burialSchedule: e.target.value })}
-                    placeholder="Mfano: Ibada ya kuaga itafanyika Alhamisi saa 4 asubuhi nyumbani kwa marehemu kabla ya safari ya kuelekea Moshi..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:border-rose-500 focus:outline-none"
+                  <FuneralScheduleBuilder
+                    value={bereavementForm.burialSchedule || ''}
+                    onChange={(val) => setBereavementForm(prev => ({ ...prev, burialSchedule: val }))}
+                    defaultLocation={bereavementForm.location}
+                    themeColor="rose"
                   />
                 </div>
               </div>

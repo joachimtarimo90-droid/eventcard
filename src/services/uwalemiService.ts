@@ -828,6 +828,217 @@ export function formatSwahiliDate(dateStr?: string): string {
   return getSwahiliDayAndDate(dateStr).formattedDate;
 }
 
+export function getAmountInSwahiliWords(amount: number): string {
+  if (amount === 5000) return 'Shilingi Elfu Tano Tu';
+  if (amount === 10000) return 'Shilingi Elfu Kumi Tu';
+  if (amount === 15000) return 'Shilingi Elfu Kumi na Tano Tu';
+  if (amount === 20000) return 'Shilingi Elfu Ishirini Tu';
+  if (amount === 25000) return 'Shilingi Elfu Ishirini na Tano Tu';
+  if (amount === 30000) return 'Shilingi Elfu Thelathini Tu';
+  if (amount === 50000) return 'Shilingi Elfu Hamsini Tu';
+  if (amount === 100000) return 'Shilingi Laki Moja Tu';
+
+  if (amount > 0 && amount % 1000 === 0) {
+    const thousands = Math.floor(amount / 1000);
+    const thousandsMap: Record<number, string> = {
+      1: 'Moja', 2: 'Mbili', 3: 'Tatu', 4: 'Nne', 5: 'Tano',
+      6: 'Sita', 7: 'Saba', 8: 'Nane', 9: 'Tisa', 10: 'Kumi',
+      15: 'Kumi na Tano', 20: 'Ishirini', 25: 'Ishirini na Tano',
+      30: 'Thelathini', 40: 'Arobaini', 50: 'Hamsini', 60: 'Sitini',
+      70: 'Sabini', 80: 'Themanini', 90: 'Tisini'
+    };
+    if (thousandsMap[thousands]) {
+      return `Shilingi Elfu ${thousandsMap[thousands]} Tu`;
+    }
+    return `Shilingi Elfu ${thousands} Tu`;
+  }
+  return `Shilingi ${amount.toLocaleString()} Tu`;
+}
+
+export interface OfficialBereavementSmsParams {
+  memberName: string;
+  relationType: string;
+  relationCustomLabel?: string;
+  deceasedName?: string;
+  deathDate?: string;
+  deathPlace?: string;
+  location?: string;
+  meetingLocation?: string;
+  meetingDate?: string;
+  meetingTime?: string;
+  contributionAmount: number;
+  paymentMethod?: string;
+  deadlineDate?: string;
+  burialSchedule?: string;
+  includeGreeting?: boolean;
+}
+
+export function buildOfficialBereavementSms(params: OfficialBereavementSmsParams): string {
+  const memberName = params.memberName?.trim() || '[Jina la Mwanachama]';
+  const deceasedName = params.deceasedName?.trim() || '[Jina la Marehemu]';
+
+  // Format death details (tarehe na hospitali / mahali)
+  const deathParts: string[] = [];
+  if (params.deathDate) {
+    const { dayName, formattedDate } = getSwahiliDayAndDate(params.deathDate);
+    if (dayName) {
+      deathParts.push(`siku ya ${dayName} tarehe ${formattedDate}`);
+    } else if (formattedDate) {
+      deathParts.push(`tarehe ${formattedDate}`);
+    }
+  }
+  if (params.deathPlace && params.deathPlace.trim()) {
+    const dpClean = params.deathPlace.trim()
+      .replace(/^katika\s+/i, '')
+      .replace(/^akiwa\s+/i, '')
+      .replace(/\.+$/, '');
+    const placePart = params.deathPlace.trim().toLowerCase().startsWith('akiwa')
+      ? params.deathPlace.trim()
+      : `katika ${dpClean}`;
+    deathParts.push(placePart);
+  }
+  const deathDetailStr = deathParts.length > 0 ? `, amefariki ${deathParts.join(' ')}` : '';
+
+  // Opening line according to relation
+  let openingLine = '';
+  const isMwanachamaMwenyewe = params.relationType === 'mwanachama' || 
+    (params.relationCustomLabel && params.relationCustomLabel.toLowerCase().includes('mwanachama mwenyewe'));
+
+  if (isMwanachamaMwenyewe) {
+    openingLine = `Uongozi wa UWALEMI unasikitika kukutaarifu msiba wa mwanachama mwenzetu ${memberName}${deathDetailStr}.`;
+  } else {
+    let relText = 'mama mkwe wake';
+    const rawRel = `${params.relationType || ''} ${params.relationCustomLabel || ''}`.toLowerCase();
+
+    if (params.relationType === 'mkwe_mama' || rawRel.includes('mama mkwe') || rawRel.includes('mkwe_mama')) {
+      relText = 'mama mkwe wake';
+    } else if (params.relationType === 'mkwe_baba' || rawRel.includes('baba mkwe') || rawRel.includes('mkwe_baba')) {
+      relText = 'baba mkwe wake';
+    } else if (params.relationType === 'mzazi_mama' || (rawRel.includes('mama') && (rawRel.includes('mzazi') || rawRel.includes('yake')))) {
+      relText = 'mama yake mzazi';
+    } else if (params.relationType === 'mzazi_baba' || (rawRel.includes('baba') && (rawRel.includes('mzazi') || rawRel.includes('yake')))) {
+      relText = 'baba yake mzazi';
+    } else if (params.relationType === 'mke' || rawRel.includes('mke')) {
+      relText = 'mke wake mpendwa';
+    } else if (params.relationType === 'mume' || rawRel.includes('mume')) {
+      relText = 'mume wake mpendwa';
+    } else if (params.relationType === 'mtoto' || rawRel.includes('mtoto')) {
+      relText = 'mtoto wake';
+    } else {
+      let cleanLabel = (params.relationCustomLabel || 'ndugu').trim();
+      cleanLabel = cleanLabel.replace(/\s+wa\s+mwanachama/i, '').trim();
+      relText = cleanLabel;
+      if (!relText.toLowerCase().includes('wake') && !relText.toLowerCase().includes('yake')) {
+        relText += ' wake';
+      }
+    }
+
+    openingLine = `Uongozi wa UWALEMI unasikitika kukutaarifu kuwa mwanachama mwenzetu ${memberName} amefiwa na ${relText} ${deceasedName}${deathDetailStr}.`;
+  }
+
+  // Location line
+  let rawLoc = params.location?.trim();
+  if (!rawLoc) {
+    rawLoc = '[Eneo la Msiba]';
+  } else {
+    rawLoc = rawLoc
+      .replace(/^(mahali\s+msiba\s+ulipo|eneo\s+la\s+msiba|msiba\s+upo)\s*[:\-]?\s*/i, '')
+      .trim();
+    if (!rawLoc.endsWith('.')) {
+      rawLoc += '.';
+    }
+  }
+  let locationSection = `MAHALI MSIBA ULIPO : Msiba upo ${rawLoc}`;
+  if ((params.meetingLocation && params.meetingLocation.trim()) || params.meetingDate || params.meetingTime) {
+    const meetParts: string[] = [];
+    if (params.meetingLocation?.trim()) {
+      let rawMeeting = params.meetingLocation.trim();
+      rawMeeting = rawMeeting.replace(/^(mahali\s+pa\s+vikao|ukumbi\s+wa\s+vikao|vikao\s+vya\s+msiba)\s*[:\-]?\s*/i, '').trim();
+      meetParts.push(rawMeeting);
+    }
+    if (params.meetingDate?.trim()) {
+      const { dayName, formattedDate } = getSwahiliDayAndDate(params.meetingDate);
+      if (dayName) {
+        meetParts.push(`siku ya ${dayName} tarehe ${formattedDate}`);
+      } else if (formattedDate) {
+        meetParts.push(`tarehe ${formattedDate}`);
+      }
+    }
+    if (params.meetingTime?.trim()) {
+      let rawTime = params.meetingTime.trim();
+      if (!rawTime.toLowerCase().startsWith('kuanzia') && !rawTime.toLowerCase().startsWith('saa')) {
+        rawTime = `kuanzia ${rawTime}`;
+      }
+      meetParts.push(rawTime);
+    }
+
+    if (meetParts.length > 0) {
+      let meetStr = meetParts.join(', ');
+      if (!meetStr.endsWith('.')) {
+        meetStr += '.';
+      }
+      locationSection += `\nVIKAO VYA MSIBA : Vikao vitafanyika ${meetStr}`;
+    }
+  }
+
+  // Contribution section
+  const amountNum = Number(params.contributionAmount) || 5000;
+  const amountFormatted = amountNum.toLocaleString();
+  const amountWords = getAmountInSwahiliWords(amountNum);
+  const contributionSection = `MCHANGO WA RAMBIRAMBI (KILA MWANACHAMA):
+Kulingana na Mwongozo wa kikundi chetu cha UWALEMI, kiwango cha mchango kinachopaswa kutolewa na kila mwanachama ni TZS ${amountFormatted} (${amountWords}) kama rambirambi na mkono wa pole kwa familia.`;
+
+  // Payment method section
+  let rawPayment = (params.paymentMethod || 'M Koba au 0758219298 (Eva O. Lema)').trim();
+  rawPayment = rawPayment.replace(/^NJIA\s+YA\s+KUWASILISHA\s+MCHANGO\s*:\s*/i, '').trim();
+  if (!rawPayment.endsWith('.')) {
+    rawPayment += '.';
+  }
+  const paymentSection = `NJIA YA KUWASILISHA MCHANGO: ${rawPayment}`;
+
+  // Deadline line
+  let deadlineStr = '[Tarehe ya Mwisho]';
+  if (params.deadlineDate) {
+    const { dayName, formattedDate } = getSwahiliDayAndDate(params.deadlineDate);
+    deadlineStr = dayName ? `siku ya ${dayName} tarehe ${formattedDate}` : `tarehe ${formattedDate}`;
+  }
+  const deadlinePrefix = (deadlineStr.startsWith('siku') || deadlineStr.startsWith('tarehe') || deadlineStr.startsWith('[')) ? '' : 'tarehe ';
+  const deadlineSection = `Mwisho wa kuwasilisha michango yote ni ${deadlinePrefix}${deadlineStr}, tunaombwa kukamilisha kwa wakati.`;
+
+  // Burial schedule section
+  let rawBurial = (params.burialSchedule || '').trim();
+  if (!rawBurial) {
+    rawBurial = '[Ratiba ya Mazishi Kuwekwa]';
+  } else {
+    rawBurial = rawBurial.replace(/^RATIBA\s+YA\s+MAZISHI\s*:\s*/i, '').trim();
+  }
+  const burialSection = `RATIBA YA MAZISHI: ${rawBurial}
+Tunaombwa wanachama wote tushirikiane kwa sala, pole msibani na michango kumfariji mwenzetu.`;
+
+  // Quote and signature
+  const closingSection = `"Bwana alitoa, na Bwana ametwaa; jina la Bwana lihimidiwe." (Ayubu 1:21)
+
+Uongozi wa UWALEMI 
+
+Lema, Nguvu Moja!`;
+
+  const greetingPrefix = params.includeGreeting !== false ? 'Habari {name},\n\n' : '';
+
+  return `${greetingPrefix}${openingLine}
+
+${locationSection}
+
+${contributionSection}
+
+${paymentSection}
+
+${deadlineSection}
+
+${burialSection}
+
+${closingSection}`;
+}
+
 /**
  * Replaces dynamic variables in a template message for a specific member.
  */
