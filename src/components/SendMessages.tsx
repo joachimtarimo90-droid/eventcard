@@ -855,24 +855,70 @@ Karibu sana!`);
   // Get delivery status for guest based on active messageType
   const getGuestSmsStatus = (g: Guest): 'Sijatuma' | 'Inatuma' | 'Imetumia' => {
     if (messageType === 'reminder') {
-      return g.reminderSmsStatus || 'Sijatuma';
+      if (isStatusSent(g.reminderSmsStatus)) return 'Imetumia';
+      if (g.reminderSmsStatus === 'Sijatuma') return 'Sijatuma';
+      if (
+        isStatusSent(g.invitationSmsStatus) || 
+        isStatusSent(g.smsStatus) || 
+        (typeof g.smsCount === 'number' && g.smsCount > 0) ||
+        g.lastSentChannel === 'sms'
+      ) return 'Imetumia';
+      return 'Sijatuma';
     }
     if (messageType === 'thank-you') {
-      return g.thankYouSmsStatus || 'Sijatuma';
+      if (isStatusSent(g.thankYouSmsStatus)) return 'Imetumia';
+      if (g.thankYouSmsStatus === 'Sijatuma') return 'Sijatuma';
+      if (
+        isStatusSent(g.invitationSmsStatus) || 
+        isStatusSent(g.smsStatus) || 
+        (typeof g.smsCount === 'number' && g.smsCount > 0) ||
+        g.lastSentChannel === 'sms'
+      ) return 'Imetumia';
+      return 'Sijatuma';
     }
-    if (isStatusSent(g.invitationSmsStatus) || isStatusSent(g.smsStatus)) return 'Imetumia';
+    if (
+      isStatusSent(g.invitationSmsStatus) || 
+      isStatusSent(g.smsStatus) || 
+      isStatusSent(g.reminderSmsStatus) || 
+      isStatusSent(g.thankYouSmsStatus) || 
+      (typeof g.smsCount === 'number' && g.smsCount > 0) ||
+      g.lastSentChannel === 'sms'
+    ) return 'Imetumia';
     if (g.invitationSmsStatus === 'Inatuma' || g.smsStatus === 'Inatuma') return 'Inatuma';
     return 'Sijatuma';
   };
 
   const getGuestWhatsappStatus = (g: Guest): 'Sijatuma' | 'Inatuma' | 'Imetumia' => {
     if (messageType === 'reminder') {
-      return g.reminderWhatsappStatus || 'Sijatuma';
+      if (isStatusSent(g.reminderWhatsappStatus)) return 'Imetumia';
+      if (g.reminderWhatsappStatus === 'Sijatuma') return 'Sijatuma';
+      if (
+        isStatusSent(g.invitationWhatsappStatus) || 
+        isStatusSent(g.whatsappStatus) || 
+        (typeof g.whatsappCount === 'number' && g.whatsappCount > 0) ||
+        g.lastSentChannel === 'whatsapp'
+      ) return 'Imetumia';
+      return 'Sijatuma';
     }
     if (messageType === 'thank-you') {
-      return g.thankYouWhatsappStatus || 'Sijatuma';
+      if (isStatusSent(g.thankYouWhatsappStatus)) return 'Imetumia';
+      if (g.thankYouWhatsappStatus === 'Sijatuma') return 'Sijatuma';
+      if (
+        isStatusSent(g.invitationWhatsappStatus) || 
+        isStatusSent(g.whatsappStatus) || 
+        (typeof g.whatsappCount === 'number' && g.whatsappCount > 0) ||
+        g.lastSentChannel === 'whatsapp'
+      ) return 'Imetumia';
+      return 'Sijatuma';
     }
-    if (isStatusSent(g.invitationWhatsappStatus) || isStatusSent(g.whatsappStatus)) return 'Imetumia';
+    if (
+      isStatusSent(g.invitationWhatsappStatus) || 
+      isStatusSent(g.whatsappStatus) || 
+      isStatusSent(g.reminderWhatsappStatus) || 
+      isStatusSent(g.thankYouWhatsappStatus) || 
+      (typeof g.whatsappCount === 'number' && g.whatsappCount > 0) ||
+      g.lastSentChannel === 'whatsapp'
+    ) return 'Imetumia';
     if (g.invitationWhatsappStatus === 'Inatuma' || g.whatsappStatus === 'Inatuma') return 'Inatuma';
     return 'Sijatuma';
   };
