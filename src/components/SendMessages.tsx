@@ -2243,13 +2243,21 @@ Karibu sana!`);
             onClick={() => handleSendAll('sms')}
             disabled={isSendingAll || filteredGuests.length === 0}
             className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 font-bold shadow-md hover:shadow-blue-500/20 disabled:opacity-40 disabled:cursor-not-allowed text-xs cursor-pointer"
-            title={isEn ? "Send SMS invitations to all pending guests" : "Tuma SMS kwa wageni wote waliobakia"}
+            title={isEn ? `Send SMS ${messageType} to all guests` : `Tuma SMS za ${messageType === 'reminder' ? 'Ukumbusho' : messageType === 'thank-you' ? 'Shukrani' : 'Mialiko'} kwa wageni wote`}
           >
             <Smartphone className="w-3.5 h-3.5 text-blue-200" />
-            <span>{isSendingAll ? (isEn ? 'Sending...' : 'Inatuma...') : (isEn ? 'Send All SMS' : 'Tuma SMS kwa Wote')}</span>
-            {filteredGuests.filter(g => !isStatusSent(g.smsStatus)).length > 0 && (
+            <span>
+              {isSendingAll 
+                ? (isEn ? 'Sending...' : 'Inatuma...') 
+                : messageType === 'reminder'
+                ? (isEn ? 'Send All Reminders (SMS)' : 'Tuma Ukumbusho kwa Wote (SMS)')
+                : messageType === 'thank-you'
+                ? (isEn ? 'Send All Thank You (SMS)' : 'Tuma Shukrani kwa Wote (SMS)')
+                : (isEn ? 'Send All SMS' : 'Tuma SMS kwa Wote')}
+            </span>
+            {filteredGuests.filter(g => !isStatusSent(getGuestSmsStatus(g))).length > 0 && (
               <span className="ml-1 bg-white/20 text-white text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold">
-                {filteredGuests.filter(g => !isStatusSent(g.smsStatus)).length}
+                {filteredGuests.filter(g => !isStatusSent(getGuestSmsStatus(g))).length}
               </span>
             )}
           </button>
@@ -2259,13 +2267,21 @@ Karibu sana!`);
             onClick={() => handleSendAll('whatsapp')}
             disabled={isSendingAll || filteredGuests.length === 0}
             className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 font-bold shadow-md hover:shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed text-xs cursor-pointer"
-            title={isEn ? "Send WhatsApp invitations to all pending guests" : "Tuma WhatsApp kwa wageni wote waliobakia"}
+            title={isEn ? `Send WhatsApp ${messageType} to all guests` : `Tuma WhatsApp za ${messageType === 'reminder' ? 'Ukumbusho' : messageType === 'thank-you' ? 'Shukrani' : 'Mialiko'} kwa wageni wote`}
           >
             <MessageSquare className="w-3.5 h-3.5 text-emerald-200" />
-            <span>{isSendingAll ? (isEn ? 'Sending...' : 'Inatuma...') : (isEn ? 'Send All WhatsApp' : 'Tuma WhatsApp kwa Wote')}</span>
-            {filteredGuests.filter(g => !isStatusSent(g.whatsappStatus)).length > 0 && (
+            <span>
+              {isSendingAll 
+                ? (isEn ? 'Sending...' : 'Inatuma...') 
+                : messageType === 'reminder'
+                ? (isEn ? 'Send All Reminders (WA)' : 'Tuma Ukumbusho kwa Wote (WA)')
+                : messageType === 'thank-you'
+                ? (isEn ? 'Send All Thank You (WA)' : 'Tuma Shukrani kwa Wote (WA)')
+                : (isEn ? 'Send All WhatsApp' : 'Tuma WhatsApp kwa Wote')}
+            </span>
+            {filteredGuests.filter(g => !isStatusSent(getGuestWhatsappStatus(g))).length > 0 && (
               <span className="ml-1 bg-white/20 text-white text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold">
-                {filteredGuests.filter(g => !isStatusSent(g.whatsappStatus)).length}
+                {filteredGuests.filter(g => !isStatusSent(getGuestWhatsappStatus(g))).length}
               </span>
             )}
           </button>
