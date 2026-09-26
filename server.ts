@@ -6183,24 +6183,25 @@ Lema, Nguvu Moja!`;
             if (task.guestId && freshDb.guests) {
               freshDb.guests = freshDb.guests.map((g: any) => {
                 if (g.id === task.guestId) {
+                  const msgType = task.messageType || 'invitation';
                   if (usedChannel === 'whatsapp') {
                     const currentCount = typeof g.whatsappCount === 'number' ? g.whatsappCount : (g.whatsappStatus === 'Imetumia' ? 1 : 0);
-                    return { 
-                      ...g, 
-                      whatsappStatus: "Imetumia", 
-                      whatsappCount: currentCount + 1,
-                      lastSentChannel: "whatsapp",
-                      lastSentLang: task.lang || "sw"
-                    };
+                    if (msgType === 'reminder') {
+                      return { ...g, reminderWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+                    } else if (msgType === 'thank-you') {
+                      return { ...g, thankYouWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+                    } else {
+                      return { ...g, whatsappStatus: "Imetumia", invitationWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+                    }
                   } else {
                     const currentCount = typeof g.smsCount === 'number' ? g.smsCount : (g.smsStatus === 'Imetumia' ? 1 : 0);
-                    return { 
-                      ...g, 
-                      smsStatus: "Imetumia", 
-                      smsCount: currentCount + 1,
-                      lastSentChannel: "sms",
-                      lastSentLang: task.lang || "sw"
-                    };
+                    if (msgType === 'reminder') {
+                      return { ...g, reminderSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                    } else if (msgType === 'thank-you') {
+                      return { ...g, thankYouSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                    } else {
+                      return { ...g, smsStatus: "Imetumia", invitationSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                    }
                   }
                 }
                 return g;
@@ -6312,6 +6313,7 @@ Lema, Nguvu Moja!`;
           templateName: t.templateName,
           imageUrl: t.imageUrl,
           lang: t.lang || "sw",
+          messageType: t.messageType || "invitation",
           status: 'pending'
         })),
         logs: [`[${new Date().toLocaleTimeString()}] Kazi imeongezwa kwenye foleni ya kutuma (Queue). Jumla ya ujumbe: ${tasks.length}`]
@@ -6376,24 +6378,25 @@ Lema, Nguvu Moja!`;
           if (task.guestId && db.guests) {
             db.guests = db.guests.map((g: any) => {
               if (g.id === task.guestId) {
+                const msgType = task.messageType || 'invitation';
                 if (channel === 'whatsapp') {
                   const currentCount = typeof g.whatsappCount === 'number' ? g.whatsappCount : (g.whatsappStatus === 'Imetumia' ? 1 : 0);
-                  return { 
-                    ...g, 
-                    whatsappStatus: "Imetumia", 
-                    whatsappCount: currentCount + 1,
-                    lastSentChannel: "whatsapp",
-                    lastSentLang: task.lang || "sw"
-                  };
+                  if (msgType === 'reminder') {
+                    return { ...g, reminderWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+                  } else if (msgType === 'thank-you') {
+                    return { ...g, thankYouWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+                  } else {
+                    return { ...g, whatsappStatus: "Imetumia", invitationWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+                  }
                 } else {
                   const currentCount = typeof g.smsCount === 'number' ? g.smsCount : (g.smsStatus === 'Imetumia' ? 1 : 0);
-                  return { 
-                    ...g, 
-                    smsStatus: "Imetumia", 
-                    smsCount: currentCount + 1,
-                    lastSentChannel: "sms",
-                    lastSentLang: task.lang || "sw"
-                  };
+                  if (msgType === 'reminder') {
+                    return { ...g, reminderSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                  } else if (msgType === 'thank-you') {
+                    return { ...g, thankYouSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                  } else {
+                    return { ...g, smsStatus: "Imetumia", invitationSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                  }
                 }
               }
               return g;
