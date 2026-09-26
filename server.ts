@@ -3546,8 +3546,58 @@ async function startServer() {
             let mergedSmsCount = cg.smsCount !== undefined ? cg.smsCount : sg.smsCount;
             let mergedWhatsappCount = cg.whatsappCount !== undefined ? cg.whatsappCount : sg.whatsappCount;
 
+            const isExplicitReset = req.body.auditLog?.action?.toLowerCase().includes('reset') || req.body.auditLog?.action?.toLowerCase().includes('amefuta');
+            const isSent = (s: any) => typeof s === 'string' && (s.toLowerCase() === 'imetumia' || s.toLowerCase() === 'sent' || s.toLowerCase() === 'delivered' || s.toLowerCase() === 'imefika' || s.toLowerCase() === 'imesomwa' || s.toLowerCase() === 'read');
+
+            let mergedSmsStatus = cg.smsStatus;
+            let mergedWhatsappStatus = cg.whatsappStatus;
+            let mergedInvSms = cg.invitationSmsStatus || (cg.customFields as any)?.invitationSmsStatus;
+            let mergedInvWa = cg.invitationWhatsappStatus || (cg.customFields as any)?.invitationWhatsappStatus;
+            let mergedRemSms = cg.reminderSmsStatus || (cg.customFields as any)?.reminderSmsStatus;
+            let mergedRemWa = cg.reminderWhatsappStatus || (cg.customFields as any)?.reminderWhatsappStatus;
+            let mergedThkSms = cg.thankYouSmsStatus || (cg.customFields as any)?.thankYouSmsStatus;
+            let mergedThkWa = cg.thankYouWhatsappStatus || (cg.customFields as any)?.thankYouWhatsappStatus;
+
+            if (!isExplicitReset) {
+              if (isSent(sg.smsStatus) && !isSent(mergedSmsStatus)) mergedSmsStatus = sg.smsStatus;
+              if (isSent(sg.whatsappStatus) && !isSent(mergedWhatsappStatus)) mergedWhatsappStatus = sg.whatsappStatus;
+
+              if (isSent(sg.invitationSmsStatus) && !isSent(mergedInvSms)) mergedInvSms = sg.invitationSmsStatus;
+              if (isSent(sg.invitationWhatsappStatus) && !isSent(mergedInvWa)) mergedInvWa = sg.invitationWhatsappStatus;
+
+              if (isSent(sg.reminderSmsStatus) && !isSent(mergedRemSms)) mergedRemSms = sg.reminderSmsStatus;
+              if (isSent(sg.reminderWhatsappStatus) && !isSent(mergedRemWa)) mergedRemWa = sg.reminderWhatsappStatus;
+
+              if (isSent(sg.thankYouSmsStatus) && !isSent(mergedThkSms)) mergedThkSms = sg.thankYouSmsStatus;
+              if (isSent(sg.thankYouWhatsappStatus) && !isSent(mergedThkWa)) mergedThkWa = sg.thankYouWhatsappStatus;
+            }
+
+            const mergedCustomFields = {
+              ...(sg.customFields || {}),
+              ...(cg.customFields || {}),
+              invitationSmsStatus: mergedInvSms || "Sijatuma",
+              invitationWhatsappStatus: mergedInvWa || "Sijatuma",
+              reminderSmsStatus: mergedRemSms || "Sijatuma",
+              reminderWhatsappStatus: mergedRemWa || "Sijatuma",
+              thankYouSmsStatus: mergedThkSms || "Sijatuma",
+              thankYouWhatsappStatus: mergedThkWa || "Sijatuma",
+              lastSentChannel: cg.lastSentChannel || sg.lastSentChannel,
+              lastSentLang: cg.lastSentLang || sg.lastSentLang,
+            };
+
             return {
               ...cg,
+              smsStatus: mergedSmsStatus || "Sijatuma",
+              whatsappStatus: mergedWhatsappStatus || "Sijatuma",
+              invitationSmsStatus: mergedInvSms || "Sijatuma",
+              invitationWhatsappStatus: mergedInvWa || "Sijatuma",
+              reminderSmsStatus: mergedRemSms || "Sijatuma",
+              reminderWhatsappStatus: mergedRemWa || "Sijatuma",
+              thankYouSmsStatus: mergedThkSms || "Sijatuma",
+              thankYouWhatsappStatus: mergedThkWa || "Sijatuma",
+              lastSentChannel: cg.lastSentChannel || sg.lastSentChannel,
+              lastSentLang: cg.lastSentLang || sg.lastSentLang,
+              customFields: mergedCustomFields,
               rsvpStatus: mergedRsvpStatus,
               rsvpGuestsCount: mergedRsvpGuestsCount,
               rsvpComment: mergedRsvpComment,
@@ -6183,24 +6233,31 @@ Lema, Nguvu Moja!`;
             if (task.guestId && freshDb.guests) {
               freshDb.guests = freshDb.guests.map((g: any) => {
                 if (g.id === task.guestId) {
+                  const cf = (g.customFields && typeof g.customFields === 'object') ? { ...g.customFields } : {};
                   const msgType = task.messageType || 'invitation';
                   if (usedChannel === 'whatsapp') {
                     const currentCount = typeof g.whatsappCount === 'number' ? g.whatsappCount : (g.whatsappStatus === 'Imetumia' ? 1 : 0);
                     if (msgType === 'reminder') {
-                      return { ...g, reminderWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+                      cf.reminderWhatsappStatus = 'Imetumia';
+                      return { ...g, customFields: cf, reminderWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
                     } else if (msgType === 'thank-you') {
-                      return { ...g, thankYouWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+                      cf.thankYouWhatsappStatus = 'Imetumia';
+                      return { ...g, customFields: cf, thankYouWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
                     } else {
-                      return { ...g, whatsappStatus: "Imetumia", invitationWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+                      cf.invitationWhatsappStatus = 'Imetumia';
+                      return { ...g, customFields: cf, whatsappStatus: "Imetumia", invitationWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
                     }
                   } else {
                     const currentCount = typeof g.smsCount === 'number' ? g.smsCount : (g.smsStatus === 'Imetumia' ? 1 : 0);
                     if (msgType === 'reminder') {
-                      return { ...g, reminderSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                      cf.reminderSmsStatus = 'Imetumia';
+                      return { ...g, customFields: cf, reminderSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
                     } else if (msgType === 'thank-you') {
-                      return { ...g, thankYouSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                      cf.thankYouSmsStatus = 'Imetumia';
+                      return { ...g, customFields: cf, thankYouSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
                     } else {
-                      return { ...g, smsStatus: "Imetumia", invitationSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                      cf.invitationSmsStatus = 'Imetumia';
+                      return { ...g, customFields: cf, smsStatus: "Imetumia", invitationSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
                     }
                   }
                 }
@@ -6353,67 +6410,77 @@ Lema, Nguvu Moja!`;
       const host = 'eventcard.co.tz';
       const origin = `${protocol}://${host}`;
 
-      for (const task of tasks) {
-        if (!task || !task.phone) continue;
-        try {
-          // dispatchSMS parses the settings, substitutes templates/short URLs and hits the corresponding SMS gateway APIs (Meseji, SwalaSMS, eHub, simulation etc)
-          await dispatchSMS(
-            task.phone,
-            task.text,
-            channel,
-            settings,
-            undefined,
-            task.templateParams,
-            task.guestId,
-            origin,
-            eventId || 'default',
-            task.templateName,
-            task.imageUrl,
-            task.lang || 'sw'
-          );
+      // Process in concurrent batches of 5 to prevent timeouts on large guest lists
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+        const batch = tasks.slice(i, i + BATCH_SIZE);
+        await Promise.allSettled(batch.map(async (task: any) => {
+          if (!task || !task.phone) return;
+          try {
+            await dispatchSMS(
+              task.phone,
+              task.text,
+              channel,
+              settings,
+              undefined,
+              task.templateParams,
+              task.guestId,
+              origin,
+              eventId || 'default',
+              task.templateName,
+              task.imageUrl,
+              task.lang || 'sw'
+            );
 
-          deliveredCount++;
+            deliveredCount++;
 
-          // Update guest status in database
-          if (task.guestId && db.guests) {
-            db.guests = db.guests.map((g: any) => {
-              if (g.id === task.guestId) {
-                const msgType = task.messageType || 'invitation';
-                if (channel === 'whatsapp') {
-                  const currentCount = typeof g.whatsappCount === 'number' ? g.whatsappCount : (g.whatsappStatus === 'Imetumia' ? 1 : 0);
-                  if (msgType === 'reminder') {
-                    return { ...g, reminderWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
-                  } else if (msgType === 'thank-you') {
-                    return { ...g, thankYouWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+            if (task.guestId && db.guests) {
+              db.guests = db.guests.map((g: any) => {
+                if (g.id === task.guestId) {
+                  const cf = (g.customFields && typeof g.customFields === 'object') ? { ...g.customFields } : {};
+                  const msgType = task.messageType || 'invitation';
+                  if (channel === 'whatsapp') {
+                    const currentCount = typeof g.whatsappCount === 'number' ? g.whatsappCount : (g.whatsappStatus === 'Imetumia' ? 1 : 0);
+                    if (msgType === 'reminder') {
+                      cf.reminderWhatsappStatus = 'Imetumia';
+                      return { ...g, customFields: cf, reminderWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+                    } else if (msgType === 'thank-you') {
+                      cf.thankYouWhatsappStatus = 'Imetumia';
+                      return { ...g, customFields: cf, thankYouWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+                    } else {
+                      cf.invitationWhatsappStatus = 'Imetumia';
+                      return { ...g, customFields: cf, whatsappStatus: "Imetumia", invitationWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
+                    }
                   } else {
-                    return { ...g, whatsappStatus: "Imetumia", invitationWhatsappStatus: "Imetumia", whatsappCount: currentCount + 1, lastSentChannel: "whatsapp", lastSentLang: task.lang || "sw" };
-                  }
-                } else {
-                  const currentCount = typeof g.smsCount === 'number' ? g.smsCount : (g.smsStatus === 'Imetumia' ? 1 : 0);
-                  if (msgType === 'reminder') {
-                    return { ...g, reminderSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
-                  } else if (msgType === 'thank-you') {
-                    return { ...g, thankYouSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
-                  } else {
-                    return { ...g, smsStatus: "Imetumia", invitationSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                    const currentCount = typeof g.smsCount === 'number' ? g.smsCount : (g.smsStatus === 'Imetumia' ? 1 : 0);
+                    if (msgType === 'reminder') {
+                      cf.reminderSmsStatus = 'Imetumia';
+                      return { ...g, customFields: cf, reminderSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                    } else if (msgType === 'thank-you') {
+                      cf.thankYouSmsStatus = 'Imetumia';
+                      return { ...g, customFields: cf, thankYouSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                    } else {
+                      cf.invitationSmsStatus = 'Imetumia';
+                      return { ...g, customFields: cf, smsStatus: "Imetumia", invitationSmsStatus: "Imetumia", smsCount: currentCount + 1, lastSentChannel: "sms", lastSentLang: task.lang || "sw" };
+                    }
                   }
                 }
-              }
-              return g;
-            });
+                return g;
+              });
+            }
+            logs.push(`[${new Date().toLocaleTimeString()}] ✓ Imefanikiwa kwa namba ${task.phone}`);
+          } catch (smsErr: any) {
+            failedCount++;
+            const errMsg = smsErr?.message || String(smsErr);
+            logs.push(`[${new Date().toLocaleTimeString()}] ✗ Imeshindwa kwa namba ${task.phone}. Sababu: ${errMsg}`);
           }
-          logs.push(`[${new Date().toLocaleTimeString()}] ✓ Imefanikiwa kwa namba ${task.phone}`);
-        } catch (smsErr: any) {
-          failedCount++;
-          const errMsg = smsErr?.message || String(smsErr);
-          logs.push(`[${new Date().toLocaleTimeString()}] ✗ Imeshindwa kwa namba ${task.phone}. Sababu: ${errMsg}`);
-        }
+        }));
       }
 
       // Sync updated guest statuses back to persistent store (PostgreSQL/Local JSON fallback)
       await writeDB(db);
 
-      res.json({ success: true, deliveredCount, failedCount, logs });
+      res.json({ success: true, deliveredCount, failedCount, logs, updatedGuests: db.guests });
     } catch (e: any) {
       console.error("Direct send error:", e);
       res.status(500).json({ error: e.message || "Hitilafu imetokea wakati wa kutuma papo hapo." });
@@ -6531,11 +6598,13 @@ Lema, Nguvu Moja!`;
         // Not JSON or no batch_id
       }
 
+      const activeMsgType = msgType || req.body.messageType || (templateName === 'ukumbusho' ? 'reminder' : ((templateName === 'asante_kushiriki' || templateName === 'shukrani') ? 'thanks' : 'invitation'));
+
       if (guestId) {
         db.guests = (db.guests || []).map((g: any) => {
           if (g.id === guestId) {
-            const customFields = g.customFields || {};
-            if (msgType === 'save_the_date') {
+            const customFields = (g.customFields && typeof g.customFields === 'object') ? { ...g.customFields } : {};
+            if (activeMsgType === 'save_the_date') {
               customFields.std_sent_channel = usedChannel;
               customFields.std_sent_lang = lang || "sw";
               return {
@@ -6545,7 +6614,7 @@ Lema, Nguvu Moja!`;
                 stdSentChannel: usedChannel,
                 stdSentLang: lang || "sw"
               };
-            } else if (msgType === 'pledge') {
+            } else if (activeMsgType === 'pledge') {
               customFields.pledge_sent_channel = usedChannel;
               customFields.pledge_sent_lang = lang || "sw";
               return {
@@ -6555,46 +6624,94 @@ Lema, Nguvu Moja!`;
                 pledgeSentChannel: usedChannel,
                 pledgeSentLang: lang || "sw"
               };
-            } else if (msgType === 'reminder') {
+            } else if (activeMsgType === 'reminder') {
               customFields.reminder_sent_channel = usedChannel;
               customFields.reminder_sent_lang = lang || "sw";
-              return {
-                ...g,
-                customFields,
-                reminderSent: true,
-                reminderSentChannel: usedChannel,
-                reminderSentLang: lang || "sw"
-              };
-            } else if (msgType === 'thanks') {
+              if (usedChannel === 'whatsapp') {
+                const currentCount = typeof g.whatsappCount === 'number' ? g.whatsappCount : (g.whatsappStatus === 'Imetumia' ? 1 : 0);
+                customFields.reminderWhatsappStatus = 'Imetumia';
+                return {
+                  ...g,
+                  customFields,
+                  reminderSent: true,
+                  reminderSentChannel: usedChannel,
+                  reminderSentLang: lang || "sw",
+                  reminderWhatsappStatus: 'Imetumia',
+                  whatsappCount: currentCount + 1,
+                  lastSentChannel: 'whatsapp',
+                  lastSentLang: lang || "sw"
+                };
+              } else {
+                const currentCount = typeof g.smsCount === 'number' ? g.smsCount : (g.smsStatus === 'Imetumia' ? 1 : 0);
+                customFields.reminderSmsStatus = 'Imetumia';
+                return {
+                  ...g,
+                  customFields,
+                  reminderSent: true,
+                  reminderSentChannel: usedChannel,
+                  reminderSentLang: lang || "sw",
+                  reminderSmsStatus: 'Imetumia',
+                  smsCount: currentCount + 1,
+                  lastSentChannel: 'sms',
+                  lastSentLang: lang || "sw"
+                };
+              }
+            } else if (activeMsgType === 'thanks' || activeMsgType === 'thank-you') {
               customFields.thanks_sent_channel = usedChannel;
               customFields.thanks_sent_lang = lang || "sw";
-              return {
-                ...g,
-                customFields,
-                thanksSent: true,
-                thanksSentChannel: usedChannel,
-                thanksSentLang: lang || "sw"
-              };
+              if (usedChannel === 'whatsapp') {
+                const currentCount = typeof g.whatsappCount === 'number' ? g.whatsappCount : (g.whatsappStatus === 'Imetumia' ? 1 : 0);
+                customFields.thankYouWhatsappStatus = 'Imetumia';
+                return {
+                  ...g,
+                  customFields,
+                  thanksSent: true,
+                  thanksSentChannel: usedChannel,
+                  thanksSentLang: lang || "sw",
+                  thankYouWhatsappStatus: 'Imetumia',
+                  whatsappCount: currentCount + 1,
+                  lastSentChannel: 'whatsapp',
+                  lastSentLang: lang || "sw"
+                };
+              } else {
+                const currentCount = typeof g.smsCount === 'number' ? g.smsCount : (g.smsStatus === 'Imetumia' ? 1 : 0);
+                customFields.thankYouSmsStatus = 'Imetumia';
+                return {
+                  ...g,
+                  customFields,
+                  thanksSent: true,
+                  thanksSentChannel: usedChannel,
+                  thanksSentLang: lang || "sw",
+                  thankYouSmsStatus: 'Imetumia',
+                  smsCount: currentCount + 1,
+                  lastSentChannel: 'sms',
+                  lastSentLang: lang || "sw"
+                };
+              }
             } else {
               // Default to invitation
               customFields.invite_sent_channel = usedChannel;
               customFields.invite_sent_lang = lang || "sw";
               if (usedChannel === 'whatsapp') {
                 const currentCount = typeof g.whatsappCount === 'number' ? g.whatsappCount : (g.whatsappStatus === 'Imetumia' ? 1 : 0);
+                customFields.invitationWhatsappStatus = 'Imetumia';
                 return { 
                   ...g, 
                   customFields,
                   whatsappStatus: "Imetumia",
+                  invitationWhatsappStatus: "Imetumia",
                   whatsappCount: currentCount + 1,
                   lastSentChannel: "whatsapp",
                   lastSentLang: lang || "sw"
                 };
               } else {
                 const currentCount = typeof g.smsCount === 'number' ? g.smsCount : (g.smsStatus === 'Imetumia' ? 1 : 0);
+                customFields.invitationSmsStatus = 'Imetumia';
                 return { 
                   ...g, 
                   customFields,
                   smsStatus: "Imetumia",
+                  invitationSmsStatus: "Imetumia",
                   smsCount: currentCount + 1,
                   lastSentChannel: "sms",
                   lastSentLang: lang || "sw"

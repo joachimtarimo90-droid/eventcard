@@ -716,7 +716,7 @@ Thank you - EVENT CARD`;
                 })
                 .then(data => {
                   if (Array.isArray(data)) {
-                    onUpdateGuests(data, "Queue finished", false);
+                    onUpdateGuests(data, "Queue finished", true);
                   }
                 })
                 .catch(err => console.error("Error refreshing guests:", err));
@@ -1321,7 +1321,9 @@ Karibu sana!`);
       if (channel === 'whatsapp') {
         const rawTemplate = messageType === 'thank-you' 
           ? (language === 'en' ? thankYouTemplateEn : thankYouTemplateSw)
-          : (language === 'en' ? invitationTemplateEn : invitationTemplateSw);
+          : (messageType === 'reminder'
+              ? (language === 'en' ? reminderTemplateEn : reminderTemplateSw)
+              : (language === 'en' ? invitationTemplateEn : invitationTemplateSw));
         const currentOrigin = typeof window !== 'undefined' && !window.location.hostname.includes('europe-west2.run.app') && !window.location.hostname.includes('localhost') 
           ? window.location.origin 
           : 'https://eventcard.co.tz';
@@ -1480,7 +1482,9 @@ Karibu sana!`);
           templateParams,
           templateName: metaTemplateName || (messageType === 'thank-you' ? 'asante_kushiriki' : (messageType === 'reminder' ? 'ukumbusho' : 'mwaliko_wa_sherehe')),
           imageUrl: compatibleImageUrl,
-          lang: language
+          lang: language,
+          msgType: messageType,
+          messageType: messageType
         })
       });
       
@@ -1622,7 +1626,9 @@ Karibu sana!`);
       let templateParams: string[] | undefined = undefined;
       const rawTemplate = messageType === 'thank-you' 
         ? (language === 'en' ? thankYouTemplateEn : thankYouTemplateSw)
-        : (language === 'en' ? invitationTemplateEn : invitationTemplateSw);
+        : (messageType === 'reminder'
+            ? (language === 'en' ? reminderTemplateEn : reminderTemplateSw)
+            : (language === 'en' ? invitationTemplateEn : invitationTemplateSw));
       const contacts = [event.contact1, event.contact2, event.contact3].filter(Boolean).join('\n');
 
       const translatePeriod = (p: string | null | undefined, lang: string) => {
@@ -1793,15 +1799,20 @@ Karibu sana!`);
           setSendLogs(prev => [...responseData.logs.slice().reverse(), ...prev]);
         }
 
-        // Fetch fresh guests list to sync status on the UI
-        fetch('/api/guests')
-          .then(r => r.json())
-          .then(data => {
-            if (Array.isArray(data) && onUpdateGuests) {
-              onUpdateGuests(data, "Marekebisho baada ya utumaji wa moja kwa moja", false);
-            }
-          })
-          .catch(err => console.error("Error refreshing guests:", err));
+        // Sync guest list from server's updatedGuests or /api/guests without regressing local state
+        const freshGuests = Array.isArray(responseData.updatedGuests) ? responseData.updatedGuests : null;
+        if (freshGuests && onUpdateGuests) {
+          onUpdateGuests(freshGuests, "Marekebisho baada ya utumaji wa moja kwa moja", true);
+        } else if (onUpdateGuests) {
+          fetch('/api/guests')
+            .then(r => r.json())
+            .then(data => {
+              if (Array.isArray(data)) {
+                onUpdateGuests(data, "Marekebisho baada ya utumaji wa moja kwa moja", true);
+              }
+            })
+            .catch(err => console.error("Error refreshing guests:", err));
+        }
 
         showToast(
           isEn 
