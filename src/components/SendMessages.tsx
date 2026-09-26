@@ -415,11 +415,15 @@ Karibu sana!`;
       safeLocalStorage.setItem(`kadi_message_template_${event.id}_en`, invitationTemplateEn);
       safeLocalStorage.setItem(`kadi_thanks_template_${event.id}_sw`, thankYouTemplateSw);
       safeLocalStorage.setItem(`kadi_thanks_template_${event.id}_en`, thankYouTemplateEn);
+      safeLocalStorage.setItem(`kadi_reminder_template_${event.id}_sw`, reminderTemplateSw);
+      safeLocalStorage.setItem(`kadi_reminder_template_${event.id}_en`, reminderTemplateEn);
     }
     safeLocalStorage.setItem('kadi_message_template_sw', invitationTemplateSw);
     safeLocalStorage.setItem('kadi_message_template_en', invitationTemplateEn);
     safeLocalStorage.setItem('kadi_thanks_template_sw', thankYouTemplateSw);
     safeLocalStorage.setItem('kadi_thanks_template_en', thankYouTemplateEn);
+    safeLocalStorage.setItem('kadi_reminder_template_sw', reminderTemplateSw);
+    safeLocalStorage.setItem('kadi_reminder_template_en', reminderTemplateEn);
 
     // Save to general database state
     if (onUpdateEvent && event) {
@@ -430,7 +434,9 @@ Karibu sana!`;
           invitationTemplateSw,
           invitationTemplateEn,
           generalThanksSw: thankYouTemplateSw,
-          generalThanksEn: thankYouTemplateEn
+          generalThanksEn: thankYouTemplateEn,
+          reminderTemplateSw,
+          reminderTemplateEn
         }
       });
     }
@@ -517,6 +523,40 @@ Thank you very much and God bless you!
 Planning a Wedding, Sendoff, or Event? Get modern digital QR Code cards, contribution reminder system, and bulk SMS services at very affordable rates!
 Call / WhatsApp: 0653578184`;
 
+  const defaultReminderSwText = `Habari ndugu {name},
+
+Tunapenda kukukumbusha kuhusu kuhudhuria katika {event_name} itakayofanyika LEO tarehe {date}.
+
+Tafadhali usisahau kadi yako ya mwaliko! Ukipata changamoto yoyote kuhusu kadi usisite kuwasiliana nasi.
+
+Asante - EVENT CARD`;
+
+  const defaultReminderEnText = `Hello {name},
+
+We would like to remind you to attend {event_name} taking place TODAY on {date}.
+
+Please do not forget your invitation card! If you experience any issues regarding your card, please feel free to contact us.
+
+Thank you - EVENT CARD`;
+
+  const [reminderTemplateSw, setReminderTemplateSw] = useState<string>(() => {
+    const fromEvent = event?.smsTemplates?.reminderTemplateSw;
+    if (fromEvent) return convertHardcodedNamesToPlaceholders(fromEvent);
+    const key = event?.id ? `kadi_reminder_template_${event.id}_sw` : 'kadi_reminder_template_sw';
+    const saved = safeLocalStorage.getItem(key);
+    if (saved) return convertHardcodedNamesToPlaceholders(saved);
+    return defaultReminderSwText;
+  });
+
+  const [reminderTemplateEn, setReminderTemplateEn] = useState<string>(() => {
+    const fromEvent = event?.smsTemplates?.reminderTemplateEn;
+    if (fromEvent) return convertHardcodedNamesToPlaceholders(fromEvent);
+    const key = event?.id ? `kadi_reminder_template_${event.id}_en` : 'kadi_reminder_template_en';
+    const saved = safeLocalStorage.getItem(key);
+    if (saved) return convertHardcodedNamesToPlaceholders(saved);
+    return defaultReminderEnText;
+  });
+
   const [thankYouTemplateSw, setThankYouTemplateSw] = useState<string>(() => {
     if (event?.smsTemplates?.generalThanksSw && !isOldThankYouSw(event.smsTemplates.generalThanksSw)) {
       return convertHardcodedNamesToPlaceholders(event.smsTemplates.generalThanksSw);
@@ -567,8 +607,19 @@ Call / WhatsApp: 0653578184`;
     safeLocalStorage.setItem('kadi_thanks_template_en', thankYouTemplateEn);
   }, [thankYouTemplateEn, event?.id]);
 
+  useEffect(() => {
+    if (event?.id) {
+      safeLocalStorage.setItem(`kadi_reminder_template_${event.id}_sw`, reminderTemplateSw);
+      safeLocalStorage.setItem(`kadi_reminder_template_${event.id}_en`, reminderTemplateEn);
+    }
+    safeLocalStorage.setItem('kadi_reminder_template_sw', reminderTemplateSw);
+    safeLocalStorage.setItem('kadi_reminder_template_en', reminderTemplateEn);
+  }, [reminderTemplateSw, reminderTemplateEn, event?.id]);
+
   const activeTemplateValue = messageType === 'thank-you' 
     ? (language === 'en' ? thankYouTemplateEn : thankYouTemplateSw)
+    : messageType === 'reminder'
+    ? (language === 'en' ? reminderTemplateEn : reminderTemplateSw)
     : (language === 'en' ? invitationTemplateEn : invitationTemplateSw);
     
   const setActiveTemplateValue = (val: string) => {
@@ -579,6 +630,12 @@ Call / WhatsApp: 0653578184`;
         setThankYouTemplateEn(cleanVal);
       } else {
         setThankYouTemplateSw(cleanVal);
+      }
+    } else if (messageType === 'reminder') {
+      if (language === 'en') {
+        setReminderTemplateEn(cleanVal);
+      } else {
+        setReminderTemplateSw(cleanVal);
       }
     } else {
       if (language === 'en') {
@@ -745,6 +802,12 @@ Asante sana na Mungu akubariki!
 Unatayarisha Harusi, Sendoff au Sherehe? Pata kadi za kisasa za kidijitali za QR Code, mfumo wa kukumbusha michango na kutuma SMS za mialiko kwa bei nafuu kabisa!
 Piga / WhatsApp: 0653578184`);
       }
+    } else if (messageType === 'reminder') {
+      if (language === 'en') {
+        setReminderTemplateEn(defaultReminderEnText);
+      } else {
+        setReminderTemplateSw(defaultReminderSwText);
+      }
     } else {
       if (language === 'en') {
         setInvitationTemplateEn(`Hello {name},
@@ -789,24 +852,93 @@ Karibu sana!`);
   // Get unique categories list dynamically for edit select category input dropdown
   const availableCategories = Array.from(new Set(guests.map(g => g.cardType).filter(Boolean)));
 
+  // Get delivery status for guest based on active messageType
+  const getGuestSmsStatus = (g: Guest): 'Sijatuma' | 'Inatuma' | 'Imetumia' => {
+    if (messageType === 'reminder') {
+      return g.reminderSmsStatus || 'Sijatuma';
+    }
+    if (messageType === 'thank-you') {
+      return g.thankYouSmsStatus || 'Sijatuma';
+    }
+    if (isStatusSent(g.invitationSmsStatus) || isStatusSent(g.smsStatus)) return 'Imetumia';
+    if (g.invitationSmsStatus === 'Inatuma' || g.smsStatus === 'Inatuma') return 'Inatuma';
+    return 'Sijatuma';
+  };
+
+  const getGuestWhatsappStatus = (g: Guest): 'Sijatuma' | 'Inatuma' | 'Imetumia' => {
+    if (messageType === 'reminder') {
+      return g.reminderWhatsappStatus || 'Sijatuma';
+    }
+    if (messageType === 'thank-you') {
+      return g.thankYouWhatsappStatus || 'Sijatuma';
+    }
+    if (isStatusSent(g.invitationWhatsappStatus) || isStatusSent(g.whatsappStatus)) return 'Imetumia';
+    if (g.invitationWhatsappStatus === 'Inatuma' || g.whatsappStatus === 'Inatuma') return 'Inatuma';
+    return 'Sijatuma';
+  };
+
+  const handleToggleSingleStatus = (guestId: string, channel: 'sms' | 'whatsapp') => {
+    const updated = guests.map(g => {
+      if (g.id === guestId) {
+        if (channel === 'sms') {
+          const cur = getGuestSmsStatus(g);
+          const next = isStatusSent(cur) ? 'Sijatuma' : 'Imetumia';
+          if (messageType === 'reminder') {
+            return { ...g, reminderSmsStatus: next as any };
+          } else if (messageType === 'thank-you') {
+            return { ...g, thankYouSmsStatus: next as any };
+          } else {
+            return { ...g, smsStatus: next as any, invitationSmsStatus: next as any };
+          }
+        } else {
+          const cur = getGuestWhatsappStatus(g);
+          const next = isStatusSent(cur) ? 'Sijatuma' : 'Imetumia';
+          if (messageType === 'reminder') {
+            return { ...g, reminderWhatsappStatus: next as any };
+          } else if (messageType === 'thank-you') {
+            return { ...g, thankYouWhatsappStatus: next as any };
+          } else {
+            return { ...g, whatsappStatus: next as any, invitationWhatsappStatus: next as any };
+          }
+        }
+      }
+      return g;
+    });
+    onUpdateGuests(updated);
+  };
+
   const handleResetSingleGuest = (guestId: string, channel: 'sms' | 'whatsapp' | 'all' = 'all') => {
     const target = guests.find(g => g.id === guestId);
     const label = channel === 'sms' ? 'SMS' : channel === 'whatsapp' ? 'WhatsApp' : 'SMS na WhatsApp';
     const updated = guests.map(g => {
       if (g.id === guestId) {
-        return {
-          ...g,
-          ...(channel === 'sms' || channel === 'all' ? { smsStatus: 'Sijatuma' as const, smsCount: 0 } : {}),
-          ...(channel === 'whatsapp' || channel === 'all' ? { whatsappStatus: 'Sijatuma' as const, whatsappCount: 0 } : {})
-        };
+        if (messageType === 'reminder') {
+          return {
+            ...g,
+            ...(channel === 'sms' || channel === 'all' ? { reminderSmsStatus: 'Sijatuma' as const } : {}),
+            ...(channel === 'whatsapp' || channel === 'all' ? { reminderWhatsappStatus: 'Sijatuma' as const } : {})
+          };
+        } else if (messageType === 'thank-you') {
+          return {
+            ...g,
+            ...(channel === 'sms' || channel === 'all' ? { thankYouSmsStatus: 'Sijatuma' as const } : {}),
+            ...(channel === 'whatsapp' || channel === 'all' ? { thankYouWhatsappStatus: 'Sijatuma' as const } : {})
+          };
+        } else {
+          return {
+            ...g,
+            ...(channel === 'sms' || channel === 'all' ? { smsStatus: 'Sijatuma' as const, invitationSmsStatus: 'Sijatuma' as const } : {}),
+            ...(channel === 'whatsapp' || channel === 'all' ? { whatsappStatus: 'Sijatuma' as const, invitationWhatsappStatus: 'Sijatuma' as const } : {})
+          };
+        }
       }
       return g;
     });
-    onUpdateGuests(updated, `Amefuta hali ya ${label} kwa mgeni: ${target?.name || guestId}`);
+    onUpdateGuests(updated, `Amefuta hali ya ${label} (${messageType}) kwa mgeni: ${target?.name || guestId}`);
     
     if (target) {
       setSendLogs(prev => [
-        `[${new Date().toLocaleTimeString()}] ↺ Hali ya ${label} imefutwa (Reset) kwa: ${target.name}`,
+        `[${new Date().toLocaleTimeString()}] ↺ Hali ya ${label} imefutwa (${messageType}) kwa: ${target.name}`,
         ...prev
       ]);
     }
@@ -858,13 +990,16 @@ Karibu sana!`);
         }
 
         // Status filter
-        if (statusFilter === 'pending-sms' && isStatusSent(g.smsStatus)) {
+        const currentSmsStatus = getGuestSmsStatus(g);
+        const currentWaStatus = getGuestWhatsappStatus(g);
+
+        if (statusFilter === 'pending-sms' && isStatusSent(currentSmsStatus)) {
           return false;
         }
-        if (statusFilter === 'pending-wa' && isStatusSent(g.whatsappStatus)) {
+        if (statusFilter === 'pending-wa' && isStatusSent(currentWaStatus)) {
           return false;
         }
-        if (statusFilter === 'sent' && !isStatusSent(g.smsStatus) && !isStatusSent(g.whatsappStatus)) {
+        if (statusFilter === 'sent' && !isStatusSent(currentSmsStatus) && !isStatusSent(currentWaStatus)) {
           return false;
         }
         if (statusFilter === 'wa-only' && g.hasWhatsApp !== true) {
@@ -894,11 +1029,11 @@ Karibu sana!`);
 
   // Status Metrics - Memoized
   const { countSmsSent, countWhatsappSent, countPending } = React.useMemo(() => {
-    const sms = filteredGuests.filter(g => isStatusSent(g.smsStatus)).length;
-    const wa = filteredGuests.filter(g => isStatusSent(g.whatsappStatus)).length;
-    const pending = filteredGuests.filter(g => !isStatusSent(g.smsStatus) || !isStatusSent(g.whatsappStatus)).length;
+    const sms = filteredGuests.filter(g => isStatusSent(getGuestSmsStatus(g))).length;
+    const wa = filteredGuests.filter(g => isStatusSent(getGuestWhatsappStatus(g))).length;
+    const pending = filteredGuests.filter(g => !isStatusSent(getGuestSmsStatus(g)) || !isStatusSent(getGuestWhatsappStatus(g))).length;
     return { countSmsSent: sms, countWhatsappSent: wa, countPending: pending };
-  }, [filteredGuests]);
+  }, [filteredGuests, messageType]);
 
   const getGuestMessageText = (g: Guest, isSms: boolean = false, forceAppendLink: boolean = false) => {
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://eventcard.co.tz';
@@ -906,6 +1041,8 @@ Karibu sana!`);
 
     let text = messageType === 'thank-you' 
       ? (language === 'en' ? thankYouTemplateEn : thankYouTemplateSw)
+      : messageType === 'reminder'
+      ? (language === 'en' ? reminderTemplateEn : reminderTemplateSw)
       : (language === 'en' ? invitationTemplateEn : invitationTemplateSw);
     const contacts = [event.contact1, event.contact2, event.contact3].filter(Boolean).join('\n');
 
@@ -933,6 +1070,10 @@ Karibu sana!`);
       '{guestName}': g.name,
       '{jina_la_mgeni}': g.name,
       '(jina_la_mgeni)': g.name,
+      '(Jina la Mgeni)': g.name,
+      '{Jina la Mgeni}': g.name,
+      '(jina la mgeni)': g.name,
+      '{jina la mgeni}': g.name,
       '{mwenyeji}': resolvedHostName,
       '{hostName}': resolvedHostName,
       '{host_name}': resolvedHostName,
@@ -946,12 +1087,18 @@ Karibu sana!`);
       '{title}': resolvedEventName,
       '{tukio}': resolvedEventName,
       '{Tukio}': resolvedEventName,
+      '(JINA LA SHEREHE)': resolvedEventName,
+      '{JINA LA SHEREHE}': resolvedEventName,
+      '(jina la sherehe)': resolvedEventName,
+      '{jina la sherehe}': resolvedEventName,
       '{{3}}': resolvedEventName,
       '{3}': resolvedEventName,
       '{{event_name}}': resolvedEventName,
       '{tarehe}': event.date || "26/11/2026",
       '{date}': event.date || "26/11/2026",
       '{eventDate}': event.date || "26/11/2026",
+      '(tarehe ya siku ya sherehe)': event.date || "26/11/2026",
+      '{tarehe ya siku ya sherehe}': event.date || "26/11/2026",
       '{{4}}': event.date || "26/11/2026",
       '{4}': event.date || "26/11/2026",
       '{{date}}': event.date || "26/11/2026",
@@ -1356,17 +1503,45 @@ Karibu sana!`);
       const updated = guests.map(g => {
         if (g.id === guestId) {
           const actualChannel = data.usedChannel || channel;
-          const currentSmsCount = typeof g.smsCount === 'number' ? g.smsCount : (isStatusSent(g.smsStatus) ? 1 : 0);
-          const currentWhatsappCount = typeof g.whatsappCount === 'number' ? g.whatsappCount : (isStatusSent(g.whatsappStatus) ? 1 : 0);
-          return {
-            ...g,
-            smsStatus: actualChannel === 'sms' ? 'Imetumia' as const : g.smsStatus,
-            whatsappStatus: actualChannel === 'whatsapp' ? 'Imetumia' as const : g.whatsappStatus,
-            smsCount: actualChannel === 'sms' ? currentSmsCount + 1 : currentSmsCount,
-            whatsappCount: actualChannel === 'whatsapp' ? currentWhatsappCount + 1 : currentWhatsappCount,
-            lastSentChannel: actualChannel,
-            lastSentLang: language
-          };
+          const currentSmsCount = typeof g.smsCount === 'number' ? g.smsCount : (isStatusSent(getGuestSmsStatus(g)) ? 1 : 0);
+          const currentWhatsappCount = typeof g.whatsappCount === 'number' ? g.whatsappCount : (isStatusSent(getGuestWhatsappStatus(g)) ? 1 : 0);
+
+          const isSmsSent = actualChannel === 'sms';
+          const isWaSent = actualChannel === 'whatsapp';
+
+          if (messageType === 'reminder') {
+            return {
+              ...g,
+              reminderSmsStatus: isSmsSent ? ('Imetumia' as const) : (g.reminderSmsStatus || 'Sijatuma'),
+              reminderWhatsappStatus: isWaSent ? ('Imetumia' as const) : (g.reminderWhatsappStatus || 'Sijatuma'),
+              smsCount: isSmsSent ? currentSmsCount + 1 : currentSmsCount,
+              whatsappCount: isWaSent ? currentWhatsappCount + 1 : currentWhatsappCount,
+              lastSentChannel: actualChannel,
+              lastSentLang: language
+            };
+          } else if (messageType === 'thank-you') {
+            return {
+              ...g,
+              thankYouSmsStatus: isSmsSent ? ('Imetumia' as const) : (g.thankYouSmsStatus || 'Sijatuma'),
+              thankYouWhatsappStatus: isWaSent ? ('Imetumia' as const) : (g.thankYouWhatsappStatus || 'Sijatuma'),
+              smsCount: isSmsSent ? currentSmsCount + 1 : currentSmsCount,
+              whatsappCount: isWaSent ? currentWhatsappCount + 1 : currentWhatsappCount,
+              lastSentChannel: actualChannel,
+              lastSentLang: language
+            };
+          } else {
+            return {
+              ...g,
+              smsStatus: isSmsSent ? ('Imetumia' as const) : g.smsStatus,
+              whatsappStatus: isWaSent ? ('Imetumia' as const) : g.whatsappStatus,
+              invitationSmsStatus: isSmsSent ? ('Imetumia' as const) : (g.invitationSmsStatus || g.smsStatus),
+              invitationWhatsappStatus: isWaSent ? ('Imetumia' as const) : (g.invitationWhatsappStatus || g.whatsappStatus),
+              smsCount: isSmsSent ? currentSmsCount + 1 : currentSmsCount,
+              whatsappCount: isWaSent ? currentWhatsappCount + 1 : currentWhatsappCount,
+              lastSentChannel: actualChannel,
+              lastSentLang: language
+            };
+          }
         }
         return g;
       });
@@ -1689,9 +1864,9 @@ Karibu sana!`);
 
     const pendingGuests = filteredGuests.filter(g => {
       if (channel === 'whatsapp') {
-        return !isStatusSent(g.whatsappStatus);
+        return !isStatusSent(getGuestWhatsappStatus(g));
       } else {
-        return !isStatusSent(g.smsStatus);
+        return !isStatusSent(getGuestSmsStatus(g));
       }
     });
     
@@ -1707,15 +1882,15 @@ Karibu sana!`);
 
     const confirmMsg = isResendingAll
       ? (isEn
-          ? `All ${targetGuests.length} guests in this list show messages already sent. Do you want to resend ${channel.toUpperCase()} messages to ALL ${targetGuests.length} guests again?`
-          : `Wageni wote ${targetGuests.length} walio kwenye orodha hii wanaonyesha wameshatumiwa ujumbe tayari. Je, unataka kuwatumia tena ujumbe wa ${channel.toUpperCase()} wageni wote ${targetGuests.length}?`)
+          ? `All ${targetGuests.length} guests in this list show messages already sent for this category. Do you want to resend ${channel.toUpperCase()} messages to ALL ${targetGuests.length} guests again?`
+          : `Wageni wote ${targetGuests.length} walio kwenye orodha hii wanaonyesha wameshatumiwa ujumbe wa kundi hili (${messageType}) tayari. Je, unataka kuwatumia tena ujumbe wa ${channel.toUpperCase()} wageni wote ${targetGuests.length}?`)
       : (isEn
-          ? `Are you sure you want to dispatch invitations to ${targetGuests.length} guests via ${channel.toUpperCase()}${formattedScheduleTime ? ' scheduled for ' + formattedScheduleTime : ''}?`
-          : `Je, una uhakika unataka kutuma mialiko ya kibinafsi kwa wageni ${targetGuests.length} kupitia ${channel.toUpperCase()}${formattedScheduleTime ? ' kwa muda ' + formattedScheduleTime : ''}?`);
+          ? `Are you sure you want to dispatch ${messageType} messages to ${targetGuests.length} guests via ${channel.toUpperCase()}${formattedScheduleTime ? ' scheduled for ' + formattedScheduleTime : ''}?`
+          : `Je, una uhakika unataka kutuma mialiko/meseji za ${messageType} kwa wageni ${targetGuests.length} kupitia ${channel.toUpperCase()}${formattedScheduleTime ? ' kwa muda ' + formattedScheduleTime : ''}?`);
 
     setConfirmModalConfig({
       isOpen: true,
-      title: isEn ? `Dispatch ${channel.toUpperCase()} Messages` : `Tuma Mialiko ya ${channel.toUpperCase()}`,
+      title: isEn ? `Dispatch ${channel.toUpperCase()} Messages` : `Tuma Meseji za ${channel.toUpperCase()}`,
       message: confirmMsg,
       confirmText: isEn ? "Yes, Send Now" : "Ndiyo, Tuma Sasa",
       previewText: targetGuests[0] ? getGuestMessageText(targetGuests[0], channel === 'sms', channel === 'whatsapp' || sendSmsLink) : undefined,
@@ -1736,17 +1911,19 @@ Karibu sana!`);
     const targetIds = new Set(listToReset.map(g => g.id));
     const reset = guests.map(g => {
       if (targetIds.has(g.id)) {
-        return {
-          ...g,
-          smsStatus: 'Sijatuma' as const,
-          smsCount: 0
-        };
+        if (messageType === 'reminder') {
+          return { ...g, reminderSmsStatus: 'Sijatuma' as const };
+        } else if (messageType === 'thank-you') {
+          return { ...g, thankYouSmsStatus: 'Sijatuma' as const };
+        } else {
+          return { ...g, smsStatus: 'Sijatuma' as const, invitationSmsStatus: 'Sijatuma' as const, smsCount: 0 };
+        }
       }
       return g;
     });
     
-    onUpdateGuests(reset, `Amefuta hali ya SMS pekee kwa wageni ${listToReset.length}`);
-    setSendLogs(prev => [`[${new Date().toLocaleTimeString()}] ↺ Hali ya SMS pekee imefutwa (Reset SMS Status) kwa wageni ${listToReset.length}`, ...prev]);
+    onUpdateGuests(reset, `Amefuta hali ya SMS (${messageType}) kwa wageni ${listToReset.length}`);
+    setSendLogs(prev => [`[${new Date().toLocaleTimeString()}] ↺ Hali ya SMS imefutwa (${messageType}) kwa wageni ${listToReset.length}`, ...prev]);
     
     showToast(
       isEn 
@@ -1766,17 +1943,19 @@ Karibu sana!`);
     const targetIds = new Set(listToReset.map(g => g.id));
     const reset = guests.map(g => {
       if (targetIds.has(g.id)) {
-        return {
-          ...g,
-          whatsappStatus: 'Sijatuma' as const,
-          whatsappCount: 0
-        };
+        if (messageType === 'reminder') {
+          return { ...g, reminderWhatsappStatus: 'Sijatuma' as const };
+        } else if (messageType === 'thank-you') {
+          return { ...g, thankYouWhatsappStatus: 'Sijatuma' as const };
+        } else {
+          return { ...g, whatsappStatus: 'Sijatuma' as const, invitationWhatsappStatus: 'Sijatuma' as const, whatsappCount: 0 };
+        }
       }
       return g;
     });
     
-    onUpdateGuests(reset, `Amefuta hali ya WhatsApp pekee kwa wageni ${listToReset.length}`);
-    setSendLogs(prev => [`[${new Date().toLocaleTimeString()}] ↺ Hali ya WhatsApp pekee imefutwa (Reset WA Status) kwa wageni ${listToReset.length}`, ...prev]);
+    onUpdateGuests(reset, `Amefuta hali ya WhatsApp (${messageType}) kwa wageni ${listToReset.length}`);
+    setSendLogs(prev => [`[${new Date().toLocaleTimeString()}] ↺ Hali ya WhatsApp imefutwa (${messageType}) kwa wageni ${listToReset.length}`, ...prev]);
     
     showToast(
       isEn 
@@ -1796,18 +1975,26 @@ Karibu sana!`);
     const targetIds = new Set(listToReset.map(g => g.id));
     const reset = guests.map(g => {
       if (targetIds.has(g.id)) {
-        return {
-          ...g,
-          smsStatus: 'Sijatuma' as const,
-          whatsappStatus: 'Sijatuma' as const,
-          smsCount: 0,
-          whatsappCount: 0
-        };
+        if (messageType === 'reminder') {
+          return { ...g, reminderSmsStatus: 'Sijatuma' as const, reminderWhatsappStatus: 'Sijatuma' as const };
+        } else if (messageType === 'thank-you') {
+          return { ...g, thankYouSmsStatus: 'Sijatuma' as const, thankYouWhatsappStatus: 'Sijatuma' as const };
+        } else {
+          return {
+            ...g,
+            smsStatus: 'Sijatuma' as const,
+            whatsappStatus: 'Sijatuma' as const,
+            invitationSmsStatus: 'Sijatuma' as const,
+            invitationWhatsappStatus: 'Sijatuma' as const,
+            smsCount: 0,
+            whatsappCount: 0
+          };
+        }
       }
       return g;
     });
     
-    onUpdateGuests(reset, `Amefuta hali zote za SMS na WhatsApp kwa wageni ${listToReset.length}`);
+    onUpdateGuests(reset, `Amefuta hali zote za SMS na WhatsApp (${messageType}) kwa wageni ${listToReset.length}`);
     setSendLogs([]);
     setSendingProgress(0);
     
@@ -1820,17 +2007,16 @@ Karibu sana!`);
   };
 
   const renderDeliveryIndicator = (g: Guest) => {
-    // Collect what has been successfully delivered
+    // Collect what has been successfully delivered for active messageType
     const deliveries: { channel: 'whatsapp' | 'sms'; lang: string }[] = [];
 
-    // Check both channels independently using central isStatusSent helper so we support all success statuses (sent, delivered, success, imetumia, etc.)
-    if (isStatusSent(g.whatsappStatus)) {
+    if (isStatusSent(getGuestWhatsappStatus(g))) {
       deliveries.push({
         channel: 'whatsapp',
         lang: g.lastSentLang || language || 'sw'
       });
     }
-    if (isStatusSent(g.smsStatus)) {
+    if (isStatusSent(getGuestSmsStatus(g))) {
       deliveries.push({
         channel: 'sms',
         lang: g.lastSentLang || language || 'sw'
@@ -2045,6 +2231,7 @@ Karibu sana!`);
         <div className="flex items-center space-x-2">
           {[
             { id: 'invitation', label: language === 'en' ? 'Invitations' : 'Mialiko' },
+            { id: 'reminder', label: language === 'en' ? 'Day of Event Reminder' : 'Ukumbusho (Siku ya Sherehe)' },
             { id: 'thank-you', label: language === 'en' ? 'Thank You' : 'Shukrani' }
           ].map(tab => (
             <button
@@ -2324,11 +2511,15 @@ Karibu sana!`);
               <h3 className="text-sm font-bold text-white">
                 {messageType === 'thank-you' 
                   ? 'Hariri Muundo wa Shukrani (Edit Thank You Template)' 
+                  : messageType === 'reminder'
+                  ? 'Hariri Ukumbusho wa Siku ya Sherehe (Day of Event Reminder)'
                   : 'Hariri Muundo wa Mwaliko (Edit Invitation Template)'}
               </h3>
               <p className="text-[10px] text-slate-400">
                 {messageType === 'thank-you'
                   ? 'Badilisha maandishi ya shukrani yatakayotumwa kwa kila mgeni.'
+                  : messageType === 'reminder'
+                  ? 'Badilisha ujumbe wa kukumbusha wageni siku ya sherehe kutohau kadi zao.'
                   : 'Badilisha maandishi ya mwaliko yatakayotumwa kwa kila mgeni kwa kutumia mifano ya mabano dynamic.'}
               </p>
             </div>
@@ -2399,25 +2590,55 @@ Karibu sana!`);
                   Weka Upya Ujumbe Huu
                 </button>
               </div>
+            ) : messageType === 'reminder' ? (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 text-amber-300">
+                  <Clock className="w-4 h-4 shrink-0 text-amber-400" />
+                  <span className="font-semibold text-[11.5px]">SMS ya Ukumbusho Siku ya Sherehe (Event Day Reminder)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const exactUserSms = `Habari ndugu {name},
+
+Tunapenda kukukumbusha kuhusu kuhudhuria katika {event_name} itakayofanyika LEO tarehe {date}. Tafadhali usisahau kadi yako ya mwaliko! Ukipata changamoto yoyote kuhusu kadi usisite kuwasiliana nasi.
+
+Asante - EVENT CARD`;
+                    setReminderTemplateSw(exactUserSms);
+                    setReminderTemplateEn(exactUserSms);
+                    safeLocalStorage.setItem('kadi_reminder_template_sw', exactUserSms);
+                    safeLocalStorage.setItem('kadi_reminder_template_en', exactUserSms);
+                    if (event?.id) {
+                      safeLocalStorage.setItem(`kadi_reminder_template_${event.id}_sw`, exactUserSms);
+                      safeLocalStorage.setItem(`kadi_reminder_template_${event.id}_en`, exactUserSms);
+                    }
+                    setTemplateSavedSuccess(true);
+                    setTimeout(() => setTemplateSavedSuccess(false), 2000);
+                  }}
+                  className="text-[10px] px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition shrink-0 cursor-pointer shadow-sm"
+                >
+                  Weka Ujumbe Huu Rasmi
+                </button>
+              </div>
             ) : (
               <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
                 <div className="flex items-center gap-2 text-blue-300">
                   <MessageSquare className="w-4 h-4 shrink-0 text-blue-400" />
-                  <span className="text-[11px]">Ujumbe wa Shukrani umehifadhiwa (Unajaza majina ya tukio kiotomatiki).</span>
+                  <span className="text-[11px]">Ujumbe wa Mwaliko unajaza majina na taarifa za tukio kiotomatiki.</span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setMessageType('thank-you')}
+                  onClick={() => setMessageType('reminder')}
                   className="text-[10px] px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition shrink-0 cursor-pointer"
                 >
-                  Badili kwenda Tab ya Shukrani →
+                  Badili kwenda Ukumbusho →
                 </button>
               </div>
             )}
 
             <div className="flex flex-wrap justify-between items-center gap-2">
               <label htmlFor="message-template-textarea" className="text-[10px] uppercase font-mono tracking-wider font-bold text-slate-400">
-                {messageType === 'thank-you' ? 'Ujumbe wa Shukrani (Andika hapa)' : 'Ujumbe wa Mwaliko (Andika hapa)'}
+                {messageType === 'thank-you' ? 'Ujumbe wa Shukrani (Andika hapa)' : messageType === 'reminder' ? 'Ujumbe wa Ukumbusho Siku ya Sherehe (Andika hapa)' : 'Ujumbe wa Mwaliko (Andika hapa)'}
               </label>
               <div className="flex items-center gap-2">
                 <button
@@ -2903,152 +3124,175 @@ Karibu sana!`);
                     </td>
                   </tr>
                 ) : (
-                  filteredGuests.map((guest) => (
-                    <tr key={guest.id} className="hover:bg-white/5 transition border-b border-white/5">
-                      <td className="px-5 py-4 font-bold text-white">
-                        <div>{guest.name}</div>
-                        {renderDeliveryIndicator(guest)}
-                      </td>
-                      <td className="px-5 py-4 font-mono text-slate-300">
-                        <div>{guest.phone}</div>
-                        {guest.hasWhatsApp === true ? (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 mt-1 rounded text-[8px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-sans">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                            <span>WhatsApp</span>
-                          </span>
-                        ) : guest.hasWhatsApp === false ? (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 mt-1 rounded text-[8px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 font-sans">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                            <span>SMS Only</span>
-                          </span>
-                        ) : null}
-                      </td>
-                      
-                      {/* RSVP STATUS */}
-                      <td className="px-5 py-3 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
-                          guest.rsvpStatus === 'Atahudhuria' 
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                            : guest.rsvpStatus === 'Hatahudhuria'
-                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                              : 'bg-white/5 text-slate-400 border-white/10'
-                        }`}>
-                          {guest.rsvpStatus}
-                        </span>
-                      </td>
+                  filteredGuests.map((guest) => {
+                    const smsStatus = getGuestSmsStatus(guest);
+                    const waStatus = getGuestWhatsappStatus(guest);
+                    const isSmsSent = isStatusSent(smsStatus);
+                    const isWaSent = isStatusSent(waStatus);
 
-                      {/* SMS STATUS BADGE */}
-                      <td className="px-5 py-3 text-center">
-                        <div className="flex flex-col items-center gap-1">
+                    return (
+                      <tr key={guest.id} className="hover:bg-white/5 transition border-b border-white/5">
+                        <td className="px-5 py-4 font-bold text-white">
+                          <div>{guest.name}</div>
+                          {renderDeliveryIndicator(guest)}
+                        </td>
+                        <td className="px-5 py-4 font-mono text-slate-300">
+                          <div>{guest.phone}</div>
+                          {guest.hasWhatsApp === true ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 mt-1 rounded text-[8px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-sans">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              <span>WhatsApp</span>
+                            </span>
+                          ) : guest.hasWhatsApp === false ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 mt-1 rounded text-[8px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 font-sans">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                              <span>SMS Only</span>
+                            </span>
+                          ) : null}
+                        </td>
+                        
+                        {/* RSVP STATUS */}
+                        <td className="px-5 py-3 text-center">
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
-                            isStatusSent(guest.smsStatus) 
+                            guest.rsvpStatus === 'Atahudhuria' 
                               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                              : 'bg-white/5 text-slate-400 border-white/10'
+                              : guest.rsvpStatus === 'Hatahudhuria'
+                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                : 'bg-white/5 text-slate-400 border-white/10'
                           }`}>
-                            {guest.smsStatus}
+                            {guest.rsvpStatus}
                           </span>
-                          {isStatusSent(guest.smsStatus) && (
-                            <span className="text-[10px] text-slate-400 font-mono font-normal">
-                              {isEn ? "Sent:" : "Zilizotumwa:"} <strong className="text-emerald-400 font-bold">{guest.smsCount || 1}</strong>
-                            </span>
-                          )}
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* WHATSAPP STATUS BADGE */}
-                      <td className="px-5 py-3 text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
-                            isStatusSent(guest.whatsappStatus) 
-                              ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' 
-                              : 'bg-white/5 text-slate-400 border-white/10'
-                          }`}>
-                            {guest.whatsappStatus}
-                          </span>
-                          {isStatusSent(guest.whatsappStatus) && (
-                            <span className="text-[10px] text-slate-400 font-mono font-normal">
-                              {isEn ? "Sent:" : "Zilizotumwa:"} <strong className="text-blue-400 font-bold">{guest.whatsappCount || 1}</strong>
-                            </span>
-                          )}
-                        </div>
-                      </td>
+                        {/* SMS STATUS BADGE */}
+                        <td className="px-5 py-3 text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSingleStatus(guest.id, 'sms')}
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition cursor-pointer hover:scale-105 ${
+                                isSmsSent 
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20' 
+                                  : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                              }`}
+                              title={isEn ? "Click to toggle SMS status between Sent and Pending" : "Bonyeza hapa kubadilisha hali ya SMS (Imetumia / Sijatuma)"}
+                            >
+                              {smsStatus}
+                            </button>
+                            {isSmsSent && (
+                              <span className="text-[10px] text-slate-400 font-mono font-normal">
+                                {isEn ? "Sent:" : "Zilizotumwa:"} <strong className="text-emerald-400 font-bold">{guest.smsCount || 1}</strong>
+                              </span>
+                            )}
+                          </div>
+                        </td>
 
-                      {/* Actions */}
-                      <td className="px-5 py-3 text-right space-x-1.5 flex justify-end items-center font-bold">
-                        {/* Preview message button */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewModalGuest(guest);
-                            setPreviewModalChannel('sms');
-                          }}
-                          className="p-1 px-2 bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 rounded-lg transition cursor-pointer text-[10px] font-bold flex items-center gap-1"
-                          title={isEn ? `Preview formatted message for ${guest.name}` : `Hakiki muundo wa ujumbe wa ${guest.name} kabla ya kutuma`}
-                        >
-                          <Eye className="w-3 h-3 text-indigo-400" />
-                          <span>{isEn ? "Preview" : "Hakiki"}</span>
-                        </button>
+                        {/* WHATSAPP STATUS BADGE */}
+                        <td className="px-5 py-3 text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSingleStatus(guest.id, 'whatsapp')}
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition cursor-pointer hover:scale-105 ${
+                                isWaSent 
+                                  ? 'bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20' 
+                                  : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                              }`}
+                              title={isEn ? "Click to toggle WhatsApp status between Sent and Pending" : "Bonyeza hapa kubadilisha hali ya WhatsApp (Imetumia / Sijatuma)"}
+                            >
+                              {waStatus}
+                            </button>
+                            {isWaSent && (
+                              <span className="text-[10px] text-slate-400 font-mono font-normal">
+                                {isEn ? "Sent:" : "Zilizotumwa:"} <strong className="text-blue-400 font-bold">{guest.whatsappCount || 1}</strong>
+                              </span>
+                            )}
+                          </div>
+                        </td>
 
-                        {/* Edit information button */}
-                        <button
-                          onClick={() => handleStartEdit(guest)}
-                          className={`p-1 px-2 border transition rounded-lg text-[10px] cursor-pointer ${
-                            editingGuest?.id === guest.id 
-                              ? 'bg-blue-500 text-white border-blue-400' 
-                              : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border-transparent'
-                          }`}
-                          title="Hariri Taarifa za Mgeni"
-                        >
-                          {isEn ? "Edit" : "Hariri (Edit)"}
-                        </button>
-
-                        {/* Reset SMS button */}
-                        {isStatusSent(guest.smsStatus) && (
+                        {/* Actions */}
+                        <td className="px-5 py-3 text-right space-x-1.5 flex justify-end items-center font-bold">
+                          {/* Preview message button */}
                           <button
-                            onClick={() => handleResetSingleGuest(guest.id, 'sms')}
-                            className="p-1 px-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/20 rounded-lg transition cursor-pointer text-[10px] font-bold"
-                            title="Futa Hali ya SMS Pekee"
+                            type="button"
+                            onClick={() => {
+                              setPreviewModalGuest(guest);
+                              setPreviewModalChannel('sms');
+                            }}
+                            className="p-1 px-2 bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 rounded-lg transition cursor-pointer text-[10px] font-bold flex items-center gap-1"
+                            title={isEn ? `Preview formatted message for ${guest.name}` : `Hakiki muundo wa ujumbe wa ${guest.name} kabla ya kutuma`}
                           >
-                            Reset SMS
+                            <Eye className="w-3 h-3 text-indigo-400" />
+                            <span>{isEn ? "Preview" : "Hakiki"}</span>
                           </button>
-                        )}
 
-                        {/* Reset WA button */}
-                        {isStatusSent(guest.whatsappStatus) && (
+                          {/* Edit information button */}
                           <button
-                            onClick={() => handleResetSingleGuest(guest.id, 'whatsapp')}
-                            className="p-1 px-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/20 rounded-lg transition cursor-pointer text-[10px] font-bold"
-                            title="Futa Hali ya WhatsApp Pekee"
+                            onClick={() => handleStartEdit(guest)}
+                            className={`p-1 px-2 border transition rounded-lg text-[10px] cursor-pointer ${
+                              editingGuest?.id === guest.id 
+                                ? 'bg-blue-500 text-white border-blue-400' 
+                                : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border-transparent'
+                            }`}
+                            title="Hariri Taarifa za Mgeni"
                           >
-                            Reset WA
+                            {isEn ? "Edit" : "Hariri (Edit)"}
                           </button>
-                        )}
 
-                        <button
-                          onClick={() => handleSendSingle(guest.id, 'sms')}
-                          disabled={isStatusSent(guest.smsStatus) || isSendingAll}
-                          className={`px-2 py-1.5 border rounded-lg font-bold transition text-[11px] cursor-pointer ${
-                            activeSendTarget?.guest.id === guest.id && activeSendTarget.channel === 'sms'
-                              ? 'bg-emerald-500 text-white border-emerald-400'
-                              : 'bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-emerald-300 border-white/10 disabled:bg-white/5 disabled:text-slate-600 disabled:border-transparent'
-                          }`}
-                        >
-                          SMS
-                        </button>
-                        <button
-                          onClick={() => handleSendSingle(guest.id, 'whatsapp')}
-                          disabled={isStatusSent(guest.whatsappStatus) || isSendingAll}
-                          className={`px-2 py-1.5 border rounded-lg font-bold transition text-[11px] cursor-pointer ${
-                            activeSendTarget?.guest.id === guest.id && activeSendTarget.channel === 'whatsapp'
-                              ? 'bg-blue-500 text-white border-blue-400'
-                              : 'bg-white/5 hover:bg-white/10 text-blue-450 hover:text-blue-305 border-white/10 disabled:bg-white/5 disabled:text-slate-600 disabled:border-transparent'
-                          }`}
-                        >
-                          WA
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                          {/* Reset SMS button */}
+                          {isSmsSent && (
+                            <button
+                              onClick={() => handleResetSingleGuest(guest.id, 'sms')}
+                              className="p-1 px-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/20 rounded-lg transition cursor-pointer text-[10px] font-bold"
+                              title="Futa Hali ya SMS Pekee"
+                            >
+                              Reset SMS
+                            </button>
+                          )}
+
+                          {/* Reset WA button */}
+                          {isWaSent && (
+                            <button
+                              onClick={() => handleResetSingleGuest(guest.id, 'whatsapp')}
+                              className="p-1 px-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/20 rounded-lg transition cursor-pointer text-[10px] font-bold"
+                              title="Futa Hali ya WhatsApp Pekee"
+                            >
+                              Reset WA
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => handleSendSingle(guest.id, 'sms')}
+                            disabled={isSendingAll}
+                            className={`px-2 py-1.5 border rounded-lg font-bold transition text-[11px] cursor-pointer ${
+                              activeSendTarget?.guest.id === guest.id && activeSendTarget.channel === 'sms'
+                                ? 'bg-emerald-500 text-white border-emerald-400'
+                                : isSmsSent
+                                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                : 'bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-emerald-300 border-white/10 disabled:bg-white/5 disabled:text-slate-600 disabled:border-transparent'
+                            }`}
+                            title={isSmsSent ? "Tuma tena SMS kwa mgeni huyu" : "Tuma SMS kwa mgeni huyu"}
+                          >
+                            {isSmsSent ? "SMS ↺" : "SMS"}
+                          </button>
+                          <button
+                            onClick={() => handleSendSingle(guest.id, 'whatsapp')}
+                            disabled={isSendingAll}
+                            className={`px-2 py-1.5 border rounded-lg font-bold transition text-[11px] cursor-pointer ${
+                              activeSendTarget?.guest.id === guest.id && activeSendTarget.channel === 'whatsapp'
+                                ? 'bg-blue-500 text-white border-blue-400'
+                                : isWaSent
+                                ? 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border-blue-500/30'
+                                : 'bg-white/5 hover:bg-white/10 text-blue-450 hover:text-blue-305 border-white/10 disabled:bg-white/5 disabled:text-slate-600 disabled:border-transparent'
+                            }`}
+                            title={isWaSent ? "Tuma tena WhatsApp kwa mgeni huyu" : "Tuma WhatsApp kwa mgeni huyu"}
+                          >
+                            {isWaSent ? "WA ↺" : "WA"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

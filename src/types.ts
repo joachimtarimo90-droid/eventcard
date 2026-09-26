@@ -43,6 +43,8 @@ export interface EventDetails {
     contributionEn?: string;
     generalThanksSw?: string;
     generalThanksEn?: string;
+    reminderTemplateSw?: string;
+    reminderTemplateEn?: string;
   } | null;
 
   paymentMethods?: {
@@ -190,6 +192,13 @@ export interface Guest {
   rsvpSeen?: boolean;
 
   // Track module-specific delivery statuses to avoid badge cross-contamination
+  invitationSmsStatus?: 'Sijatuma' | 'Inatuma' | 'Imetumia';
+  invitationWhatsappStatus?: 'Sijatuma' | 'Inatuma' | 'Imetumia';
+  reminderSmsStatus?: 'Sijatuma' | 'Inatuma' | 'Imetumia';
+  reminderWhatsappStatus?: 'Sijatuma' | 'Inatuma' | 'Imetumia';
+  thankYouSmsStatus?: 'Sijatuma' | 'Inatuma' | 'Imetumia';
+  thankYouWhatsappStatus?: 'Sijatuma' | 'Inatuma' | 'Imetumia';
+
   stdSent?: boolean;
   stdSentChannel?: string;
   stdSentLang?: string;
