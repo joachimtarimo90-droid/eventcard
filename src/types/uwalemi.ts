@@ -25,6 +25,7 @@ export interface UwalemiMember {
   nextOfKin: UwalemiNextOfKin;
   notes?: string;
   avatarUrl?: string;
+  suppressLateFeePenalty?: boolean;
 }
 
 export interface UwalemiMonthlyPayment {

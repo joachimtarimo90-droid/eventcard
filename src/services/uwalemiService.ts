@@ -275,6 +275,17 @@ export function autoAccrueLateFeeFines(s: UwalemiState, activeUntickedMonth?: { 
   let changed = false;
 
   s.members.forEach(member => {
+    if (member.suppressLateFeePenalty) {
+      const existingIdx = accruedFines.findIndex(
+        af => (af.memberId === member.id || (member.memberNo && af.memberNo === member.memberNo)) && af.fineType === 'ada_late_fee'
+      );
+      if (existingIdx >= 0) {
+        accruedFines.splice(existingIdx, 1);
+        changed = true;
+      }
+      return;
+    }
+
     const payments = s.monthlyPayments || [];
     let unpaidFromJuneCount = 0;
 
@@ -708,8 +719,8 @@ export function calculateMemberFeeDebt(
     .filter(p => (p.memberId === member.id || (member.memberNo && p.memberNo === member.memberNo)) && classifyFinePaymentType(p, state) === 'ada_late_fee')
     .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
-  // Salio la Faini ya Kuchelewa Ada (Haliwezi kuwa chini ya 0 na HALIONDOKI hadi ilipwe kupitia finePayments)
-  const lateFeePenalty = Math.max(0, totalAssessedLatePenalty - lateFinesPaid);
+  // Salio la Faini ya Kuchelewa Ada
+  const lateFeePenalty = member.suppressLateFeePenalty ? 0 : Math.max(0, totalAssessedLatePenalty - lateFinesPaid);
   const penaltyMonthsCount = lateFeePenalty > 0 ? Math.ceil(lateFeePenalty / 5000) : 0;
 
   const {
@@ -1039,6 +1050,20 @@ ${burialSection}
 ${closingSection}`;
 }
 
+export const UWALEMI_THREE_MONTHS_ALERT_TEMPLATE = `Habari {name},
+
+Uongozi wa UWALEMI unakutaarifu kuwa unadaiwa ada ya jumla ya TZS {feeDebt} ({unpaidMonthsCount} miezi: {unpaidMonths}) pamoja na faini ya TZS {faini}, hivyo jumla ya kiasi chote unachodaiwa (ada + faini) ni TZS {totalDebt}.
+
+ANGALIZO MUHIMU: Kesho tarehe 1 faini itatozwa kwa wanachama wote wanaodaiwa ada zaidi ya miezi mitatu, na kwa wale wenye madeni ya faini ya nyuma ya kuchelewesha ada, faini zao zitaongezeka.
+
+Tafadhali fanya malipo yako mapema leo kuepuka faini za ucheleweshaji na hatua za kikatiba za kuwa nje ya umoja (kusimamishwa uanachama) kwa mujibu wa Katiba ya UWALEMI.
+
+Lipa kupitia: M Koba au 0758 219 298 Eva O Lema
+
+Uongozi wa UWALEMI 
+
+Lema, Nguvu Moja!`;
+
 /**
  * Replaces dynamic variables in a template message for a specific member.
  */
@@ -1055,6 +1080,10 @@ export function formatPersonalizedUwalemiSms(
 
   const breakdownText = debtInfo.breakdown && debtInfo.breakdown.length > 0
     ? debtInfo.breakdown.map(item => `${item.monthName}: TZS ${item.debt.toLocaleString()}`).join(', ')
+    : debtInfo.unpaidMonthsText;
+
+  const cleanMonthsList = debtInfo.breakdown && debtInfo.breakdown.length > 0
+    ? debtInfo.breakdown.map(item => item.monthName).join(', ')
     : debtInfo.unpaidMonthsText;
 
   let finesSummaryText = '';
@@ -1079,10 +1108,25 @@ export function formatPersonalizedUwalemiSms(
 
   return template
     .replace(/{name}/g, debtInfo.memberName)
-    .replace(/{memberNo}/g, debtInfo.memberNo)
+    .replace(/\s*\(\s*{memberNo}\s*\)/g, debtInfo.memberNo ? ` (${debtInfo.memberNo})` : '')
+    .replace(/{memberNo}/g, debtInfo.memberNo || '')
     .replace(/{phone}/g, debtInfo.phone)
     .replace(/{role}/g, debtInfo.role)
+    .replace(/TZS\s*{totalDebt}/gi, `TZS ${debtInfo.totalDebt.toLocaleString()}`)
+    .replace(/TZS\s*{jumlaKuu}/gi, `TZS ${debtInfo.totalDebt.toLocaleString()}`)
+    .replace(/TZS\s*{jumlaDeni}/gi, `TZS ${debtInfo.totalDebt.toLocaleString()}`)
+    .replace(/TZS\s*{kiasiChote}/gi, `TZS ${debtInfo.totalDebt.toLocaleString()}`)
+    .replace(/TZS\s*{kiasi_chote}/gi, `TZS ${debtInfo.totalDebt.toLocaleString()}`)
+    .replace(/TZS\s*{feeDebt}/gi, `TZS ${(debtInfo.feeDebt ?? debtInfo.totalDebt).toLocaleString()}`)
+    .replace(/TZS\s*{ada}/gi, `TZS ${(debtInfo.feeDebt ?? debtInfo.totalDebt).toLocaleString()}`)
+    .replace(/TZS\s*{faini}/gi, `TZS ${(debtInfo.totalFinesDebt ?? 0).toLocaleString()}`)
+    .replace(/TZS\s*{debtAmount}/gi, `TZS ${debtInfo.totalDebt.toLocaleString()}`)
     .replace(/{debtAmount}/g, formattedTotalDebt)
+    .replace(/{totalDebt}/g, formattedTotalDebt)
+    .replace(/{jumlaKuu}/g, formattedTotalDebt)
+    .replace(/{jumlaDeni}/g, formattedTotalDebt)
+    .replace(/{kiasiChote}/g, formattedTotalDebt)
+    .replace(/{kiasi_chote}/g, formattedTotalDebt)
     .replace(/{feeDebt}/g, formattedFeeDebt)
     .replace(/{ada}/g, formattedFeeDebt)
     .replace(/{faini}/g, formattedTotalFines)
@@ -1095,21 +1139,22 @@ export function formatPersonalizedUwalemiSms(
     .replace(/{fainiSummary}/g, finesSummaryText)
     .replace(/{fainiMiezi}/g, `${penaltyMonths} ${penaltyMonths === 1 ? 'mwezi' : 'miezi'}`)
     .replace(/{deni}/g, formattedTotalDebt)
-    .replace(/{jumlaKuu}/g, formattedTotalDebt)
     .replace(/{startMonth}/g, debtInfo.startMonthName || 'Mwezi huu')
     .replace(/{kuanzia}/g, debtInfo.startMonthName || 'Mwezi huu')
     .replace(/{endMonth}/g, debtInfo.endMonthName || 'Mwezi huu')
     .replace(/{hadi}/g, debtInfo.endMonthName || 'Mwezi huu')
-    .replace(/{unpaidMonths}/g, debtInfo.unpaidMonthsText)
-    .replace(/{miezi}/g, debtInfo.unpaidMonthsText)
+    .replace(/{unpaidMonths}/g, cleanMonthsList)
+    .replace(/{miezi}/g, cleanMonthsList)
     .replace(/{mchanganuo}/g, breakdownText)
     .replace(/{breakdown}/g, breakdownText)
+    .replace(/{unpaidMonthsCount}/g, String(debtInfo.unpaidCount))
     .replace(/{monthsCount}/g, String(debtInfo.unpaidCount))
     .replace(/{idadi_ya_miezi}/g, `${debtInfo.unpaidCount} miezi`)
     .replace(/{periodSummary}/g, debtInfo.periodSummary)
     .replace(/{monthlyFee}/g, `TZS ${debtInfo.monthlyFee.toLocaleString()}`)
     .replace(/{lipaNamba}/g, 'M Koba au 0758 219 298 Eva O Lema')
-    .replace(/{lipaNumber}/g, 'M Koba au 0758 219 298 Eva O Lema');
+    .replace(/{lipaNumber}/g, 'M Koba au 0758 219 298 Eva O Lema')
+    .replace(/TZS\s+TZS/gi, 'TZS');
 }
 
 export async function sendUwalemiSms(payload: {

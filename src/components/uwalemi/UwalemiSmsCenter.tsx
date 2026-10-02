@@ -11,7 +11,8 @@ import {
   triggerMonthlyAutoRemindersApi,
   UwalemiMemberFeeDebtInfo,
   buildOfficialBereavementSms,
-  getAmountInSwahiliWords
+  getAmountInSwahiliWords,
+  UWALEMI_THREE_MONTHS_ALERT_TEMPLATE
 } from '../../services/uwalemiService';
 import { 
   Send, 
@@ -95,12 +96,16 @@ Lema, Nguvu Moja!`;
   const defaultSmartTemplate = `Habari {name}, kikundi cha UWALEMI kinakukumbusha kulipa ada zako: unadaiwa ada {feeDebt} {periodSummary} ({unpaidMonths}). Faini: {fainiSummary}. Jumla unayopaswa kulipa: {jumlaKuu}. Kamilisha kupitia {lipaNamba}. Lema, Nguvu Moja!`;
   const defaultFinesOnlyTemplate = `Habari {name} ({memberNo}), Taarifa ya UWALEMI: Unakumbushwa kulipa faini zako: {fainiSummary}. Jumla ya faini unayodaiwa ni {faini}. Tafadhali lipa kupitia {lipaNamba}. Ahsante, Lema, Nguvu Moja!`;
 
+  const defaultThreeMonthsAlertTemplate = UWALEMI_THREE_MONTHS_ALERT_TEMPLATE;
+
   // Compose State
-  const [recipientFilter, setRecipientFilter] = useState<'all' | 'all_debtors' | 'fines_only' | 'meeting_fines_only' | 'late_fee_fines_only' | 'unpaid_month' | 'custom'>(
+  const [recipientFilter, setRecipientFilter] = useState<'all' | 'all_debtors' | 'three_months_debt' | 'fee_debt_only' | 'fines_only' | 'meeting_fines_only' | 'late_fee_fines_only' | 'unpaid_month' | 'custom'>(
     initialTemplate
-      ? (initialTemplate.toLowerCase().includes('faini')
-          ? (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'fines_only')
-          : (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'all'))
+      ? (initialTemplate.toLowerCase().includes('miezi mitatu') || initialTemplate.toLowerCase().includes('zaidi ya miezi')
+          ? (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'three_months_debt')
+          : (initialTemplate.toLowerCase().includes('faini')
+              ? (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'fines_only')
+              : (initialRecipients && initialRecipients.length > 0 ? 'custom' : 'all')))
       : 'all'
   );
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>(
@@ -129,7 +134,14 @@ Lema, Nguvu Moja!`;
   useEffect(() => {
     if (initialTemplate) {
       setMessageText(initialTemplate);
-      if (initialTemplate.toLowerCase().includes('faini')) {
+      if (initialTemplate.toLowerCase().includes('miezi mitatu') || initialTemplate.toLowerCase().includes('zaidi ya miezi')) {
+        if (initialRecipients && initialRecipients.length > 0) {
+          setRecipientFilter('custom');
+          setSelectedMemberIds(initialRecipients.map(r => r.memberId || '').filter(Boolean));
+        } else {
+          setRecipientFilter('three_months_debt');
+        }
+      } else if (initialTemplate.toLowerCase().includes('faini')) {
         if (initialRecipients && initialRecipients.length > 0) {
           setRecipientFilter('custom');
           setSelectedMemberIds(initialRecipients.map(r => r.memberId || '').filter(Boolean));
@@ -501,6 +513,27 @@ Lema, Nguvu Moja!`;
         }));
     }
 
+    if (recipientFilter === 'three_months_debt') {
+      return memberDebts
+        .filter(d => (d.unpaidCount || 0) >= 3 && d.status === 'active')
+        .map(d => ({
+          name: d.memberName,
+          phone: d.phone,
+          memberNo: d.memberNo,
+          memberId: d.memberId,
+          debtAmount: d.totalDebt,
+          feeDebt: d.feeDebt,
+          lateFeePenalty: d.lateFeePenalty,
+          otherFinesDebt: d.otherFinesDebt,
+          totalFinesDebt: d.totalFinesDebt,
+          startMonth: d.startMonthName,
+          endMonth: d.endMonthName,
+          unpaidMonths: (d.breakdown && d.breakdown.length > 0) ? d.breakdown.map(b => b.monthName).join(', ') : d.unpaidMonthsText,
+          periodSummary: d.periodSummary,
+          monthsCount: d.unpaidCount
+        }));
+    }
+
     if (recipientFilter === 'all_debtors') {
       return memberDebts
         .filter(d => d.totalDebt > 0 && d.status === 'active')
@@ -634,7 +667,10 @@ Lema, Nguvu Moja!`;
   }, [recipientFilter, selectedMemberIds, initialRecipients, members, memberDebts, memberDebtsMap, currentMonthUnpaidIds]);
 
   const handleApplyTemplate = (type: string) => {
-    if (type === 'fee_debt_only_reminder') {
+    if (type === 'three_months_debt_alert') {
+      setMessageText(defaultThreeMonthsAlertTemplate);
+      setMessageType('reminder');
+    } else if (type === 'fee_debt_only_reminder') {
       setMessageText(`Habari {name}, kikundi cha UWALEMI kinakukumbusha kulipa ada yako ya miezi iliyopita: unadaiwa ada TZS {feeDebt} {periodSummary} ({unpaidMonths}). Lipa kupitia {lipaNamba}. Tafadhali kamilisha malipo yako kuepuka faini ya kuchelewa kulipa ada na kuwa nje ya umoja kwa mujibu wa katiba. Lema, Nguvu Moja!`);
       setMessageType('reminder');
     } else if (type === 'smart_debt_reminder') {
@@ -1286,6 +1322,18 @@ Lema, Nguvu Moja!`);
                 <button
                   type="button"
                   onClick={() => {
+                    setRecipientFilter('three_months_debt');
+                    handleApplyTemplate('three_months_debt_alert');
+                  }}
+                  className="px-3 py-1 rounded-lg bg-red-600/30 hover:bg-red-600/40 text-red-200 text-[11px] font-bold border border-red-500/50 cursor-pointer flex items-center gap-1.5 shadow-sm ring-1 ring-red-500/30"
+                  title="Weka ujumbe wa onyo la faini ya tarehe 1 na hatua za kikatiba kwa wenye madeni ya miezi 3+"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                  🚨 Alert ya Katiba (Miezi 3+)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     setRecipientFilter('fee_debt_only');
                     handleApplyTemplate('fee_debt_only_reminder');
                   }}
@@ -1465,6 +1513,14 @@ Lema, Nguvu Moja!`);
                 </button>
                 <button
                   type="button"
+                  onClick={() => insertTag('{totalDebt}')}
+                  title="Jumla ya Kiasi Chote Anachodaiwa (Ada + Faini Zote)"
+                  className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[10.5px] font-mono border border-emerald-500/40 cursor-pointer font-bold"
+                >
+                  {"{totalDebt}"}
+                </button>
+                <button
+                  type="button"
                   onClick={() => insertTag('{jumlaKuu}')}
                   title="Jumla Kuu (Ada + Faini Zote)"
                   className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[10.5px] font-mono border border-emerald-500/40 cursor-pointer font-bold"
@@ -1510,6 +1566,14 @@ Lema, Nguvu Moja!`);
                   className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10.5px] font-mono border border-slate-700 cursor-pointer"
                 >
                   {"{monthsCount}"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('{unpaidMonthsCount}')}
+                  title="Idadi ya Miezi Inayodaiwa (mf. 3)"
+                  className="px-2 py-0.5 rounded bg-red-500/20 hover:bg-red-500/30 text-red-300 text-[10.5px] font-mono border border-red-500/40 cursor-pointer font-bold"
+                >
+                  {"{unpaidMonthsCount}"}
                 </button>
                 <button
                   type="button"
@@ -1709,6 +1773,32 @@ Lema, Nguvu Moja!`);
             </div>
 
             <div className="space-y-2 text-xs">
+              <label className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                recipientFilter === 'three_months_debt' ? 'bg-red-500/15 border-red-500/50 ring-1 ring-red-500/40 shadow-sm' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+              }`}>
+                <input
+                  type="radio"
+                  name="recFilter"
+                  checked={recipientFilter === 'three_months_debt'}
+                  onChange={() => {
+                    setRecipientFilter('three_months_debt');
+                    handleApplyTemplate('three_months_debt_alert');
+                  }}
+                  className="text-red-500 mt-0.5"
+                />
+                <div>
+                  <span className="font-bold text-red-300 flex items-center gap-1.5">
+                    🚨 Madeni ya Miezi 3+ (Alert ya Tarehe 1 & Katiba)
+                    <span className="px-1.5 py-0.2 rounded bg-red-500/20 text-red-300 text-[10px] font-mono">
+                      {memberDebts.filter(d => (d.unpaidCount || 0) >= 3 && d.status === 'active').length}
+                    </span>
+                  </span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">
+                    Huchuja wanachama wote wanaodaiwa ada kuanzia miezi 3 na kuendelea kwa ajili ya kuwapa onyo la faini ya tarehe 1 na hatua za kikatiba.
+                  </span>
+                </div>
+              </label>
+
               <label className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
                 recipientFilter === 'fee_debt_only' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
               }`}>

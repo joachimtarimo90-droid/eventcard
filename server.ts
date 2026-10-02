@@ -401,7 +401,7 @@ async function sendWhatsAppDirectText(
 
       if (resMeta.ok && !resMetaJson.error) {
         logEntry.status = 'sent';
-        db.whatsappLogs = [logEntry, ...(db.whatsappLogs || [])].slice(0, 200);
+        db.whatsappLogs = [logEntry, ...(db.whatsappLogs || [])].slice(0, 10000);
         console.log(`[WhatsApp Outbound Text] Sent successfully to ${cleanPhone}`);
         return { success: true, channel: 'meta_whatsapp', details: resMetaJson };
       } else {
@@ -425,7 +425,7 @@ async function sendWhatsAppDirectText(
       const txt = await resWebhook.text();
       if (resWebhook.ok) {
         logEntry.status = 'custom_webhook_sent';
-        db.whatsappLogs = [logEntry, ...(db.whatsappLogs || [])].slice(0, 200);
+        db.whatsappLogs = [logEntry, ...(db.whatsappLogs || [])].slice(0, 10000);
         return { success: true, channel: 'custom_whatsapp_webhook', details: txt };
       }
     } catch (webhookErr: any) {
@@ -440,7 +440,7 @@ async function sendWhatsAppDirectText(
       const smsResult = await dispatchSMS(cleanPhone, messageText, 'sms', db.smsGatewaySettings);
       logEntry.status = 'fallback_sms_sent';
       logEntry.fallbackResult = smsResult;
-      db.whatsappLogs = [logEntry, ...(db.whatsappLogs || [])].slice(0, 200);
+      db.whatsappLogs = [logEntry, ...(db.whatsappLogs || [])].slice(0, 10000);
       return { success: true, channel: 'fallback_sms', details: smsResult };
     } catch (smsErr: any) {
       console.warn(`[Fallback SMS Error to ${cleanPhone}]:`, smsErr?.message);
@@ -456,7 +456,7 @@ async function sendWhatsAppDirectText(
     }
   }
 
-  db.whatsappLogs = [logEntry, ...(db.whatsappLogs || [])].slice(0, 200);
+  db.whatsappLogs = [logEntry, ...(db.whatsappLogs || [])].slice(0, 10000);
   return { success: false, channel: 'failed', error: logEntry.error };
 }
 
@@ -632,8 +632,8 @@ async function notifyAdminAndGuestOnRSVPChange(params: {
     read: false,
     guestId: guest.id
   };
-  db.committeeNotifications = [notifItem, ...(db.committeeNotifications || [])].slice(0, 100);
-  db.notifications = [notifItem, ...(db.notifications || [])].slice(0, 100);
+  db.committeeNotifications = [notifItem, ...(db.committeeNotifications || [])].slice(0, 10000);
+  db.notifications = [notifItem, ...(db.notifications || [])].slice(0, 10000);
 }
 
 async function processWhatsAppBotLogic(
@@ -998,7 +998,7 @@ Respond strictly in JSON format:
 
         const balanceAmt = Math.max(0, extractedPledgeAmt - currentPaid);
 
-        actionReply = `Habari *${matchedGuest.name}*! 👋🎉\n\nAhsante sana! Ahadi yako ya *TZS ${extractedPledgeAmt.toLocaleString()}* imesajiliwa kikamilifu kwenye mfumo wetu wa *${eventName}*.\n\n• *Jina:* ${matchedGuest.name}\n• *Ahadi Iliyosajiliwa:* TZS ${extractedPledgeAmt.toLocaleString()}\n• *Kiasi Ulicholipa:* TZS ${currentPaid.toLocaleString()}\n• *Baki (Salio):* TZS ${balanceAmt.toLocaleString()}\n\nTunakushukuru sana kwa moyo wako wa kujitolea na ushirikiano. Mungu akubariki sana! 🙏✨`;
+        actionReply = `Habari *${matchedGuest.name}*! ������🎉\n\nAhsante sana! Ahadi yako ya *TZS ${extractedPledgeAmt.toLocaleString()}* imesajiliwa kikamilifu kwenye mfumo wetu wa *${eventName}*.\n\n• *Jina:* ${matchedGuest.name}\n• *Ahadi Iliyosajiliwa:* TZS ${extractedPledgeAmt.toLocaleString()}\n• *Kiasi Ulicholipa:* TZS ${currentPaid.toLocaleString()}\n• *Baki (Salio):* TZS ${balanceAmt.toLocaleString()}\n\nTunakushukuru sana kwa moyo wako wa kujitolea na ushirikiano. Mungu akubariki sana! 🙏✨`;
       }
     }
 
@@ -3392,9 +3392,9 @@ async function startServer() {
       };
 
       loginLogsCache.unshift(newLog);
-      // Keep only last 200 logs
-      if (loginLogsCache.length > 200) {
-        loginLogsCache = loginLogsCache.slice(0, 200);
+      // Keep up to 10000 logs
+      if (loginLogsCache.length > 10000) {
+        loginLogsCache = loginLogsCache.slice(0, 10000);
       }
 
       res.json({ success: true });
@@ -4081,7 +4081,7 @@ async function startServer() {
                 .filter((p: any) => (p.memberId === matchedMember.id || (matchedMember.memberNo && p.memberNo === matchedMember.memberNo)) && (p.fineType === 'ada_late_fee' || (p.fineTitle && p.fineTitle.toLowerCase().includes('ada'))))
                 .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
 
-              lateFeeVal = Math.max(0, totalAssessedLatePenalty - lateFinesPaid);
+              lateFeeVal = matchedMember.suppressLateFeePenalty ? 0 : Math.max(0, totalAssessedLatePenalty - lateFinesPaid);
 
               // Meeting fines
               const meetings = uwalemiState.meetings || [];
@@ -4133,6 +4133,11 @@ async function startServer() {
             .replace(/{name}/g, name)
             .replace(/{memberNo}/g, memberNo)
             .replace(/{phone}/g, phone)
+            .replace(/TZS\s*{feeDebt}/gi, `TZS ${feeDebtVal.toLocaleString()}`)
+            .replace(/TZS\s*{ada}/gi, `TZS ${feeDebtVal.toLocaleString()}`)
+            .replace(/TZS\s*{faini}/gi, `TZS ${totalFinesVal.toLocaleString()}`)
+            .replace(/TZS\s*{totalDebt}/gi, `TZS ${totalDebtVal.toLocaleString()}`)
+            .replace(/TZS\s*{debtAmount}/gi, `TZS ${totalDebtVal.toLocaleString()}`)
             .replace(/{debtAmount}/g, `TZS ${totalDebtVal.toLocaleString()}`)
             .replace(/{feeDebt}/g, `TZS ${feeDebtVal.toLocaleString()}`)
             .replace(/{ada}/g, `TZS ${feeDebtVal.toLocaleString()}`)
@@ -4151,12 +4156,14 @@ async function startServer() {
             .replace(/{miezi}/g, unpaidMonthsStr || '')
             .replace(/{mchanganuo}/g, breakdownStr || unpaidMonthsStr || '')
             .replace(/{breakdown}/g, breakdownStr || unpaidMonthsStr || '')
+            .replace(/{unpaidMonthsCount}/g, String(monthsCountVal || 0))
             .replace(/{monthsCount}/g, String(monthsCountVal || 0))
             .replace(/{idadi_ya_miezi}/g, `${monthsCountVal || 0} miezi`)
             .replace(/{periodSummary}/g, periodSummaryStr || '')
             .replace(/{monthlyFee}/g, `TZS 20,000`)
             .replace(/{lipaNamba}/g, 'M Koba au 0758 219 298 Eva O Lema')
-            .replace(/{lipaNumber}/g, 'M Koba au 0758 219 298 Eva O Lema');
+            .replace(/{lipaNumber}/g, 'M Koba au 0758 219 298 Eva O Lema')
+            .replace(/TZS\s+TZS/gi, 'TZS');
         }
 
         let status: 'delivered' | 'sent' | 'simulated' | 'failed' = 'simulated';
@@ -4206,8 +4213,8 @@ async function startServer() {
       // Persist logs in UWALEMI state
       if (!uwalemiState.messageLogs) uwalemiState.messageLogs = [];
       uwalemiState.messageLogs.unshift(...logs);
-      if (uwalemiState.messageLogs.length > 200) {
-        uwalemiState.messageLogs = uwalemiState.messageLogs.slice(0, 200);
+      if (uwalemiState.messageLogs.length > 10000) {
+        uwalemiState.messageLogs = uwalemiState.messageLogs.slice(0, 10000);
       }
       db.uwalemiState = uwalemiState;
       await writeDB(db);
@@ -4436,8 +4443,8 @@ Lema, Nguvu Moja!`;
 
       if (!uwalemiState.messageLogs) uwalemiState.messageLogs = [];
       uwalemiState.messageLogs.unshift(...logs);
-      if (uwalemiState.messageLogs.length > 250) {
-        uwalemiState.messageLogs = uwalemiState.messageLogs.slice(0, 250);
+      if (uwalemiState.messageLogs.length > 10000) {
+        uwalemiState.messageLogs = uwalemiState.messageLogs.slice(0, 10000);
       }
 
       uwalemiState.lastMonthlyReminderYearMonth = currentYearMonthKey;
@@ -5888,7 +5895,7 @@ Lema, Nguvu Moja!`;
                         }
                       }
 
-                      db.whatsappLogs = [logEntry, ...(db.whatsappLogs || [])].slice(0, 200);
+                      db.whatsappLogs = [logEntry, ...(db.whatsappLogs || [])].slice(0, 10000);
                       databaseUpdated = true;
                     }
                   }
@@ -6030,7 +6037,7 @@ Lema, Nguvu Moja!`;
         status: metaSentSuccess ? 'SENT_TO_META' : (metaToken ? 'META_ERROR' : 'SIMULATED_SUCCESS'),
         metaError: metaErrorDetail
       });
-      if (db.whatsappLogs.length > 100) db.whatsappLogs = db.whatsappLogs.slice(0, 100);
+      if (db.whatsappLogs.length > 10000) db.whatsappLogs = db.whatsappLogs.slice(0, 10000);
       await writeDB(db);
 
       res.json({

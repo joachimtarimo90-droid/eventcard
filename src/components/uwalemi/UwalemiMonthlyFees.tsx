@@ -45,7 +45,8 @@ import {
   calculateLateFeePenalty,
   autoAccrueLateFeeFines,
   formatMemberReceiptDebtLines,
-  normalizePaymentMethod
+  normalizePaymentMethod,
+  UWALEMI_THREE_MONTHS_ALERT_TEMPLATE
 } from '../../services/uwalemiService';
 
 interface Props {
@@ -1547,6 +1548,43 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
     }
   };
 
+  const handleSendThreeMonthsAlert = () => {
+    const activeM = members.filter(m => m.status === 'active');
+    const debtors = activeM.filter(m => {
+      const debtInfo = calculateMemberFeeDebt(m, state);
+      return (debtInfo.unpaidCount || 0) >= 3;
+    }).map(m => {
+      const debtInfo = calculateMemberFeeDebt(m, state);
+      return {
+        name: m.fullName,
+        phone: m.phone,
+        memberNo: m.memberNo,
+        memberId: m.id,
+        debtAmount: debtInfo.totalDebt,
+        feeDebt: debtInfo.feeDebt,
+        lateFeePenalty: debtInfo.lateFeePenalty,
+        otherFinesDebt: debtInfo.otherFinesDebt,
+        totalFinesDebt: debtInfo.totalFinesDebt,
+        startMonth: debtInfo.startMonthName,
+        endMonth: debtInfo.endMonthName,
+        unpaidMonths: debtInfo.unpaidMonthsText,
+        periodSummary: debtInfo.periodSummary,
+        monthsCount: debtInfo.unpaidCount
+      };
+    });
+
+    if (debtors.length === 0) {
+      alert('Hakuna mwanachama anayedaiwa ada ya miezi 3 au zaidi!');
+      return;
+    }
+
+    const template = UWALEMI_THREE_MONTHS_ALERT_TEMPLATE;
+
+    if (onOpenSmsWithTemplate) {
+      onOpenSmsWithTemplate(debtors, template);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn pb-12" id="uwalemi-monthly-fees">
       {/* Header Banner */}
@@ -1614,13 +1652,24 @@ export const UwalemiMonthlyFees: React.FC<Props> = ({
                 </button>
 
                 {onOpenSmsWithTemplate && (
-                  <button
-                    onClick={handleSendFeeDebtOnlyReminder}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all cursor-pointer shadow-sm"
-                  >
-                    <Send className="w-3.5 h-3.5 text-emerald-400" />
-                    💳 Kumbusha Ada Pekee (SMS)
-                  </button>
+                  <>
+                    <button
+                      onClick={handleSendFeeDebtOnlyReminder}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all cursor-pointer shadow-sm"
+                    >
+                      <Send className="w-3.5 h-3.5 text-emerald-400" />
+                      💳 Kumbusha Ada Pekee (SMS)
+                    </button>
+
+                    <button
+                      onClick={handleSendThreeMonthsAlert}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-600/30 hover:bg-red-600/40 text-red-200 border border-red-500/50 text-xs font-bold transition-all cursor-pointer shadow-sm ring-1 ring-red-500/30"
+                      title="Tuma Alert ya Katiba na Onyo la Faini ya Tarehe 1 kwa wote wenye madeni ya miezi 3+"
+                    >
+                      <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                      🚨 Alert ya Katiba (Miezi 3+)
+                    </button>
+                  </>
                 )}
               </>
             ) : (
