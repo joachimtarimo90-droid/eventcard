@@ -133,15 +133,6 @@ export default function LandingPage({ onStart, onLoginClick, onOpenUwalemi }: La
                 >
                   <span>{t('landing.btnHowItWorks')}</span>
                 </a>
-                {onOpenUwalemi && (
-                  <button 
-                    onClick={onOpenUwalemi}
-                    className="border border-emerald-500/40 backdrop-blur-md bg-emerald-950/50 hover:bg-emerald-900/70 text-emerald-300 font-semibold px-6 py-4 rounded-xl transition inline-flex items-center justify-center space-x-2 cursor-pointer shadow-lg"
-                  >
-                    <Shield className="w-5 h-5 text-emerald-400" />
-                    <span>UWALEMI (Kikundi)</span>
-                  </button>
-                )}
               </div>
 
               {/* Trust/Live Counters REMOVED per user request */}
