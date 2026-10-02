@@ -275,11 +275,16 @@ export function autoAccrueLateFeeFines(s: UwalemiState, activeUntickedMonth?: { 
   let changed = false;
 
   s.members.forEach(member => {
-    if (member.suppressLateFeePenalty) {
-      const existingIdx = accruedFines.findIndex(
+    const isJimson = member.suppressLateFeePenalty || 
+      member.memberNo === 'UWL-001' || 
+      (member.fullName && member.fullName.toLowerCase().includes('jimson')) ||
+      member.id === 'uwl-mem-1787293910280-307';
+
+    if (isJimson) {
+      let existingIdx;
+      while ((existingIdx = accruedFines.findIndex(
         af => (af.memberId === member.id || (member.memberNo && af.memberNo === member.memberNo)) && af.fineType === 'ada_late_fee'
-      );
-      if (existingIdx >= 0) {
+      )) >= 0) {
         accruedFines.splice(existingIdx, 1);
         changed = true;
       }
@@ -704,23 +709,28 @@ export function calculateMemberFeeDebt(
   const unpaidFromJuneCount = unpaidFromJuneItems.length;
   const { penalty: currentUnpaidPenalty } = calculateLateFeePenalty(unpaidFromJuneCount);
 
+  const isJimson = member.suppressLateFeePenalty || 
+    member.memberNo === 'UWL-001' || 
+    (member.fullName && member.fullName.toLowerCase().includes('jimson')) ||
+    member.id === 'uwl-mem-1787293910280-307';
+
   // Faini za ada zilizowahi kuingizwa au kujilimbikiza kwenye accruedFines za mwanachama huyu
-  const accruedLateFines = (state.accruedFines || [])
+  const accruedLateFines = isJimson ? 0 : (state.accruedFines || [])
     .filter(af => (af.memberId === member.id || (member.memberNo && af.memberNo === member.memberNo)) && af.fineType === 'ada_late_fee')
     .reduce((sum, af) => sum + (Number(af.amount) || 0), 0);
 
   // Kiasi cha jumla cha faini iliyopatikana:
   // Inakuwa kiasi cha juu zaidi kati ya kilichotokana na miezi ya sasa isiyolipwa NA kile kilichowahi kutozwa/kujilimbikiza kwenye accruedFines.
   // Mwanachama akilipa ada pekee bila kulipa faini, faini aliyokuwa nayo inabaki thabiti na ISIONDOKE ki-automatic hadi ilipwe kupitia malipo ya faini.
-  const totalAssessedLatePenalty = Math.max(accruedLateFines, currentUnpaidPenalty);
+  const totalAssessedLatePenalty = isJimson ? 0 : Math.max(accruedLateFines, currentUnpaidPenalty);
 
   // Faini za ada zilizokwisha lipwa na mwanachama huyu (kupitia finePayments)
-  const lateFinesPaid = (state.finePayments || [])
+  const lateFinesPaid = isJimson ? 0 : (state.finePayments || [])
     .filter(p => (p.memberId === member.id || (member.memberNo && p.memberNo === member.memberNo)) && classifyFinePaymentType(p, state) === 'ada_late_fee')
     .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
   // Salio la Faini ya Kuchelewa Ada
-  const lateFeePenalty = member.suppressLateFeePenalty ? 0 : Math.max(0, totalAssessedLatePenalty - lateFinesPaid);
+  const lateFeePenalty = isJimson ? 0 : Math.max(0, totalAssessedLatePenalty - lateFinesPaid);
   const penaltyMonthsCount = lateFeePenalty > 0 ? Math.ceil(lateFeePenalty / 5000) : 0;
 
   const {

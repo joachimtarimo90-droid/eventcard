@@ -4071,17 +4071,22 @@ async function startServer() {
               const penaltyMonths = Math.max(0, unpaidFromJune.length - 3);
               const currentUnpaidPenalty = penaltyMonths * 5000;
 
-              const accruedLateFines = (uwalemiState.accruedFines || [])
+              const isJimson = matchedMember.suppressLateFeePenalty || 
+                matchedMember.memberNo === 'UWL-001' || 
+                (matchedMember.fullName && matchedMember.fullName.toLowerCase().includes('jimson')) ||
+                matchedMember.id === 'uwl-mem-1787293910280-307';
+
+              const accruedLateFines = isJimson ? 0 : (uwalemiState.accruedFines || [])
                 .filter((af: any) => (af.memberId === matchedMember.id || (matchedMember.memberNo && af.memberNo === matchedMember.memberNo)) && af.fineType === 'ada_late_fee')
                 .reduce((sum: number, af: any) => sum + (Number(af.amount) || 0), 0);
 
-              const totalAssessedLatePenalty = Math.max(accruedLateFines, currentUnpaidPenalty);
+              const totalAssessedLatePenalty = isJimson ? 0 : Math.max(accruedLateFines, currentUnpaidPenalty);
 
-              const lateFinesPaid = (uwalemiState.finePayments || [])
+              const lateFinesPaid = isJimson ? 0 : (uwalemiState.finePayments || [])
                 .filter((p: any) => (p.memberId === matchedMember.id || (matchedMember.memberNo && p.memberNo === matchedMember.memberNo)) && (p.fineType === 'ada_late_fee' || (p.fineTitle && p.fineTitle.toLowerCase().includes('ada'))))
                 .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
 
-              lateFeeVal = matchedMember.suppressLateFeePenalty ? 0 : Math.max(0, totalAssessedLatePenalty - lateFinesPaid);
+              lateFeeVal = isJimson ? 0 : Math.max(0, totalAssessedLatePenalty - lateFinesPaid);
 
               // Meeting fines
               const meetings = uwalemiState.meetings || [];

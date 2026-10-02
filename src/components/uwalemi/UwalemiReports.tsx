@@ -1875,7 +1875,7 @@ export const UwalemiReports: React.FC<Props> = ({ state, onSaveState, onOpenSmsW
               if (penaltyMonths > 0) {
                 feeDebtNote = `${unpaidMonthsCount} miezi (${penaltyMonths} ya faini Mz 6+)`;
               } else {
-                feeDebtNote = `${unpaidMonthsCount} miezi (msamaha <=3M Mz 6+)`;
+                feeDebtNote = `${unpaidMonthsCount} miezi (Ada tu)`;
               }
             }
 

@@ -2016,7 +2016,7 @@ export const generateFinesReportPDF = (
     if (totalMemberFineDebt > 0) {
       totalMembersWithFineDebt++;
     }
-    if (totalMemberFinePaid > 0) {
+    if (totalMemberFinePaid > 0 && totalMemberFineDebt === 0) {
       totalMembersWithFinePaid++;
     }
 
@@ -2032,7 +2032,7 @@ export const generateFinesReportPDF = (
       if (penaltyMonths > 0) {
         feeDebtNote = `${unpaidMonthsCount}M (${penaltyMonths} ya faini Mz 6+)`;
       } else {
-        feeDebtNote = `${unpaidMonthsCount}M (msamaha <=3M Mz 6+)`;
+        feeDebtNote = `${unpaidMonthsCount}M (Ada)`;
       }
     }
 
@@ -2070,7 +2070,7 @@ export const generateFinesReportPDF = (
       [
         'Wanachama Wenye Deni la Faini',
         `${totalMembersWithFineDebt} kati ya ${members.length}`,
-        `Wanachama ${totalMembersWithFineDebt} wana madeni ya faini ambayo hayajalipwa (${totalMembersWithFinePaid} wamekamilisha kulipa faini zao zote).`
+        `Wanachama ${totalMembersWithFineDebt} wana madeni ya faini (${totalMembersWithFinePaid} wamekamilisha kulipa faini zote, na ${members.length - totalMembersWithFineDebt - totalMembersWithFinePaid} hawana faini yoyote).`
       ],
       [
         '1. Faini ya Kuchelewesha Ada (Kuanzia Mwezi wa 6 / Juni 2026)',
