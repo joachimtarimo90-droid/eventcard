@@ -52,27 +52,9 @@ export default function LandingPage({ onStart, onLoginClick, onOpenUwalemi }: La
             <a href="#contact" className="hover:text-white transition-colors">
               {language === 'sw' ? 'Mawasiliano' : 'Contact Us'}
             </a>
-            {onOpenUwalemi && (
-              <button
-                onClick={onOpenUwalemi}
-                className="text-emerald-400 hover:text-emerald-300 font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <Shield className="w-4 h-4 text-emerald-400" />
-                <span>UWALEMI (Kikundi)</span>
-              </button>
-            )}
           </nav>
 
           <div className="flex items-center space-x-3">
-            {onOpenUwalemi && (
-              <button
-                onClick={onOpenUwalemi}
-                className="hidden sm:inline-flex items-center gap-1.5 text-xs font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 hover:bg-emerald-900/60 px-3 py-1.5 rounded-xl transition shadow-sm cursor-pointer"
-              >
-                <Shield className="w-3.5 h-3.5 text-emerald-400" />
-                <span>UWALEMI</span>
-              </button>
-            )}
             {/* Language Selector */}
             <div className="flex bg-white/5 p-0.5 rounded-xl border border-white/10 shadow-inner mr-1">
               <button
