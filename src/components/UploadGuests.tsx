@@ -253,12 +253,14 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
   const [guestTags, setGuestTags] = useState('');
   const [guestTableNumber, setGuestTableNumber] = useState('');
   const [guestFoodPreference, setGuestFoodPreference] = useState('');
+  const [guestWhatsAppPreference, setGuestWhatsAppPreference] = useState<'AUTO' | 'WA' | 'SMS_ONLY'>('AUTO');
 
   // Tags & Custom Fields states for editing guest
   const [editGuestTags, setEditGuestTags] = useState('');
   const [editGuestTableNumber, setEditGuestTableNumber] = useState('');
   const [editGuestFoodPreference, setEditGuestFoodPreference] = useState('');
   const [editGuestMaxGuests, setEditGuestMaxGuests] = useState<number>(2);
+  const [editGuestWhatsAppPreference, setEditGuestWhatsAppPreference] = useState<'AUTO' | 'WA' | 'SMS_ONLY'>('AUTO');
 
   // Selected tag filter state
   const [selectedTagFilter, setSelectedTagFilter] = useState('ALL');
@@ -529,8 +531,25 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
       customFieldsObj.foodPreference = guestFoodPreference.trim();
     }
 
-    const waStatus = detectGuestWhatsAppStatus(standardisedPhone, customFieldsObj);
-    customFieldsObj.noWhatsApp = waStatus.noWhatsAppFlag;
+    let initialHasWa = true;
+    let waDetail = 'Ipo WhatsApp';
+    let noWaFlag: 'true' | 'false' = 'false';
+
+    if (guestWhatsAppPreference === 'SMS_ONLY') {
+      initialHasWa = false;
+      waDetail = 'Haipo WhatsApp (SMS Tu)';
+      noWaFlag = 'true';
+    } else if (guestWhatsAppPreference === 'WA') {
+      initialHasWa = true;
+      waDetail = 'Ipo WhatsApp';
+      noWaFlag = 'false';
+    } else {
+      const waStatus = detectGuestWhatsAppStatus(standardisedPhone, customFieldsObj);
+      initialHasWa = waStatus.hasWhatsApp;
+      waDetail = waStatus.statusDetail;
+      noWaFlag = waStatus.noWhatsAppFlag;
+    }
+    customFieldsObj.noWhatsApp = noWaFlag;
 
     const shortCode = 'IP-' + Math.floor(1000 + Math.random() * 9000);
     const newGuest: Guest = {
@@ -548,8 +567,8 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
       checkedIn: false,
       tags: parsedTags,
       customFields: customFieldsObj,
-      hasWhatsApp: waStatus.hasWhatsApp,
-      waStatusDetail: waStatus.statusDetail
+      hasWhatsApp: initialHasWa,
+      waStatusDetail: waDetail
     };
 
     // Check for duplicate in existing guests
@@ -697,6 +716,7 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
     setEditGuestTags(guest.tags ? guest.tags.join(', ') : '');
     setEditGuestTableNumber(guest.customFields?.tableNumber || '');
     setEditGuestFoodPreference(guest.customFields?.foodPreference || '');
+    setEditGuestWhatsAppPreference(isEligibleWhatsAppNumber(guest.phone, guest) ? 'WA' : 'SMS_ONLY');
   };
 
   const handleSaveEditGuest = (e: React.FormEvent) => {
@@ -720,8 +740,25 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
       customFieldsObj.foodPreference = editGuestFoodPreference.trim();
     }
 
-    const waStatus = detectGuestWhatsAppStatus(standardisedPhone, customFieldsObj, editingGuest.hasWhatsApp);
-    customFieldsObj.noWhatsApp = waStatus.noWhatsAppFlag;
+    let initialHasWa = true;
+    let waDetail = 'Ipo WhatsApp';
+    let noWaFlag: 'true' | 'false' = 'false';
+
+    if (editGuestWhatsAppPreference === 'SMS_ONLY') {
+      initialHasWa = false;
+      waDetail = 'Haipo WhatsApp (SMS Tu)';
+      noWaFlag = 'true';
+    } else if (editGuestWhatsAppPreference === 'WA') {
+      initialHasWa = true;
+      waDetail = 'Ipo WhatsApp';
+      noWaFlag = 'false';
+    } else {
+      const waStatus = detectGuestWhatsAppStatus(standardisedPhone, customFieldsObj, editingGuest.hasWhatsApp);
+      initialHasWa = waStatus.hasWhatsApp;
+      waDetail = waStatus.statusDetail;
+      noWaFlag = waStatus.noWhatsAppFlag;
+    }
+    customFieldsObj.noWhatsApp = noWaFlag;
 
     const updatedGuest: Guest = {
       ...editingGuest,
@@ -732,8 +769,8 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
       rsvpGuestsCount: rsvpCount,
       tags: parsedTags,
       customFields: customFieldsObj,
-      hasWhatsApp: waStatus.hasWhatsApp,
-      waStatusDetail: waStatus.statusDetail
+      hasWhatsApp: initialHasWa,
+      waStatusDetail: waDetail
     };
 
     // Update guests list
@@ -767,8 +804,15 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
 
       const data = await res.json();
       if (res.ok && data.results) {
+        const isLive = data.liveGatewayChecked === true;
         const updated = guests.map(g => {
           if (!g.phone) return g;
+          
+          // Preserve manual SMS-only choice if live check wasn't performed
+          if (!isLive && (g.customFields?.noWhatsApp === 'true' || g.hasWhatsApp === false)) {
+            return g;
+          }
+
           const matchResult = data.results[g.phone] || Object.entries(data.results).find(([k]) => {
             const kClean = k.replace(/\D/g, '').slice(-9);
             const gClean = g.phone.replace(/\D/g, '').slice(-9);
@@ -791,11 +835,19 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
 
         onUpdateGuests(updated, `Uhakiki wa namba za WhatsApp umekamilika: WhatsApp (${totalWa}), SMS Pekee (${totalSms})`);
 
-        setWaCheckSummary(
-          isEn 
-            ? `Checked ${data.checkedCount || phonesToCheck.length} numbers: ${totalWa} on WhatsApp, ${totalSms} SMS-only.` 
-            : `Uhakiki umekamilika kwa namba ${data.checkedCount || phonesToCheck.length}: Wageni ${totalWa} wapo WhatsApp, ${totalSms} wanahitaji SMS ya kawaida.`
-        );
+        if (isLive) {
+          setWaCheckSummary(
+            isEn 
+              ? `Live WhatsApp verification complete: ${totalWa} active on WhatsApp, ${totalSms} need SMS.` 
+              : `Uhakiki wa moja kwa moja kupitia WhatsApp umekamilika: Wageni ${totalWa} wapo WhatsApp, ${totalSms} hawapo (wanahitaji SMS).`
+          );
+        } else {
+          setWaCheckSummary(
+            isEn
+              ? `Mobile number format check complete (${phonesToCheck.length} numbers). To verify true WhatsApp accounts for 1000+ numbers, connect WhatsApp Web/API or use auto-detect during sending.`
+              : `Uhakiki wa muundo wa simu za mkononi umekamilika (${phonesToCheck.length} namba). Mfumo utachuja kiotomatiki wakati wa kutuma, au unaweza kubonyeza beji ya namba kubadili mara moja.`
+          );
+        }
       } else {
         throw new Error(data.error || 'Failed to check numbers');
       }
@@ -809,9 +861,13 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
 
   const handleToggleWhatsAppStatus = (guestId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const target = guests.find(g => g.id === guestId);
+    if (!target) return;
+    const isCurrentlyWa = isEligibleWhatsAppNumber(target.phone, target);
+    const nextStatus = !isCurrentlyWa;
+
     const updated = guests.map(g => {
       if (g.id === guestId) {
-        const nextStatus = g.hasWhatsApp === false ? true : false;
         const cf = (g.customFields && typeof g.customFields === 'object') ? { ...g.customFields } : {};
         cf.noWhatsApp = nextStatus ? 'false' : 'true';
         return {
@@ -823,7 +879,18 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
       }
       return g;
     });
-    onUpdateGuests(updated, isEn ? "WhatsApp status updated" : "Hali ya WhatsApp imesasishwa");
+
+    onUpdateGuests(updated, isEn ? `WhatsApp status: ${nextStatus ? 'WhatsApp' : 'SMS Only'}` : `Hali ya WhatsApp: ${nextStatus ? 'WhatsApp' : 'SMS Tu'}`);
+
+    // Call server to persist immediately
+    fetch('/api/guest/toggle-whatsapp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        guestId,
+        hasWhatsApp: nextStatus
+      })
+    }).catch(err => console.warn("Toggle WhatsApp API error:", err));
   };
 
   // Highlight potential duplicate phone numbers
@@ -1838,6 +1905,37 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                   </div>
                 </div>
 
+                {/* WhatsApp or SMS-Only Selection */}
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-355 block">NJIA YA MWALIKO (WHATSAPP AU SMS)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setGuestWhatsAppPreference('WA')}
+                      className={`py-2.5 px-3 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                        guestWhatsAppPreference === 'WA' || guestWhatsAppPreference === 'AUTO'
+                          ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-sm' 
+                          : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      <span>WhatsApp & SMS</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGuestWhatsAppPreference('SMS_ONLY')}
+                      className={`py-2.5 px-3 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                        guestWhatsAppPreference === 'SMS_ONLY' 
+                          ? 'bg-amber-500/25 border-amber-500 text-amber-300 shadow-sm' 
+                          : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-amber-400" />
+                      <span>🚫 SMS Tu (Haina WA)</span>
+                    </button>
+                  </div>
+                </div>
+
                 <button 
                   type="submit"
                   id="submit-single-guest-btn"
@@ -2607,6 +2705,37 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                       onChange={(e) => setEditGuestMaxGuests(parseInt(e.target.value) || 1)}
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 font-bold"
                     />
+                  </div>
+                </div>
+
+                {/* WhatsApp or SMS-Only Selection */}
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-355 block">NJIA YA MWALIKO (WHATSAPP AU SMS)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditGuestWhatsAppPreference('WA')}
+                      className={`py-2.5 px-3 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                        editGuestWhatsAppPreference === 'WA' || editGuestWhatsAppPreference === 'AUTO'
+                          ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-sm' 
+                          : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      <span>WhatsApp & SMS</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditGuestWhatsAppPreference('SMS_ONLY')}
+                      className={`py-2.5 px-3 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                        editGuestWhatsAppPreference === 'SMS_ONLY' 
+                          ? 'bg-amber-500/25 border-amber-500 text-amber-300 shadow-sm' 
+                          : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-amber-400" />
+                      <span>🚫 SMS Tu (Haina WA)</span>
+                    </button>
                   </div>
                 </div>
 

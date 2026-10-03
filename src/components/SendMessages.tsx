@@ -1269,9 +1269,13 @@ Karibu sana!`);
 
   const handleToggleWhatsAppStatus = (guestId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const target = guests.find(g => g.id === guestId);
+    if (!target) return;
+    const isCurrentlyWa = isEligibleWhatsAppNumber(target.phone, target);
+    const nextStatus = !isCurrentlyWa;
+
     const updated = guests.map(g => {
       if (g.id === guestId) {
-        const nextStatus = g.hasWhatsApp === false ? true : false;
         const cf = (g.customFields && typeof g.customFields === 'object') ? { ...g.customFields } : {};
         cf.noWhatsApp = nextStatus ? 'false' : 'true';
         return {
@@ -1286,10 +1290,20 @@ Karibu sana!`);
     onUpdateGuests(updated);
     showToast(
       isEn 
-        ? "WhatsApp status updated." 
-        : "Hali ya WhatsApp ya mgeni imesasishwa.", 
+        ? `WhatsApp status changed to ${nextStatus ? 'WhatsApp' : 'SMS Only'}.` 
+        : `Namba imebadilishwa kuwa: ${nextStatus ? '🟢 WhatsApp' : '🚫 SMS Tu (Haina WA)'}.`, 
       "info"
     );
+
+    // Call server to persist immediately
+    fetch('/api/guest/toggle-whatsapp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        guestId,
+        hasWhatsApp: nextStatus
+      })
+    }).catch(err => console.warn("Toggle WhatsApp API error:", err));
   };
 
   const handleSendSingle = (guestId: string, channel: 'sms' | 'whatsapp') => {

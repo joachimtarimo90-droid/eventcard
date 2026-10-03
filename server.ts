@@ -5800,6 +5800,66 @@ Lema, Nguvu Moja!`;
         return { original: orig, clean: digits, formatted, isValid, status };
       });
 
+      // 1. If Meta Credentials exist, query Meta Graph API Contacts Check endpoint for true live existence
+      const metaToken = process.env.META_WHATSAPP_TOKEN 
+        || db.smsGatewaySettings?.metaToken 
+        || db.smsGatewaySettings?.whatsappMetaToken 
+        || db.smsGatewaySettings?.meta_token 
+        || db.settings?.metaToken;
+
+      const phoneId = process.env.META_PHONE_NUMBER_ID 
+        || db.smsGatewaySettings?.metaPhoneNumberId 
+        || db.smsGatewaySettings?.whatsappMetaPhoneId 
+        || db.smsGatewaySettings?.phone_number_id 
+        || db.settings?.metaPhoneNumberId;
+
+      let liveGatewayChecked = false;
+
+      if (metaToken && phoneId) {
+        try {
+          const contactPhoneList = cleanedList
+            .filter(item => item.isValid)
+            .map(item => item.formatted.startsWith('+') ? item.formatted : '+' + item.formatted);
+
+          if (contactPhoneList.length > 0) {
+            console.log(`[Meta Contacts API] Checking ${contactPhoneList.length} numbers for WhatsApp registration...`);
+            const metaRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/contacts`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${metaToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                blocking: "wait",
+                contacts: contactPhoneList,
+                force_check: true
+              })
+            });
+
+            const metaJson = await metaRes.json();
+            if (metaJson && Array.isArray(metaJson.contacts)) {
+              liveGatewayChecked = true;
+              for (const mc of metaJson.contacts) {
+                const mcInput = String(mc.input || '').replace(/\D/g, '');
+                const mcStatus = mc.status; // 'valid' | 'invalid' | 'failed' | 'processing'
+                const matchedItem = cleanedList.find(it => it.clean.slice(-9) === mcInput.slice(-9) || it.formatted.slice(-9) === mcInput.slice(-9));
+                if (matchedItem) {
+                  if (mcStatus === 'invalid') {
+                    matchedItem.isValid = false;
+                    matchedItem.status = 'not_registered_on_whatsapp';
+                  } else if (mcStatus === 'valid') {
+                    matchedItem.isValid = true;
+                    matchedItem.status = 'valid';
+                  }
+                }
+              }
+            }
+          }
+        } catch (metaErr) {
+          console.warn("[Meta Contacts API Error]:", metaErr);
+        }
+      }
+
       cleanedList.forEach(item => {
         results[item.original] = {
           hasWhatsApp: item.isValid,
@@ -5820,11 +5880,17 @@ Lema, Nguvu Moja!`;
           })?.[1];
 
           if (matchResult) {
-            guestsUpdated++;
             const cf = (g.customFields && typeof g.customFields === 'object') ? { ...g.customFields } : {};
+            
+            // If live check was NOT performed, do NOT overwrite if the user already manually marked them as SMS Only
+            if (!liveGatewayChecked && (cf.noWhatsApp === 'true' || g.hasWhatsApp === false)) {
+              return g;
+            }
+
+            guestsUpdated++;
             if (!matchResult.hasWhatsApp) {
               cf.noWhatsApp = 'true';
-            } else if (cf.noWhatsApp === 'true' && matchResult.hasWhatsApp) {
+            } else if (cf.noWhatsApp === 'true' && matchResult.hasWhatsApp && liveGatewayChecked) {
               cf.noWhatsApp = 'false';
             }
             return {
@@ -5852,13 +5918,62 @@ Lema, Nguvu Moja!`;
         validCount: totalWa,
         totalWhatsApp: totalWa,
         totalSms: totalSms,
+        liveGatewayChecked,
         guestsUpdated,
         results,
-        message: `Uhakiki umekamilika: ${totalWa} wapo WhatsApp, ${totalSms} SMS.`
+        message: liveGatewayChecked 
+          ? `Uhakiki wa moja kwa moja wa WhatsApp umekamilika: ${totalWa} wapo WhatsApp, ${totalSms} SMS Tu.`
+          : `Uhakiki wa muundo wa simu za mkononi: Namba ${totalWa} ni sahihi.`
       });
     } catch (err: any) {
       console.error("[Check WhatsApp Numbers API Error]:", err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // API: Instant Toggle Guest WhatsApp Status
+  app.post("/api/guest/toggle-whatsapp", async (req, res) => {
+    try {
+      const { guestId, phone, hasWhatsApp } = req.body;
+      const searchTarget = guestId || phone;
+      if (!searchTarget) {
+        return res.status(400).json({ error: "Missing guestId or phone" });
+      }
+
+      const db = await readDBLatest();
+      const match = findGuestInDatabaseServer(db, searchTarget);
+      if (!match) {
+        return res.status(404).json({ error: "Guest not found" });
+      }
+
+      const currentG = match.guest;
+      const targetNextStatus = typeof hasWhatsApp === 'boolean' 
+        ? hasWhatsApp 
+        : (currentG.hasWhatsApp === false || currentG.customFields?.noWhatsApp === 'true' ? true : false);
+
+      const cf = (currentG.customFields && typeof currentG.customFields === 'object') ? { ...currentG.customFields } : {};
+      cf.noWhatsApp = targetNextStatus ? 'false' : 'true';
+
+      const updatedGuest = {
+        ...currentG,
+        hasWhatsApp: targetNextStatus,
+        waStatusDetail: targetNextStatus ? 'Ipo WhatsApp' : 'Haipo WhatsApp (SMS Tu)',
+        waCheckedAt: new Date().toISOString(),
+        customFields: cf
+      };
+
+      db.guests[match.index] = updatedGuest;
+      await writeDB(db);
+
+      res.json({
+        success: true,
+        guest: updatedGuest,
+        hasWhatsApp: targetNextStatus,
+        message: targetNextStatus ? "Namba imewekwa rasmi kuwa kwenye WhatsApp" : "Namba imewekwa rasmi kuwa SMS Pekee (Haitatumiwa WhatsApp)"
+      });
+    } catch (e: any) {
+      console.error("[/api/guest/toggle-whatsapp error]:", e);
+      res.status(500).json({ error: e.message });
     }
   });
 
@@ -6173,17 +6288,7 @@ Lema, Nguvu Moja!`;
                         console.warn(`[WhatsApp Auto-Reply Warning]: Cannot send auto-reply to ${fromPhone} because Meta Access Token or Phone Number ID is missing in settings.`);
                       }
 
-                      // Fallback: If Meta send failed or token is missing, attempt to dispatch via SMS/Gateway if configured
-                      if (!sendSuccess && db.smsGatewaySettings && db.smsGatewaySettings.provider && db.smsGatewaySettings.provider !== 'simulation') {
-                        try {
-                          console.log(`[WhatsApp Auto-Reply Fallback] Attempting SMS fallback dispatch to ${fromPhone}...`);
-                          const smsResult = await dispatchSMS(fromPhone, botReply, 'sms', db.smsGatewaySettings);
-                          logEntry.status = 'fallback_sent';
-                          logEntry.fallbackResult = smsResult;
-                        } catch (fallbackErr: any) {
-                          console.warn("[WhatsApp Auto-Reply Fallback Error]:", fallbackErr?.message);
-                        }
-                      }
+                      // Note: Strictly no SMS fallback on WhatsApp replies to avoid double sending or unexpected SMS charges.
 
                       db.whatsappLogs = [logEntry, ...(db.whatsappLogs || [])].slice(0, 10000);
                       databaseUpdated = true;
@@ -7026,26 +7131,9 @@ Lema, Nguvu Moja!`;
             await writeDB(db);
           }
 
-          console.log(`[SMS-Dispatch-Info] Primary routing channel ${usedChannel} status for ${phone}: redirected.`);
-          // Do NOT attempt failover if the user explicitly requested a specific channel
-          if (channel === 'sms' || channel === 'whatsapp') {
-            throw e;
-          }
-          
-          // Attempt failover (for legacy 'auto' logic if any)
-          failoverAttempted = true;
-          failoverLog = `(Primary ${usedChannel} redirected) `;
-          usedChannel = usedChannel === 'whatsapp' ? 'sms' : 'whatsapp';
-          console.log(`[SMS-Dispatch-Info] Falling back to secondary channel ${usedChannel} for ${phone}`);
-          try {
-            result = await dispatchSMS(phone, text, usedChannel, settings, scheduleTime, templateParams, guestId, origin, eventId, templateName, imageUrl, lang);
-          } catch (e2: any) {
-            console.log(`[SMS-Dispatch-Info] Secondary routing channel ${usedChannel} status for ${phone}: redirected.`);
-            console.log(`[SMS-Dispatch-Info] Gateways redirected to local simulation mode.`);
-            usedChannel = channel || 'sms';
-            failoverLog = `(Gateways redirected. Soft-failed to Simulation) `;
-            result = usedChannel === 'whatsapp' ? "WhatsApp Simulation" : "SMS Simulation";
-          }
+          console.log(`[SMS-Dispatch-Info] Primary routing channel ${usedChannel} failed for ${phone}: ${errMsg}`);
+          // Strict channel isolation: Do NOT switch channels automatically
+          throw e;
         }
       }
       
