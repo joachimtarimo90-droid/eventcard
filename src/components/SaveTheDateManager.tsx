@@ -5,6 +5,7 @@ import { SaveTheDate, Guest, EventDetails } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { safeLocalStorage } from '../utils/storage';
 import { convertWebPToJpeg } from '../utils/imageUtils';
+import { isEligibleWhatsAppNumber } from '../utils/phoneUtils';
 
 interface Props {
   eventDetails: EventDetails;
@@ -664,20 +665,41 @@ Karibu sana!`);
                          rsvpFilter === 'confirmed' ? (isEn ? 'Confirmed RSVP' : 'Waliodhibiti RSVP') :
                          rsvpFilter === 'pending' ? (isEn ? 'Pending' : 'Bado hawajathibitisha') : (isEn ? 'Declined' : 'Waliokataa');
 
+      let targetsToDispatch = activeFilteredGuests;
+      let excludedNoWaCount = 0;
+      if (channel === 'whatsapp') {
+        targetsToDispatch = activeFilteredGuests.filter(g => isEligibleWhatsAppNumber(g.phone, g));
+        excludedNoWaCount = activeFilteredGuests.length - targetsToDispatch.length;
+      }
+
+      if (channel === 'whatsapp' && targetsToDispatch.length === 0) {
+        showToast(
+          isEn
+            ? "All selected guests are marked as SMS-Only (No WhatsApp). Please select SMS channel instead."
+            : "Wageni wote waliochaguliwa hawana WhatsApp (wamewekwa SMS Tu). Tafadhali chagua kutuma kwa SMS ya kawaida badala yake.",
+          "info"
+        );
+        return;
+      }
+
+      const noWaNote = excludedNoWaCount > 0 
+        ? (isEn ? ` (${excludedNoWaCount} guests without WhatsApp excluded)` : ` (${excludedNoWaCount} wasio na WhatsApp wametengwa kiotomatiki)`)
+        : '';
+
       const proceed = await showConfirm(
         isEn ? "Dispatch to this Group" : "Kutuma kwa Kikundi Hiki",
         isEn 
-          ? `Do you want to begin sending Save The Date invitations to the ${activeFilteredGuests.length} guests in the [${filterText}] group via ${channel.toUpperCase()}?`
-          : `Je, unataka kuanza kutuma ujumbe wa Save The Date kwa wageni ${activeFilteredGuests.length} waliopo kwenye orodha ya [${filterText}] kupitia ${channel.toUpperCase()}?`
+          ? `Do you want to begin sending Save The Date invitations to the ${targetsToDispatch.length} guests in the [${filterText}] group via ${channel.toUpperCase()}${noWaNote}?`
+          : `Je, unataka kuanza kutuma ujumbe wa Save The Date kwa wageni ${targetsToDispatch.length} waliopo kwenye orodha ya [${filterText}] kupitia ${channel.toUpperCase()}${noWaNote}?`
       );
       if (!proceed) return;
 
       setSendingAll(true);
       setSentCount(0);
-      setSendLogs([`[0.00s] Kuanza kutuma Save The Date kwa wageni wa kundi la [${filterText}] (${activeFilteredGuests.length})...`]);
+      setSendLogs([`[0.00s] Kuanza kutuma Save The Date kwa wageni wa kundi la [${filterText}] (${targetsToDispatch.length})${noWaNote}...`]);
 
-      for (let i = 0; i < activeFilteredGuests.length; i++) {
-        const g = activeFilteredGuests[i];
+      for (let i = 0; i < targetsToDispatch.length; i++) {
+        const g = targetsToDispatch[i];
         const textMsg = getCompiledMessage(g, channel === 'sms');
         
         try {

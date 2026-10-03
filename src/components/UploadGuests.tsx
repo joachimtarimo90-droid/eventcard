@@ -13,6 +13,12 @@ import {
   parseTextToMatrix, 
   parseFileToGuestMatrix 
 } from '../utils/excelParser';
+import {
+  standardisePhoneNumber,
+  isEligibleWhatsAppNumber,
+  detectGuestWhatsAppStatus,
+  isLandlinePhoneNumber
+} from '../utils/phoneUtils';
 
 export type { ParsedGuestItem };
 
@@ -35,33 +41,6 @@ const isDuplicateGuestUniversal = (name: string, phone: string, existingGuests: 
     if (nameMatches && lastNdigits && existingLastNdigits) return true;
     return false;
   });
-};
-
-const standardisePhoneNumber = (phone: string): string => {
-  let clean = (phone || '').trim().replace(/\s+/g, '');
-  if (!clean) return '';
-
-  // If already starts with +
-  if (clean.startsWith('+')) {
-    return clean;
-  }
-
-  // If starts with 0 and is 10 digits long, e.g. 0714786751 or 06...
-  if (clean.startsWith('0') && clean.length === 10) {
-    return '+255' + clean.slice(1);
-  }
-
-  // If starts with 255 and is 12 digits long, e.g. 255714786751
-  if (clean.startsWith('255') && clean.length === 12) {
-    return '+' + clean;
-  }
-
-  // If is 9 digits long and starts with 6 or 7, e.g. 714786751
-  if (clean.length === 9 && (clean.startsWith('7') || clean.startsWith('6') || clean.startsWith('8') || clean.startsWith('9') || clean.startsWith('1') || clean.startsWith('2') || clean.startsWith('3') || clean.startsWith('4') || clean.startsWith('5'))) {
-    return '+255' + clean;
-  }
-
-  return clean;
 };
 
 interface LazyGuestCardImageProps {
@@ -470,7 +449,9 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
       const standardisedPhone = standardisePhoneNumber(item.phone);
 
       const itemTags = item.tags ? item.tags : [];
-      const itemCustomFields = item.customFields ? item.customFields : {};
+      const itemCustomFields = item.customFields ? { ...item.customFields } : {};
+      const waStatus = detectGuestWhatsAppStatus(standardisedPhone, itemCustomFields);
+      itemCustomFields.noWhatsApp = waStatus.noWhatsAppFlag;
 
       return {
         id,
@@ -487,6 +468,8 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
         category: item.category,
         tags: itemTags,
         customFields: itemCustomFields,
+        hasWhatsApp: waStatus.hasWhatsApp,
+        waStatusDetail: waStatus.statusDetail,
         pledgeAmount: item.pledgeAmount,
         paidAmount: item.paidAmount,
         pledgeStatus: item.pledgeStatus || 'No Pledge'
@@ -546,6 +529,9 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
       customFieldsObj.foodPreference = guestFoodPreference.trim();
     }
 
+    const waStatus = detectGuestWhatsAppStatus(standardisedPhone, customFieldsObj);
+    customFieldsObj.noWhatsApp = waStatus.noWhatsAppFlag;
+
     const shortCode = 'IP-' + Math.floor(1000 + Math.random() * 9000);
     const newGuest: Guest = {
       id: 'G-' + Date.now().toString().slice(-6),
@@ -561,7 +547,9 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
       rsvpGuestsCount: rsvpCount,
       checkedIn: false,
       tags: parsedTags,
-      customFields: customFieldsObj
+      customFields: customFieldsObj,
+      hasWhatsApp: waStatus.hasWhatsApp,
+      waStatusDetail: waStatus.statusDetail
     };
 
     // Check for duplicate in existing guests
@@ -622,6 +610,9 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
       const id = 'G-' + Date.now().toString().slice(-6) + '-' + index;
       const shortCode = 'IP-' + Math.floor(1100 + Math.random() * 8800);
       const standardisedPhone = standardisePhoneNumber(item.phone);
+      const itemCustomFields = item.customFields ? { ...item.customFields } : {};
+      const waStatus = detectGuestWhatsAppStatus(standardisedPhone, itemCustomFields);
+      itemCustomFields.noWhatsApp = waStatus.noWhatsAppFlag;
 
       return {
         id,
@@ -637,7 +628,9 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
         checkedIn: false,
         category: item.category,
         tags: item.tags || [],
-        customFields: item.customFields || {},
+        customFields: itemCustomFields,
+        hasWhatsApp: waStatus.hasWhatsApp,
+        waStatusDetail: waStatus.statusDetail,
         pledgeAmount: item.pledgeAmount,
         paidAmount: item.paidAmount,
         pledgeStatus: item.pledgeStatus || 'No Pledge'
@@ -727,6 +720,9 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
       customFieldsObj.foodPreference = editGuestFoodPreference.trim();
     }
 
+    const waStatus = detectGuestWhatsAppStatus(standardisedPhone, customFieldsObj, editingGuest.hasWhatsApp);
+    customFieldsObj.noWhatsApp = waStatus.noWhatsAppFlag;
+
     const updatedGuest: Guest = {
       ...editingGuest,
       name: editGuestName.trim(),
@@ -735,7 +731,9 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
       maxGuests: editGuestMaxGuests,
       rsvpGuestsCount: rsvpCount,
       tags: parsedTags,
-      customFields: customFieldsObj
+      customFields: customFieldsObj,
+      hasWhatsApp: waStatus.hasWhatsApp,
+      waStatusDetail: waStatus.statusDetail
     };
 
     // Update guests list
@@ -750,8 +748,8 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
   const countSingle = guests.filter(g => g.cardType === 'SINGLE').length;
   const countUnclassified = guests.filter(g => g.cardType === 'UNCLASSIFIED').length;
   const totalCards = guests.length;
-  const countWhatsApp = guests.filter(g => g.hasWhatsApp === true).length;
-  const countSmsOnly = guests.filter(g => g.hasWhatsApp === false).length;
+  const countWhatsApp = guests.filter(g => isEligibleWhatsAppNumber(g.phone, g)).length;
+  const countSmsOnly = guests.filter(g => !isEligibleWhatsAppNumber(g.phone, g)).length;
 
   // Handler to check WhatsApp status of all guests or unverified guests
   const handleCheckWhatsAppNumbers = async () => {
@@ -809,6 +807,25 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
     }
   };
 
+  const handleToggleWhatsAppStatus = (guestId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = guests.map(g => {
+      if (g.id === guestId) {
+        const nextStatus = g.hasWhatsApp === false ? true : false;
+        const cf = (g.customFields && typeof g.customFields === 'object') ? { ...g.customFields } : {};
+        cf.noWhatsApp = nextStatus ? 'false' : 'true';
+        return {
+          ...g,
+          hasWhatsApp: nextStatus,
+          waStatusDetail: nextStatus ? 'Ipo WhatsApp' : 'Haipo WhatsApp (SMS Tu)',
+          customFields: cf
+        };
+      }
+      return g;
+    });
+    onUpdateGuests(updated, isEn ? "WhatsApp status updated" : "Hali ya WhatsApp imesasishwa");
+  };
+
   // Highlight potential duplicate phone numbers
   const duplicatePhoneMap = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -862,9 +879,9 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
 
     let matchesWa = true;
     if (selectedWaFilter === 'WHATSAPP') {
-      matchesWa = g.hasWhatsApp === true;
+      matchesWa = isEligibleWhatsAppNumber(g.phone, g);
     } else if (selectedWaFilter === 'SMS_ONLY') {
-      matchesWa = g.hasWhatsApp === false;
+      matchesWa = !isEligibleWhatsAppNumber(g.phone, g);
     } else if (selectedWaFilter === 'UNCHECKED') {
       matchesWa = g.hasWhatsApp === undefined || g.hasWhatsApp === 'unknown';
     }
@@ -1609,20 +1626,26 @@ export default function UploadGuests({ event, settings, guests, onUpdateGuests, 
                       </div>
                       {/* WhatsApp Identification Badge */}
                       <div className="mt-1">
-                        {guest.hasWhatsApp === true ? (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30" title="Namba hii ipo WhatsApp (Valid WhatsApp)">
+                        {isEligibleWhatsAppNumber(guest.phone, guest) ? (
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleWhatsAppStatus(guest.id, e)}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 cursor-pointer transition"
+                            title={isEn ? "Valid WhatsApp number. Click to switch to SMS-Only" : "Namba hii ipo WhatsApp. Bofya kubadili kuwa 'SMS Tu'"}
+                          >
                             <MessageCircle className="w-2.5 h-2.5 text-emerald-400" />
-                            <span>WhatsApp</span>
-                          </span>
-                        ) : guest.hasWhatsApp === false ? (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30" title="Namba hii haipo WhatsApp au inahitaji SMS (SMS Only)">
-                            <Smartphone className="w-2.5 h-2.5 text-amber-300" />
-                            <span>SMS Only</span>
-                          </span>
+                            <span>WhatsApp ✓</span>
+                          </button>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] text-slate-400 bg-white/5 border border-white/10" title="Bado haijahakikiwa kwenye WhatsApp">
-                            <span>Haijahakikiwa</span>
-                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleWhatsAppStatus(guest.id, e)}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 cursor-pointer transition"
+                            title={isEn ? "Not on WhatsApp (Excluded from WhatsApp delivery). Click to toggle" : "Namba hii haipo WhatsApp (Inatengwa kiotomatiki kwenye WhatsApp). Bofya kubadili"}
+                          >
+                            <Smartphone className="w-2.5 h-2.5 text-amber-300" />
+                            <span>🚫 SMS Tu (Haina WA)</span>
+                          </button>
                         )}
                       </div>
                     </td>

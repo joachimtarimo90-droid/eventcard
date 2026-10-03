@@ -3585,6 +3585,19 @@ async function startServer() {
               lastSentLang: cg.lastSentLang || sg.lastSentLang,
             };
 
+            let mergedHasWhatsApp = cg.hasWhatsApp !== undefined ? cg.hasWhatsApp : sg.hasWhatsApp;
+            let mergedWaStatusDetail = cg.waStatusDetail !== undefined ? cg.waStatusDetail : sg.waStatusDetail;
+            let mergedWaCheckedAt = cg.waCheckedAt !== undefined ? cg.waCheckedAt : sg.waCheckedAt;
+
+            // If either client or server explicitly identified that recipient is not on WhatsApp
+            if (cg.hasWhatsApp === false || sg.hasWhatsApp === false || cg.customFields?.noWhatsApp === 'true' || sg.customFields?.noWhatsApp === 'true') {
+              mergedHasWhatsApp = false;
+              mergedCustomFields.noWhatsApp = 'true';
+              if (!mergedWaStatusDetail || mergedWaStatusDetail.includes('Ipo')) {
+                mergedWaStatusDetail = 'Haipo WhatsApp (SMS Tu)';
+              }
+            }
+
             return {
               ...cg,
               smsStatus: mergedSmsStatus || "Sijatuma",
@@ -3597,6 +3610,9 @@ async function startServer() {
               thankYouWhatsappStatus: mergedThkWa || "Sijatuma",
               lastSentChannel: cg.lastSentChannel || sg.lastSentChannel,
               lastSentLang: cg.lastSentLang || sg.lastSentLang,
+              hasWhatsApp: mergedHasWhatsApp,
+              waStatusDetail: mergedWaStatusDetail,
+              waCheckedAt: mergedWaCheckedAt,
               customFields: mergedCustomFields,
               rsvpStatus: mergedRsvpStatus,
               rsvpGuestsCount: mergedRsvpGuestsCount,
@@ -5501,7 +5517,7 @@ Lema, Nguvu Moja!`;
       const results: Record<string, { hasWhatsApp: boolean; status: string; formatted: string }> = {};
 
       // Standardize and validate input phones
-      const cleanedList: { original: string; clean: string; formatted: string; isValid: boolean }[] = phones.map((p: string) => {
+      const cleanedList: { original: string; clean: string; formatted: string; isValid: boolean; status: string }[] = phones.map((p: string) => {
         const orig = String(p || '').trim();
         let digits = orig.replace(/\D/g, '');
         let formatted = digits;
@@ -5514,18 +5530,34 @@ Lema, Nguvu Moja!`;
           formatted = '255' + digits;
         }
 
+        // Check if Landline (2552... or 02... with 10 digits) - landlines cannot have WhatsApp
+        const isLandline = formatted.startsWith('2552') || (digits.startsWith('02') && digits.length === 10) || (digits.length === 9 && digits.startsWith('2'));
+        const isTooShort = digits.length < 9;
+        const isTooLong = digits.length > 15;
+
         // Check if valid mobile format (Tanzania 2557..., 2556... or international 9-15 digits)
         const isTzMobile = (formatted.startsWith('2557') || formatted.startsWith('2556')) && formatted.length === 12;
-        const isIntlMobile = formatted.length >= 10 && formatted.length <= 15;
-        const isValid = isTzMobile || isIntlMobile;
+        const isIntlMobile = !formatted.startsWith('255') && formatted.length >= 10 && formatted.length <= 15;
+        const isValid = !isLandline && !isTooShort && !isTooLong && (isTzMobile || isIntlMobile);
 
-        return { original: orig, clean: digits, formatted, isValid };
+        let status = 'valid';
+        if (isLandline) {
+          status = 'landline_no_whatsapp';
+        } else if (isTooShort) {
+          status = 'number_too_short';
+        } else if (isTooLong) {
+          status = 'number_too_long';
+        } else if (!isValid) {
+          status = 'not_mobile_format';
+        }
+
+        return { original: orig, clean: digits, formatted, isValid, status };
       });
 
       cleanedList.forEach(item => {
         results[item.original] = {
           hasWhatsApp: item.isValid,
-          status: item.isValid ? 'valid' : 'invalid_format',
+          status: item.isValid ? 'valid' : item.status,
           formatted: item.formatted
         };
       });
@@ -5543,11 +5575,18 @@ Lema, Nguvu Moja!`;
 
           if (matchResult) {
             guestsUpdated++;
+            const cf = (g.customFields && typeof g.customFields === 'object') ? { ...g.customFields } : {};
+            if (!matchResult.hasWhatsApp) {
+              cf.noWhatsApp = 'true';
+            } else if (cf.noWhatsApp === 'true' && matchResult.hasWhatsApp) {
+              cf.noWhatsApp = 'false';
+            }
             return {
               ...g,
               hasWhatsApp: matchResult.hasWhatsApp,
-              waStatusDetail: matchResult.status,
-              waCheckedAt: new Date().toISOString()
+              waStatusDetail: matchResult.hasWhatsApp ? 'Ipo WhatsApp' : 'Haipo WhatsApp (SMS Tu)',
+              waCheckedAt: new Date().toISOString(),
+              customFields: cf
             };
           }
           return g;
@@ -6285,8 +6324,35 @@ Lema, Nguvu Moja!`;
             if (!currentJob.logs) currentJob.logs = [];
             currentJob.logs.push(`[${new Date().toLocaleTimeString()}] ✗ Imeshindwa kwa namba ${task.phone}. Sababu: ${err.message}`);
 
-            // Detect systemic issues (e.g., token expired, out of balance, fetch failed, invalid credentials) to auto-pause remaining queue
+            // Detect if phone number is not on WhatsApp and automatically tag guest as SMS Only
             const errMsg = (err.message || "").toLowerCase();
+            const isNotOnWhatsApp = errMsg.includes("not on whatsapp") ||
+              errMsg.includes("not a valid whatsapp user") ||
+              errMsg.includes("receiver does not have a whatsapp account") ||
+              errMsg.includes("131026") ||
+              errMsg.includes("131047") ||
+              errMsg.includes("haipo whatsapp") ||
+              errMsg.includes("haiko whatsapp") ||
+              errMsg.includes("not registered on whatsapp");
+
+            if (isNotOnWhatsApp && task.guestId && freshDb.guests) {
+              freshDb.guests = freshDb.guests.map((g: any) => {
+                if (g.id === task.guestId) {
+                  const cf = (g.customFields && typeof g.customFields === 'object') ? { ...g.customFields } : {};
+                  cf.noWhatsApp = 'true';
+                  return {
+                    ...g,
+                    hasWhatsApp: false,
+                    waStatusDetail: 'Haipo WhatsApp (SMS Tu)',
+                    customFields: cf
+                  };
+                }
+                return g;
+              });
+              currentJob.logs.push(`[${new Date().toLocaleTimeString()}] ℹ️ Namba ${task.phone} haiko WhatsApp. Mgeni amewekewa alama ya 'SMS Tu' ili asirudiwe tena kwenye WhatsApp.`);
+            }
+
+            // Detect systemic issues (e.g., token expired, out of balance, fetch failed, invalid credentials) to auto-pause remaining queue
             const isSystemicAuth = errMsg.includes("expired") || errMsg.includes("api key") || errMsg.includes("token") || errMsg.includes("unauthorized") || errMsg.includes("batili") || errMsg.includes("haipatikani") || errMsg.includes("credential");
             const isSystemicBalance = errMsg.includes("balance") || errMsg.includes("salio") || errMsg.includes("credit") || errMsg.includes("payment required") || errMsg.includes("halitoshi");
             const isNetworkError = errMsg.includes("fetch failed") || errMsg.includes("imeshindwa kufungua kiunganishi");
@@ -6366,15 +6432,45 @@ Lema, Nguvu Moja!`;
         db.queueJobs = db.queueJobs.slice(-3);
       }
 
+      // If channel is whatsapp, automatically exclude tasks for guests known not to have WhatsApp or landlines
+      let activeTasks = tasks;
+      let excludedNoWaCount = 0;
+      if (channel === 'whatsapp') {
+        activeTasks = tasks.filter((t: any) => {
+          if (!t.phone) return false;
+          const cleanP = String(t.phone).replace(/\D/g, '');
+          const isLandline = cleanP.startsWith('2552') || (cleanP.startsWith('02') && cleanP.length === 10) || (cleanP.length === 9 && cleanP.startsWith('2'));
+          const isTooShort = cleanP.length < 9;
+          if (isLandline || isTooShort) {
+            excludedNoWaCount++;
+            return false;
+          }
+
+          if (t.guestId && Array.isArray(db.guests)) {
+            const g = db.guests.find((guest: any) => guest.id === t.guestId);
+            if (g && (g.hasWhatsApp === false || g.customFields?.noWhatsApp === 'true')) {
+              excludedNoWaCount++;
+              return false;
+            }
+          }
+          return true;
+        });
+      }
+
+      const initialLogs = [`[${new Date().toLocaleTimeString()}] Kazi imeongezwa kwenye foleni ya kutuma (Queue). Jumla ya ujumbe: ${activeTasks.length}`];
+      if (excludedNoWaCount > 0) {
+        initialLogs.push(`[${new Date().toLocaleTimeString()}] ℹ️ Wageni ${excludedNoWaCount} ambao hawana WhatsApp wametengwa kiotomatiki na hawajawekwa kwenye foleni ya WhatsApp.`);
+      }
+
       const job = {
         id: 'job-' + Date.now() + Math.random().toString(36).substring(2, 7),
         eventId: eventId || 'default',
         channel,
         status: 'pending',
-        total: tasks.length,
+        total: activeTasks.length,
         processed: 0,
         created_at: new Date().toISOString(),
-        tasks: tasks.map(t => ({
+        tasks: activeTasks.map((t: any) => ({
           guestId: t.guestId,
           phone: t.phone,
           text: t.text,
@@ -6385,7 +6481,7 @@ Lema, Nguvu Moja!`;
           messageType: t.messageType || "invitation",
           status: 'pending'
         })),
-        logs: [`[${new Date().toLocaleTimeString()}] Kazi imeongezwa kwenye foleni ya kutuma (Queue). Jumla ya ujumbe: ${tasks.length}`]
+        logs: initialLogs
       };
 
       db.queueJobs.push(job);
@@ -6418,14 +6514,43 @@ Lema, Nguvu Moja!`;
       let failedCount = 0;
       const logs: string[] = [];
 
+      // If channel is whatsapp, automatically exclude tasks for guests known not to have WhatsApp or landlines
+      let activeTasks = tasks;
+      let excludedNoWaCount = 0;
+      if (channel === 'whatsapp') {
+        activeTasks = tasks.filter((task: any) => {
+          if (!task || !task.phone) return false;
+          const cleanP = String(task.phone).replace(/\D/g, '');
+          const isLandline = cleanP.startsWith('2552') || (cleanP.startsWith('02') && cleanP.length === 10) || (cleanP.length === 9 && cleanP.startsWith('2'));
+          const isTooShort = cleanP.length < 9;
+          if (isLandline || isTooShort) {
+            excludedNoWaCount++;
+            return false;
+          }
+
+          if (task.guestId && Array.isArray(db.guests)) {
+            const g = db.guests.find((guest: any) => guest.id === task.guestId);
+            if (g && (g.hasWhatsApp === false || g.customFields?.noWhatsApp === 'true')) {
+              excludedNoWaCount++;
+              return false;
+            }
+          }
+          return true;
+        });
+
+        if (excludedNoWaCount > 0) {
+          logs.push(`[${new Date().toLocaleTimeString()}] ℹ️ Wageni ${excludedNoWaCount} ambao hawana WhatsApp wametengwa kiotomatiki na hawajawekwa kwenye utumaji wa WhatsApp.`);
+        }
+      }
+
       const protocol = 'https';
       const host = 'eventcard.co.tz';
       const origin = `${protocol}://${host}`;
 
       // Process in concurrent batches of 5 to prevent timeouts on large guest lists
       const BATCH_SIZE = 5;
-      for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
-        const batch = tasks.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < activeTasks.length; i += BATCH_SIZE) {
+        const batch = activeTasks.slice(i, i + BATCH_SIZE);
         await Promise.allSettled(batch.map(async (task: any) => {
           if (!task || !task.phone) return;
           try {
@@ -6485,6 +6610,33 @@ Lema, Nguvu Moja!`;
             failedCount++;
             const errMsg = smsErr?.message || String(smsErr);
             logs.push(`[${new Date().toLocaleTimeString()}] ✗ Imeshindwa kwa namba ${task.phone}. Sababu: ${errMsg}`);
+
+            const lowerErr = errMsg.toLowerCase();
+            const isNotOnWhatsApp = lowerErr.includes("not on whatsapp") ||
+              lowerErr.includes("not a valid whatsapp user") ||
+              lowerErr.includes("receiver does not have a whatsapp account") ||
+              lowerErr.includes("131026") ||
+              lowerErr.includes("131047") ||
+              lowerErr.includes("haipo whatsapp") ||
+              lowerErr.includes("haiko whatsapp") ||
+              lowerErr.includes("not registered on whatsapp");
+
+            if (isNotOnWhatsApp && task.guestId && db.guests) {
+              db.guests = db.guests.map((g: any) => {
+                if (g.id === task.guestId) {
+                  const cf = (g.customFields && typeof g.customFields === 'object') ? { ...g.customFields } : {};
+                  cf.noWhatsApp = 'true';
+                  return {
+                    ...g,
+                    hasWhatsApp: false,
+                    waStatusDetail: 'Haipo WhatsApp (SMS Tu)',
+                    customFields: cf
+                  };
+                }
+                return g;
+              });
+              logs.push(`[${new Date().toLocaleTimeString()}] ℹ️ Namba ${task.phone} haiko WhatsApp. Mgeni amewekewa alama ya 'SMS Tu' ili asirudiwe tena kwenye WhatsApp.`);
+            }
           }
         }));
       }
@@ -6573,12 +6725,61 @@ Lema, Nguvu Moja!`;
       let failoverAttempted = false;
       let failoverLog = '';
 
+      // Check if trying to send WhatsApp to a non-WhatsApp recipient
+      if (usedChannel === 'whatsapp') {
+        const rawPhone = String(phone || '').replace(/\D/g, '');
+        const isLandline = rawPhone.startsWith('2552') || (rawPhone.startsWith('02') && rawPhone.length === 10) || (rawPhone.length === 9 && rawPhone.startsWith('2'));
+        const isMalformed = rawPhone.length < 9;
+        
+        let guestHasNoWa = isLandline || isMalformed;
+        if (!guestHasNoWa && guestId && Array.isArray(db.guests)) {
+          const g = db.guests.find((item: any) => item.id === guestId);
+          if (g && (g.hasWhatsApp === false || g.customFields?.noWhatsApp === 'true')) {
+            guestHasNoWa = true;
+          }
+        }
+        
+        if (guestHasNoWa) {
+          return res.status(400).json({
+            error: `Namba ${phone} haiko WhatsApp (imewekwa SMS Tu). Mfumo umeitambua na kuizuia isitumike WhatsApp; tafadhali tumia SMS ya kawaida.`
+          });
+        }
+      }
+
       if (isSimulationOnly || text === 'manual_whatsapp') {
         result = usedChannel === 'whatsapp' ? "WhatsApp Manual Open" : "SMS Simulation";
       } else {
         try {
           result = await dispatchSMS(phone, text, usedChannel, settings, scheduleTime, templateParams, guestId, origin, eventId, templateName, imageUrl, lang);
         } catch (e: any) {
+          const errMsg = e?.message || String(e);
+          const lowerErr = errMsg.toLowerCase();
+          const isNotOnWhatsApp = lowerErr.includes("not on whatsapp") ||
+            lowerErr.includes("not a valid whatsapp user") ||
+            lowerErr.includes("receiver does not have a whatsapp account") ||
+            lowerErr.includes("131026") ||
+            lowerErr.includes("131047") ||
+            lowerErr.includes("haipo whatsapp") ||
+            lowerErr.includes("haiko whatsapp") ||
+            lowerErr.includes("not registered on whatsapp");
+
+          if (isNotOnWhatsApp && guestId && db.guests) {
+            db.guests = db.guests.map((g: any) => {
+              if (g.id === guestId) {
+                const cf = (g.customFields && typeof g.customFields === 'object') ? { ...g.customFields } : {};
+                cf.noWhatsApp = 'true';
+                return {
+                  ...g,
+                  hasWhatsApp: false,
+                  waStatusDetail: 'Haipo WhatsApp (SMS Tu)',
+                  customFields: cf
+                };
+              }
+              return g;
+            });
+            await writeDB(db);
+          }
+
           console.log(`[SMS-Dispatch-Info] Primary routing channel ${usedChannel} status for ${phone}: redirected.`);
           // Do NOT attempt failover if the user explicitly requested a specific channel
           if (channel === 'sms' || channel === 'whatsapp') {

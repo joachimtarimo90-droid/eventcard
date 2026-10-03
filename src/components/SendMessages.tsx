@@ -7,6 +7,7 @@ import { drawCardToCanvas, generateGuestCardImage, preloadImage } from '../utils
 import { safeLocalStorage } from '../utils/storage';
 import { convertWebPToJpeg } from '../utils/imageUtils';
 import { isStatusSent } from '../utils/statusHelper';
+import { isEligibleWhatsAppNumber } from '../utils/phoneUtils';
 
 interface SendMessagesProps {
   event: EventDetails;
@@ -1010,10 +1011,10 @@ Karibu sana!`);
         if (statusFilter === 'sent' && !isStatusSent(currentSmsStatus) && !isStatusSent(currentWaStatus)) {
           return false;
         }
-        if (statusFilter === 'wa-only' && g.hasWhatsApp !== true) {
+        if (statusFilter === 'wa-only' && !isEligibleWhatsAppNumber(g.phone, g)) {
           return false;
         }
-        if (statusFilter === 'sms-only' && g.hasWhatsApp !== false) {
+        if (statusFilter === 'sms-only' && isEligibleWhatsAppNumber(g.phone, g)) {
           return false;
         }
 
@@ -1266,10 +1267,47 @@ Karibu sana!`);
   const [isDispatching, setIsDispatching] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
+  const handleToggleWhatsAppStatus = (guestId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = guests.map(g => {
+      if (g.id === guestId) {
+        const nextStatus = g.hasWhatsApp === false ? true : false;
+        const cf = (g.customFields && typeof g.customFields === 'object') ? { ...g.customFields } : {};
+        cf.noWhatsApp = nextStatus ? 'false' : 'true';
+        return {
+          ...g,
+          hasWhatsApp: nextStatus,
+          waStatusDetail: nextStatus ? 'Ipo WhatsApp' : 'Haipo WhatsApp (SMS Tu)',
+          customFields: cf
+        };
+      }
+      return g;
+    });
+    onUpdateGuests(updated);
+    showToast(
+      isEn 
+        ? "WhatsApp status updated." 
+        : "Hali ya WhatsApp ya mgeni imesasishwa.", 
+      "info"
+    );
+  };
+
   const handleSendSingle = (guestId: string, channel: 'sms' | 'whatsapp') => {
     console.log(`[Diagnostic] Single send triggered: guestId=${guestId}, channel=${channel}`);
     const target = guests.find(g => g.id === guestId);
     if (target) {
+      if (channel === 'whatsapp' && !isEligibleWhatsAppNumber(target.phone, target)) {
+        showToast(
+          isEn 
+            ? `Notice: ${target.name}'s phone (${target.phone}) is not on WhatsApp (SMS-Only). System redirected to standard SMS.` 
+            : `Angalizo: Namba ya ${target.name} (${target.phone}) haiko WhatsApp (SMS Tu). Mfumo umeizuia kwenye WhatsApp na kuielekeza kwenye SMS ya kawaida.`,
+          "info"
+        );
+        setModalError(null);
+        setActiveSendTarget({ guest: target, channel: 'sms' });
+        setCopySuccess(false);
+        return;
+      }
       setModalError(null);
       setActiveSendTarget({ guest: target, channel });
       setCopySuccess(false);
@@ -1882,7 +1920,26 @@ Karibu sana!`);
       return;
     }
 
-    const pendingGuests = filteredGuests.filter(g => {
+    // Exclude guests who do not have WhatsApp when channel is WhatsApp
+    const availableForChannel = channel === 'whatsapp'
+      ? filteredGuests.filter(g => isEligibleWhatsAppNumber(g.phone, g))
+      : filteredGuests;
+
+    const excludedNoWaCount = channel === 'whatsapp'
+      ? filteredGuests.length - availableForChannel.length
+      : 0;
+
+    if (channel === 'whatsapp' && availableForChannel.length === 0) {
+      showToast(
+        isEn
+          ? `All ${filteredGuests.length} selected guests are marked as SMS-Only (No WhatsApp). Please select SMS channel instead.`
+          : `Wageni wote ${filteredGuests.length} waliochaguliwa hawana WhatsApp (wamewekwa SMS Tu). Tafadhali chagua kutuma kwa SMS ya kawaida badala yake.`,
+        "info"
+      );
+      return;
+    }
+
+    const pendingGuests = availableForChannel.filter(g => {
       if (channel === 'whatsapp') {
         return !isStatusSent(getGuestWhatsappStatus(g));
       } else {
@@ -1894,19 +1951,25 @@ Karibu sana!`);
     let isResendingAll = false;
 
     if (pendingGuests.length === 0) {
-      targetGuests = filteredGuests;
+      targetGuests = availableForChannel;
       isResendingAll = true;
     }
 
     const formattedScheduleTime = isScheduling && scheduleTime ? scheduleTime.replace('T', ' ') + ':00' : undefined;
 
-    const confirmMsg = isResendingAll
+    const noWaNote = excludedNoWaCount > 0 
+      ? (isEn 
+          ? `\n\n⚠️ ${excludedNoWaCount} guest(s) without WhatsApp have been automatically excluded from this WhatsApp delivery.` 
+          : `\n\n⚠️ Wageni ${excludedNoWaCount} ambao hawana WhatsApp wametengwa kiotomatiki na hawajawekwa kwenye foleni ya WhatsApp (wanahitaji SMS ya kawaida).`)
+      : '';
+
+    const confirmMsg = (isResendingAll
       ? (isEn
           ? `All ${targetGuests.length} guests in this list show messages already sent for this category. Do you want to resend ${channel.toUpperCase()} messages to ALL ${targetGuests.length} guests again?`
           : `Wageni wote ${targetGuests.length} walio kwenye orodha hii wanaonyesha wameshatumiwa ujumbe wa kundi hili (${messageType}) tayari. Je, unataka kuwatumia tena ujumbe wa ${channel.toUpperCase()} wageni wote ${targetGuests.length}?`)
       : (isEn
           ? `Are you sure you want to dispatch ${messageType} messages to ${targetGuests.length} guests via ${channel.toUpperCase()}${formattedScheduleTime ? ' scheduled for ' + formattedScheduleTime : ''}?`
-          : `Je, una uhakika unataka kutuma mialiko/meseji za ${messageType} kwa wageni ${targetGuests.length} kupitia ${channel.toUpperCase()}${formattedScheduleTime ? ' kwa muda ' + formattedScheduleTime : ''}?`);
+          : `Je, una uhakika unataka kutuma mialiko/meseji za ${messageType} kwa wageni ${targetGuests.length} kupitia ${channel.toUpperCase()}${formattedScheduleTime ? ' kwa muda ' + formattedScheduleTime : ''}?`)) + noWaNote;
 
     setConfirmModalConfig({
       isOpen: true,
@@ -3174,17 +3237,27 @@ Asante - EVENT CARD`;
                         </td>
                         <td className="px-5 py-4 font-mono text-slate-300">
                           <div>{guest.phone}</div>
-                          {guest.hasWhatsApp === true ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 mt-1 rounded text-[8px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-sans">
+                          {isEligibleWhatsAppNumber(guest.phone, guest) ? (
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleWhatsAppStatus(guest.id, e)}
+                              title={isEn ? "Has WhatsApp. Click to toggle to SMS-Only" : "Namba hii ipo WhatsApp. Bofya hapa kuibadili kuwa 'SMS Tu'"}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 mt-1 rounded text-[8px] font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 font-sans cursor-pointer transition"
+                            >
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                              <span>WhatsApp</span>
-                            </span>
-                          ) : guest.hasWhatsApp === false ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 mt-1 rounded text-[8px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 font-sans">
+                              <span>WhatsApp ✓</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleWhatsAppStatus(guest.id, e)}
+                              title={isEn ? "No WhatsApp (Excluded from WhatsApp dispatches). Click to enable WhatsApp" : "Haipo WhatsApp (Inatengwa kwenye WhatsApp kiotomatiki). Bofya kubadili kuwa 'WhatsApp'"}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 mt-1 rounded text-[8px] font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 font-sans cursor-pointer transition"
+                            >
                               <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                              <span>SMS Only</span>
-                            </span>
-                          ) : null}
+                              <span>🚫 SMS Tu (Haina WA)</span>
+                            </button>
+                          )}
                         </td>
                         
                         {/* RSVP STATUS */}
@@ -3315,15 +3388,19 @@ Asante - EVENT CARD`;
                             onClick={() => handleSendSingle(guest.id, 'whatsapp')}
                             disabled={isSendingAll}
                             className={`px-2 py-1.5 border rounded-lg font-bold transition text-[11px] cursor-pointer ${
-                              activeSendTarget?.guest.id === guest.id && activeSendTarget.channel === 'whatsapp'
+                              !isEligibleWhatsAppNumber(guest.phone, guest)
+                                ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                : activeSendTarget?.guest.id === guest.id && activeSendTarget.channel === 'whatsapp'
                                 ? 'bg-blue-500 text-white border-blue-400'
                                 : isWaSent
                                 ? 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border-blue-500/30'
                                 : 'bg-white/5 hover:bg-white/10 text-blue-450 hover:text-blue-305 border-white/10 disabled:bg-white/5 disabled:text-slate-600 disabled:border-transparent'
                             }`}
-                            title={isWaSent ? "Tuma tena WhatsApp kwa mgeni huyu" : "Tuma WhatsApp kwa mgeni huyu"}
+                            title={!isEligibleWhatsAppNumber(guest.phone, guest) 
+                              ? "Namba hii haiko WhatsApp (SMS Tu - Imetengwa kwenye WhatsApp). Bofya kuituma kwa SMS ya kawaida badala yake." 
+                              : isWaSent ? "Tuma tena WhatsApp kwa mgeni huyu" : "Tuma WhatsApp kwa mgeni huyu"}
                           >
-                            {isWaSent ? "WA ↺" : "WA"}
+                            {!isEligibleWhatsAppNumber(guest.phone, guest) ? "WA 🚫" : isWaSent ? "WA ↺" : "WA"}
                           </button>
                         </td>
                       </tr>
@@ -3548,6 +3625,18 @@ Asante - EVENT CARD`;
                 </button>
               </div>
 
+              {/* Warning for non-WhatsApp numbers */}
+              {activeSendTarget.channel === 'whatsapp' && !isEligibleWhatsAppNumber(activeSendTarget.guest.phone, activeSendTarget.guest) && (
+                <div className="p-3 bg-amber-500/15 border border-amber-500/30 rounded-xl text-amber-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                  <span className="text-[11px] leading-tight">
+                    {isEn 
+                      ? `Notice: ${activeSendTarget.guest.name}'s phone (${activeSendTarget.guest.phone}) is detected as SMS-Only (No WhatsApp). Message should be sent via SMS.` 
+                      : `Angalizo: Namba ya ${activeSendTarget.guest.name} (${activeSendTarget.guest.phone}) haiko WhatsApp (SMS Tu). Mfumo umeizuia WhatsApp na kupendekeza kutumia SMS ya kawaida.`}
+                  </span>
+                </div>
+              )}
+
               {/* Message Body Box */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -3715,7 +3804,20 @@ Asante - EVENT CARD`;
                   </button>
                   
                   {activeSendTarget.channel === 'whatsapp' ? (
-                    isMetaWhatsApp ? (
+                    !isEligibleWhatsAppNumber(activeSendTarget.guest.phone, activeSendTarget.guest) ? (
+                      <button
+                        type="button"
+                        disabled={isDispatching}
+                        onClick={() => {
+                          setActiveSendTarget({ guest: activeSendTarget.guest, channel: 'sms' });
+                          handleConfirmSent(activeSendTarget.guest.id, 'sms');
+                        }}
+                        className={`flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:shadow-[0_0_15px_rgba(59,130,246,0.30)] text-xs font-extrabold text-white transition flex items-center justify-center space-x-1.5 cursor-pointer text-center ${isDispatching ? 'opacity-70 grayscale' : ''}`}
+                      >
+                        <Smartphone className="w-4 h-4" />
+                        <span>{isEn ? 'Send via SMS (No WhatsApp)' : 'Tuma kwa SMS (Haina WhatsApp)'}</span>
+                      </button>
+                    ) : isMetaWhatsApp ? (
                       <button
                         type="button"
                         disabled={isDispatching}
