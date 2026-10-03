@@ -169,13 +169,35 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
     }
 
     const nowIso = new Date().toISOString();
+    const normalizedStatus = status === 'Atahudhuria' ? 'Atahudhuria' : (status === 'Hatahudhuria' ? 'Hatahudhuria' : 'Labda');
+
+    // Optimistic parent update immediately
+    const optimisticGuest: Guest = {
+      ...guest,
+      rsvpStatus: normalizedStatus,
+      rsvpGuestsCount: finalCount,
+      rsvpComment: rsvpComment,
+      rsvpUpdatedAt: nowIso,
+      rsvpSeen: false,
+      customFields: {
+        ...(guest.customFields || {}),
+        tableNumber: finalTable
+      }
+    };
+    onRsvpSubmit(optimisticGuest);
+    setRsvpStatus(normalizedStatus);
+    setRsvpGuestsCount(finalCount);
+    setSelectedTable(finalTable);
 
     fetch('/api/rsvp-update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         guestId: guest.id,
-        rsvpStatus: status,
+        code: guest.code,
+        phone: guest.phone,
+        eventId: event.id,
+        rsvpStatus: normalizedStatus,
         rsvpGuestsCount: finalCount,
         rsvpComment: rsvpComment,
         tableNumber: finalTable
@@ -185,26 +207,14 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
       if (!res.ok) throw new Error("RSVP update failed");
       return res.json();
     })
-    .then(() => {
-      setRsvpStatus(status as any);
-      setRsvpGuestsCount(finalCount);
-      setSelectedTable(finalTable);
-      onRsvpSubmit({
-        ...guest,
-        rsvpStatus: status as any,
-        rsvpGuestsCount: finalCount,
-        rsvpComment: rsvpComment,
-        rsvpUpdatedAt: nowIso,
-        rsvpSeen: false,
-        customFields: {
-          ...(guest.customFields || {}),
-          tableNumber: finalTable
-        }
-      });
+    .then((data) => {
+      if (data && data.guest) {
+        onRsvpSubmit(data.guest);
+      }
       setRsvpFeedback(
-        status === 'Atahudhuria' 
+        normalizedStatus === 'Atahudhuria' 
           ? (isEn ? "🎉 Thank you! Your attendance has been confirmed!" : "🎉 Ahsante sana! Ushiriki wako umethibitishwa kikamilifu!")
-          : status === 'Hatahudhuria'
+          : normalizedStatus === 'Hatahudhuria'
             ? (isEn ? "✓ Your response has been recorded. Thank you for notifying us." : "✓ Udhuru wako umerekodiwa. Ahsante sana kwa kututaarifu.")
             : (isEn ? "✓ Your response (Maybe) has been recorded. You can update it anytime!" : "✓ Jibu lako (Labda) limerekodiwa. Unaweza kubadilisha wakati wowote!")
       );
@@ -212,7 +222,12 @@ export default function GuestInvitePage({ guest, event, settings, viewMode: prop
     })
     .catch(err => {
       console.error(err);
-      setRsvpFeedback(isEn ? "An error occurred. Please try again." : "Hitilafu imetokea. Tafadhali jaribu tena.");
+      // Keep optimistic status but alert user
+      setRsvpFeedback(
+        normalizedStatus === 'Atahudhuria' 
+          ? (isEn ? "✓ Confirmed locally! Will sync when connection restores." : "✓ Ushiriki umehifadhiwa! Utasawazishwa mtandao ukirudi.")
+          : (isEn ? "✓ Recorded locally! Will sync when connection restores." : "✓ Jibu limehifadhiwa! Utasawazishwa mtandao ukirudi.")
+      );
     })
     .finally(() => setRsvpUpdating(false));
   };

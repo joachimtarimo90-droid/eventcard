@@ -43,6 +43,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { useLanguage } from './context/LanguageContext';
 import { useEventCard } from './context/EventCardContext';
 import { AIChatbotWidget } from './components/AIChatbotWidget';
+import { normalizeRsvpStatus } from './utils/rsvpUtils';
 import { UwalemiModule } from './components/uwalemi/UwalemiModule';
 import { UwalemiMemberPortal } from './components/uwalemi/UwalemiMemberPortal';
 import { UwalemiVotingPage } from './components/uwalemi/UwalemiVotingPage';
@@ -3393,9 +3394,9 @@ export default function App() {
 }
 
 function AttendanceSummary({ guests, t, language, setActiveTab, event }: { guests: Guest[], t: any, language: string, setActiveTab: (tab: AppTab) => void, event: EventDetails | null }) {
-  const attendingCount = guests.filter(g => g.rsvpStatus === 'Atahudhuria').length;
-  const declinedCount = guests.filter(g => g.rsvpStatus === 'Hatahudhuria').length;
-  const pendingCount = guests.filter(g => !g.rsvpStatus || g.rsvpStatus === 'Bado').length;
+  const attendingCount = guests.filter(g => normalizeRsvpStatus(g.rsvpStatus) === 'Atahudhuria').length;
+  const declinedCount = guests.filter(g => normalizeRsvpStatus(g.rsvpStatus) === 'Hatahudhuria').length;
+  const pendingCount = guests.filter(g => normalizeRsvpStatus(g.rsvpStatus) === 'Bado').length;
   const checkedInCount = guests.filter(g => g.checkedIn).length;
 
   const stats = [

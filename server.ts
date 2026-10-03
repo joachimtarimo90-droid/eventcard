@@ -460,6 +460,216 @@ async function sendWhatsAppDirectText(
   return { success: false, channel: 'failed', error: logEntry.error };
 }
 
+function normalizeRsvpStatusServer(rawStatus: any): 'Atahudhuria' | 'Hatahudhuria' | 'Labda' | 'Bado' {
+  if (rawStatus === null || rawStatus === undefined) return 'Bado';
+  const str = String(rawStatus).trim().toLowerCase();
+  if (!str || str === 'bado' || str === 'pending' || str === 'null' || str === 'undefined' || str === 'none') {
+    return 'Bado';
+  }
+
+  // Positive RSVP
+  if (
+    str === 'atahudhuria' ||
+    str === 'attending' ||
+    str === 'attend' ||
+    str === 'confirmed' ||
+    str === 'yes' ||
+    str === 'ndio' ||
+    str === 'ndiyo' ||
+    str === 'naam' ||
+    str === 'sawa' ||
+    str === 'accepted' ||
+    str === '1' ||
+    str === 'a' ||
+    str.includes('atahudhuria') ||
+    str.includes('nitakuja') ||
+    str.includes('nitahudhuria') ||
+    str.includes('nitawepo') ||
+    str.includes('tutakuja') ||
+    str.includes('tutahudhuria')
+  ) {
+    return 'Atahudhuria';
+  }
+
+  // Negative RSVP
+  if (
+    str === 'hatahudhuria' ||
+    str === 'declined' ||
+    str === 'decline' ||
+    str === 'rejected' ||
+    str === 'no' ||
+    str === 'hapana' ||
+    str === '2' ||
+    str === 'b' ||
+    str.includes('hatahudhuria') ||
+    str.includes('sitahudhuria') ||
+    str.includes('sitakuja') ||
+    str.includes('sitafika') ||
+    str.includes('siwezi') ||
+    str.includes('sitaweza')
+  ) {
+    return 'Hatahudhuria';
+  }
+
+  // Maybe / Tentative RSVP
+  if (
+    str === 'labda' ||
+    str === 'maybe' ||
+    str === 'tentative' ||
+    str === 'not sure' ||
+    str === 'sina uhakika' ||
+    str === '3' ||
+    str === 'c' ||
+    str.includes('labda') ||
+    str.includes('sina uhakika') ||
+    str.includes('sijajua')
+  ) {
+    return 'Labda';
+  }
+
+  return 'Bado';
+}
+
+function parseRsvpFromTextServer(rawText: string, cardType: string = 'SINGLE'): {
+  status: 'Atahudhuria' | 'Hatahudhuria' | 'Labda' | null;
+  guestCount?: number;
+  comment?: string;
+} {
+  if (!rawText) return { status: null };
+  const text = String(rawText).trim();
+  const lowerText = text.toLowerCase();
+
+  const negativePatterns = [
+    'sitahudhuria', 'sintahudhuria', 'sitohudhuria', 'stahudhuria', 'hatahudhuria', 'hatutahudhuria',
+    'sitakuja', 'stakuja', 'siji', 'hatuji', 'hatutakuja', 'sitafika', 'stafika', 'sitofika',
+    'siwezi', 'sitaweza', 'sintaweza', 'sitoweza', 'sitafanikiwa', 'nisingeweza', 'singewahi',
+    'sitawahi', 'sitakuwepo', 'stakuwepo', 'sintakuwepo', 'sitowepo', 'hapana', 'samahani sita',
+    'poleni sita', 'udhuru', 'dharura', 'safarini', 'safari', 'sitaweza kufika', 'sitaweza kuja',
+    'siwezi fika', 'siwezi kuja', 'kazi nyingi', 'nje ya mji', 'nje ya nchi', 'wagonjwa', 'mgonjwa',
+    'msiba', 'no', 'declined', 'reject', 'cannot attend', 'wont make it', 'unable to attend'
+  ];
+
+  let isNegative = false;
+  for (const pattern of negativePatterns) {
+    if (lowerText.includes(pattern) || lowerText === '2' || lowerText === 'b') {
+      isNegative = true;
+      break;
+    }
+  }
+
+  const positivePatterns = [
+    'ndio', 'ndiyo', 'naam', 'yes', 'nitakuja', 'ntakuja', 'nakuja', 'tutakuja', 'tutafika',
+    'nitahudhuria', 'ntahudhuria', 'tutahudhuria', 'nitafika', 'ntafika', 'nitawepo', 'ntawepo',
+    'tutawepo', 'nitakuwepo', 'ntakuwepo', 'tutakuwepo', 'nitaweza', 'tutaweza', 'nitafanikiwa',
+    'tutafanikiwa', 'pamoja', 'nipo', 'niko', 'tupo', 'tuko', 'sawa', 'kuja', 'naja', 'hakika nitakuja',
+    'mungu akipenda nitakuja', 'inshallah nitafika', 'mungu akijaalia', 'mungu akipenda', 'inshaallah',
+    'confirmed', 'attending', 'will attend', 'count me in', 'will be there', 'i will come', 'we will come',
+    'nimepokea mwaliko na nitakuja', 'asante kwa mwaliko nitafika', 'shukrani nitakuwepo'
+  ];
+
+  let isPositive = false;
+  if (!isNegative) {
+    for (const pattern of positivePatterns) {
+      if (lowerText === '1' || lowerText === 'a' || lowerText === 'ok' || lowerText.includes(pattern)) {
+        isPositive = true;
+        break;
+      }
+    }
+  }
+
+  const maybePatterns = [
+    'sina uhakika', 'maybe', 'labda', 'sijajua', 'ntakujulisha', 'nitakujulisha', 'tutakujulisha',
+    'bado sijui', 'bado sijajua', 'bado', 'tentative', 'not sure', 'depending', 'inategemea'
+  ];
+
+  let isMaybe = false;
+  if (!isNegative && !isPositive) {
+    for (const pattern of maybePatterns) {
+      if (lowerText === '3' || lowerText === 'c' || lowerText.includes(pattern)) {
+        isMaybe = true;
+        break;
+      }
+    }
+  }
+
+  let extractedPax: number | undefined = undefined;
+  if (isPositive) {
+    if (lowerText.includes('peke yangu') || lowerText.includes('mimi tu') || lowerText.includes('mtu mmoja') || lowerText.includes('1 person')) {
+      extractedPax = 1;
+    } else if (
+      lowerText.includes('mke wangu') ||
+      lowerText.includes('mume wangu') ||
+      lowerText.includes('mwenzangu') ||
+      lowerText.includes('mpenzi wangu') ||
+      lowerText.includes('mchumba wangu') ||
+      lowerText.includes('watu wawili') ||
+      lowerText.includes('wawili') ||
+      lowerText.includes('na mwenzangu') ||
+      lowerText.includes('couple') ||
+      lowerText.includes('2 people')
+    ) {
+      extractedPax = 2;
+    } else {
+      const match = lowerText.match(/\bwatu\s*(\d{1,2})\b/) || 
+                    lowerText.match(/\b(\d{1,2})\s*watu\b/) ||
+                    lowerText.match(/\b(\d{1,2})\s*people\b/) ||
+                    lowerText.match(/\b(\d{1,2})\s*pax\b/);
+      if (match && match[1]) {
+        const parsed = parseInt(match[1], 10);
+        if (parsed >= 1 && parsed <= 10) {
+          extractedPax = parsed;
+        }
+      }
+    }
+
+    if (extractedPax === undefined) {
+      extractedPax = (cardType === 'DOUBLE' || cardType === 'COUPLE') ? 2 : 1;
+    }
+  }
+
+  let finalStatus: 'Atahudhuria' | 'Hatahudhuria' | 'Labda' | null = null;
+  if (isNegative) finalStatus = 'Hatahudhuria';
+  else if (isPositive) finalStatus = 'Atahudhuria';
+  else if (isMaybe) finalStatus = 'Labda';
+
+  return {
+    status: finalStatus,
+    guestCount: finalStatus === 'Atahudhuria' ? (extractedPax || 1) : (finalStatus === 'Hatahudhuria' ? 0 : extractedPax),
+    comment: text
+  };
+}
+
+function findGuestInDatabaseServer(db: any, identifier: string, eventId?: string): { guest: any; index: number } | null {
+  if (!identifier || !db.guests || !Array.isArray(db.guests)) return null;
+  const raw = String(identifier).trim().toLowerCase();
+  const clean = raw.replace(/^#/, '');
+  const alphaNum = clean.replace(/[^a-z0-9]/g, '');
+  const digits = raw.replace(/\D/g, '');
+
+  for (let i = 0; i < db.guests.length; i++) {
+    const g = db.guests[i];
+    if (!g) continue;
+    if (eventId && g.eventId && String(g.eventId) !== String(eventId) && String(eventId) !== 'event-starter') {
+      continue;
+    }
+    const gId = String(g.id || '').trim().toLowerCase();
+    const gCode = String(g.code || '').trim().toLowerCase().replace(/^#/, '');
+    const gPhone = String(g.phone || '').replace(/\D/g, '');
+    const gToken = String(g.qrToken || g.token || '').trim().toLowerCase();
+
+    if (
+      gId === raw || gId === clean ||
+      gCode === raw || gCode === clean ||
+      (alphaNum.length > 2 && (gId.replace(/[^a-z0-9]/g, '') === alphaNum || gCode.replace(/[^a-z0-9]/g, '') === alphaNum)) ||
+      (digits.length >= 7 && gPhone.length >= 7 && (gPhone.slice(-9) === digits.slice(-9) || gPhone === digits)) ||
+      (gToken && (gToken === raw || gToken === clean))
+    ) {
+      return { guest: g, index: i };
+    }
+  }
+  return null;
+}
+
 async function notifyAdminAndGuestOnRSVPChange(params: {
   guest: any;
   previousStatus: string;
@@ -998,69 +1208,24 @@ Respond strictly in JSON format:
 
         const balanceAmt = Math.max(0, extractedPledgeAmt - currentPaid);
 
-        actionReply = `Habari *${matchedGuest.name}*! ������🎉\n\nAhsante sana! Ahadi yako ya *TZS ${extractedPledgeAmt.toLocaleString()}* imesajiliwa kikamilifu kwenye mfumo wetu wa *${eventName}*.\n\n• *Jina:* ${matchedGuest.name}\n• *Ahadi Iliyosajiliwa:* TZS ${extractedPledgeAmt.toLocaleString()}\n• *Kiasi Ulicholipa:* TZS ${currentPaid.toLocaleString()}\n• *Baki (Salio):* TZS ${balanceAmt.toLocaleString()}\n\nTunakushukuru sana kwa moyo wako wa kujitolea na ushirikiano. Mungu akubariki sana! 🙏✨`;
+        actionReply = `Habari *${matchedGuest.name}*! 👋🎉\n\nAhsante sana! Ahadi yako ya *TZS ${extractedPledgeAmt.toLocaleString()}* imesajiliwa kikamilifu kwenye mfumo wetu wa *${eventName}*.\n\n• *Jina:* ${matchedGuest.name}\n• *Ahadi Iliyosajiliwa:* TZS ${extractedPledgeAmt.toLocaleString()}\n• *Kiasi Ulicholipa:* TZS ${currentPaid.toLocaleString()}\n• *Baki (Salio):* TZS ${balanceAmt.toLocaleString()}\n\nTunakushukuru sana kwa moyo wako wa kujitolea na ushirikiano. Mungu akubariki sana! 🙏✨`;
       }
     }
 
     // 3. RSVP UPDATE & GUEST COUNT
     if (!actionTaken) {
-      let newRsvp: 'Atahudhuria' | 'Hatahudhuria' | 'Labda' | null = null;
+      const rsvpIntent = parseRsvpFromTextServer(textBody, matchedGuest.cardType);
 
-      const isNegativeRsvp = (
-        lowerText.includes('sitahudhuria') || lowerText.includes('sintahudhuria') || lowerText.includes('sitohudhuria') ||
-        lowerText.includes('stahudhuria') || lowerText.includes('hatahudhuria') || lowerText.includes('hatutahudhuria') ||
-        lowerText.includes('sitakuja') || lowerText.includes('stakuja') || lowerText.includes('siji') || lowerText.includes('hatuji') ||
-        lowerText.includes('hatutakuja') || lowerText.includes('sitafika') || lowerText.includes('stafika') || lowerText.includes('sitofika') ||
-        lowerText.includes('siwezi') || lowerText.includes('sitaweza') || lowerText.includes('sintaweza') || lowerText.includes('sitoweza') ||
-        lowerText.includes('sitafanikiwa') || lowerText.includes('nisingeweza') || lowerText.includes('singewahi') ||
-        lowerText.includes('sitawahi') || lowerText.includes('sitakuwepo') || lowerText.includes('stakuwepo') ||
-        lowerText.includes('hapana') || lowerText === 'no' || lowerText === '2' || lowerText === 'b' ||
-        lowerText.includes('samahani sita') || lowerText.includes('poleni sita') || lowerText.includes('udhuru')
-      );
-
-      const isPositiveRsvp = !isNegativeRsvp && (
-        lowerText.includes('ndio') || lowerText.includes('ndiyo') || lowerText.includes('naam') || lowerText.includes('yes') ||
-        lowerText.includes('nitakuja') || lowerText.includes('ntakuja') || lowerText.includes('nakuja') || lowerText.includes('tutakuja') ||
-        lowerText.includes('nitahudhuria') || lowerText.includes('ntahudhuria') || lowerText.includes('tutahudhuria') ||
-        lowerText.includes('nitafika') || lowerText.includes('ntafika') || lowerText.includes('tutafika') ||
-        lowerText.includes('nitawepo') || lowerText.includes('ntawepo') || lowerText.includes('tutawepo') ||
-        lowerText.includes('nitakuwepo') || lowerText.includes('ntakuwepo') ||
-        lowerText.includes('nitaweza') || lowerText.includes('nitafanikiwa') ||
-        lowerText.includes('pamoja') || lowerText.includes('nipo') || lowerText.includes('niko') ||
-        lowerText === '1' || lowerText === 'a' || lowerText === 'ok' || lowerText === 'sawa' || lowerText === 'kuja' || lowerText === 'naja'
-      );
-
-      const isMaybeRsvp = !isNegativeRsvp && !isPositiveRsvp && (
-        lowerText.includes('sina uhakika') || lowerText.includes('maybe') || lowerText.includes('labda') ||
-        lowerText.includes('sijajua') || lowerText.includes('ntakujulisha') || lowerText.includes('nitakujulisha') ||
-        lowerText.includes('bado sijui') || lowerText.includes('bado') ||
-        lowerText === '3' || lowerText === 'c'
-      );
-
-      if (isNegativeRsvp) {
-        newRsvp = 'Hatahudhuria';
-      } else if (isPositiveRsvp) {
-        newRsvp = 'Atahudhuria';
-      } else if (isMaybeRsvp) {
-        newRsvp = 'Labda';
-      }
-
-      if (newRsvp) {
-        const previousStatus = matchedGuest.rsvpStatus || 'Bado';
+      if (rsvpIntent.status) {
+        const newRsvp = rsvpIntent.status;
+        const previousStatus = normalizeRsvpStatusServer(matchedGuest.rsvpStatus);
         const previousPax = Number(matchedGuest.rsvpGuestsCount) || (matchedGuest.cardType === 'DOUBLE' || matchedGuest.cardType === 'COUPLE' ? 2 : 1);
 
         matchedGuest.rsvpStatus = newRsvp;
+        matchedGuest.rsvpGuestsCount = rsvpIntent.guestCount !== undefined ? rsvpIntent.guestCount : (newRsvp === 'Atahudhuria' ? previousPax : 0);
+        matchedGuest.rsvpComment = textBody;
         matchedGuest.rsvpUpdatedAt = new Date().toISOString();
         matchedGuest.rsvpSeen = false;
-
-        // Check for guest count
-        const countMatch = lowerText.match(/\bwatu\s*(\d{1,2})\b/) || lowerText.match(/\b(\d{1,2})\s*watu\b/);
-        if (countMatch) {
-          const num = parseInt(countMatch[1], 10);
-          if (num >= 1 && num <= 10) {
-            matchedGuest.rsvpGuestsCount = num;
-          }
-        }
 
         const gIdx = guests.findIndex((g: any) => String(g.id) === String(matchedGuest.id));
         if (gIdx !== -1) {
@@ -1076,7 +1241,7 @@ Respond strictly in JSON format:
         } else if (newRsvp === 'Hatahudhuria') {
           actionReply = `Habari *${matchedGuest.name}*! 👋\n\nTumepokea taarifa kuwa hutaweza kuhudhuria *${eventName}*. Tunashukuru sana kwa kututaarifu mapema! Kama utakuwa na mchango/ahadi ungependa kukamilisha, waandaji watakushukuru sana. 🙏`;
         } else {
-          actionReply = `Habari *${matchedGuest.name}*! 👋\n\nTaarifa yako kuwa hujaweka uhakika imesajiliwa. Utakapokuwa tayari, tafadhali tutaarifu tena! Karibu sana. 🙏`;
+          actionReply = `Habari *${matchedGuest.name}*! 👋\n\nTaarifa yako kuwa hujaweka uhakika bado imesajiliwa. Utakapokuwa tayari, tafadhali tutaarifu tena! Karibu sana. 🙏`;
         }
 
         // Trigger Automated WhatsApp Notification to Admin
@@ -1152,6 +1317,8 @@ Ujumbe wa Mgeni: "${textBody}"
 MWONGOZO MUHIMU:
 - Jibu kwa Kiswahili kirafiki, kwa heshima na ukarimu.
 - MARUFUKU KUTAJA AU KUTANGAZA LENGO KUU LA MICHANGO YA SHEREHE ("Lengo la michango")! Usiseme kabisa "Lengo la michango ni TZS X".
+- Kama ujumbe wa mgeni unaonyesha nia au mrejesho wa kuhudhuria au kutokuhudhuria (RSVP), mpe uthibitisho wa joto na weka mwishoni kabisa mwa jibu lako (kwenye mstari mpya pekee):
+  [RSVP_DETECTED: Atahudhuria|Hatahudhuria|Labda | PAX: 1..10]
 - Kama mgeni anauliza kuhusu ukumbi/mahali/ramani/location, mpe jina la ukumbi (${venueName})${venueLocation ? `, mahali ulipo ukumbi (${venueLocation})` : ''} na umpe na kiungo cha Google Maps Pin: ${mapsPinUrl}
 - Kama mgeni hajaweka ahadi bado (Ahadi = TZS 0) na anauliza kuhusu ahadi/mchango wake au anataka kuweka ahadi: Mueleze kwa upendo kwamba hajaweka ahadi kwenye mfumo bado, na umwombe aandike kiasi anachopenda kuahidi (mfano 'Naahidi 100,000' au '100000') na kiasi hicho kitaingia moja kwa moja kwenye mfumo!
 - Kama mgeni anauliza kuhusu ahadi yake, mchango wake, au salio lake:
@@ -1161,7 +1328,47 @@ MWONGOZO MUHIMU:
 - Majibu yawe mafupi, yasiwe marefu sana kwani ni ya kuonekana kwenye WhatsApp chat. Tumia *bold* badala ya **bold** kwenye WhatsApp formatting.`,
       });
       if (response && response.text) {
-        botReply = response.text;
+        let rawAiText = response.text;
+
+        // Extract any AI-detected RSVP tag
+        const rsvpAiMatch = rawAiText.match(/\[RSVP_DETECTED:\s*(Atahudhuria|Hatahudhuria|Labda)(?:\s*\|\s*PAX:\s*(\d{1,2}))?\]/i);
+        if (rsvpAiMatch && matchedGuest) {
+          const detectedAiStatus = rsvpAiMatch[1] as 'Atahudhuria' | 'Hatahudhuria' | 'Labda';
+          const detectedAiPax = rsvpAiMatch[2] ? parseInt(rsvpAiMatch[2], 10) : (detectedAiStatus === 'Atahudhuria' ? (matchedGuest.cardType === 'DOUBLE' || matchedGuest.cardType === 'COUPLE' ? 2 : 1) : 0);
+          
+          const previousStatus = normalizeRsvpStatusServer(matchedGuest.rsvpStatus);
+          const previousPax = Number(matchedGuest.rsvpGuestsCount) || (matchedGuest.cardType === 'DOUBLE' || matchedGuest.cardType === 'COUPLE' ? 2 : 1);
+
+          matchedGuest.rsvpStatus = detectedAiStatus;
+          matchedGuest.rsvpGuestsCount = detectedAiPax;
+          matchedGuest.rsvpComment = textBody;
+          matchedGuest.rsvpUpdatedAt = new Date().toISOString();
+          matchedGuest.rsvpSeen = false;
+
+          const gIdx = guests.findIndex((g: any) => String(g.id) === String(matchedGuest.id));
+          if (gIdx !== -1) {
+            guests[gIdx] = matchedGuest;
+            db.guests = guests;
+          }
+          databaseUpdated = true;
+
+          // Strip the tag from the final WhatsApp message
+          rawAiText = rawAiText.replace(/\[RSVP_DETECTED:[^\]]+\]/gi, '').trim();
+
+          notifyAdminAndGuestOnRSVPChange({
+            guest: matchedGuest,
+            previousStatus,
+            newStatus: detectedAiStatus,
+            previousGuestsCount: previousPax,
+            newGuestsCount: detectedAiPax,
+            rsvpComment: textBody,
+            tableNumber: matchedGuest.customFields?.tableNumber || matchedGuest.tableNumber,
+            db,
+            source: 'whatsapp_chatbot'
+          }).catch(err => console.error("[AI RSVP Alert Error]:", err));
+        }
+
+        botReply = rawAiText;
       }
     } catch (e: any) {
       console.error("[WhatsApp AI Gemini Error]:", e?.message);
@@ -5141,96 +5348,135 @@ Lema, Nguvu Moja!`;
   // API 4: RSVP response submission endpoint
   app.post("/api/rsvp-update", async (req, res) => {
     try {
-      const { guestId, code, phone, rsvpStatus, rsvpGuestsCount, rsvpComment, tableNumber } = req.body;
-      const searchTarget = guestId || code || phone;
+      const { guestId, code, phone, token, rsvpStatus: rawStatus, rsvpGuestsCount, rsvpComment, tableNumber, eventId } = req.body;
+      const searchTarget = guestId || code || phone || token;
       if (!searchTarget) {
         return res.status(400).json({ error: "Missing guestId or code" });
       }
 
       const db = await readDBLatest();
-      const guests = db.guests || [];
-      let found = false;
-      let matchedGuestBefore: any = null;
-      let updatedGuestAfter: any = null;
-
-      const rawSearch = String(searchTarget).trim().toLowerCase();
-      const cleanSearch = rawSearch.replace(/^#/, '');
-      const alphaNumSearch = cleanSearch.replace(/[^a-z0-9]/g, '');
-      const phoneSearch = String(phone || searchTarget).replace(/\D/g, '');
-
-      const updatedGuests = guests.map((g: any) => {
-        const guestIdStr = String(g.id || '').trim().toLowerCase();
-        const guestCodeStr = String(g.code || '').trim().toLowerCase().replace(/^#/, '');
-        const guestIdAlpha = guestIdStr.replace(/[^a-z0-9]/g, '');
-        const guestCodeAlpha = guestCodeStr.replace(/[^a-z0-9]/g, '');
-        const guestPhone = String(g.phone || '').replace(/\D/g, '');
-
-        const isMatch = (
-          guestIdStr === rawSearch ||
-          guestIdStr === cleanSearch ||
-          guestCodeStr === rawSearch ||
-          guestCodeStr === cleanSearch ||
-          (alphaNumSearch.length > 2 && (guestIdAlpha === alphaNumSearch || guestCodeAlpha === alphaNumSearch)) ||
-          (phoneSearch.length >= 7 && guestPhone.length >= 7 && guestPhone.slice(-9) === phoneSearch.slice(-9))
-        );
-
-        if (isMatch) {
-          found = true;
-          matchedGuestBefore = { ...g };
-          const currentCustomFields = g.customFields || {};
-          const finalCount = rsvpStatus === "Atahudhuria" ? Number(rsvpGuestsCount || 1) : 0;
-          const finalTable = tableNumber !== undefined ? tableNumber : (currentCustomFields.tableNumber || "");
-          updatedGuestAfter = {
-            ...g,
-            rsvpStatus,
-            rsvpGuestsCount: finalCount,
-            rsvpComment: rsvpComment || "",
-            rsvpUpdatedAt: new Date().toISOString(),
-            rsvpSeen: false,
-            customFields: {
-              ...currentCustomFields,
-              tableNumber: finalTable
-            }
-          };
-          return updatedGuestAfter;
-        }
-        return g;
-      });
-
-      if (!found) {
+      const match = findGuestInDatabaseServer(db, searchTarget, eventId);
+      if (!match) {
         return res.status(404).json({ error: "Guest not found inside database" });
       }
 
-      db.guests = updatedGuests;
+      const matchedGuestBefore = { ...match.guest };
+      const normalizedStatus = normalizeRsvpStatusServer(rawStatus);
+      const currentCustomFields = match.guest.customFields || {};
+      const defaultPax = (match.guest.cardType === 'DOUBLE' || match.guest.cardType === 'COUPLE') ? 2 : 1;
+
+      let finalCount = 0;
+      if (normalizedStatus === 'Atahudhuria') {
+        finalCount = Math.max(1, Number(rsvpGuestsCount !== undefined ? rsvpGuestsCount : (matchedGuestBefore.rsvpGuestsCount || defaultPax)));
+      } else if (normalizedStatus === 'Labda') {
+        finalCount = Math.max(1, Number(rsvpGuestsCount !== undefined ? rsvpGuestsCount : (matchedGuestBefore.rsvpGuestsCount || defaultPax)));
+      } else {
+        finalCount = 0;
+      }
+
+      const finalTable = tableNumber !== undefined ? tableNumber : (currentCustomFields.tableNumber || match.guest.tableNumber || "");
+
+      const updatedGuestAfter = {
+        ...match.guest,
+        rsvpStatus: normalizedStatus,
+        rsvpGuestsCount: finalCount,
+        rsvpComment: rsvpComment !== undefined ? String(rsvpComment) : (match.guest.rsvpComment || ""),
+        rsvpUpdatedAt: new Date().toISOString(),
+        rsvpSeen: false,
+        tableNumber: finalTable,
+        customFields: {
+          ...currentCustomFields,
+          tableNumber: finalTable
+        }
+      };
+
+      db.guests[match.index] = updatedGuestAfter;
       await writeDB(db);
 
       // Automated WhatsApp Notification to Admin & Confirmation to Guest
-      if (matchedGuestBefore && updatedGuestAfter) {
-        const previousStatus = matchedGuestBefore.rsvpStatus || 'Bado';
-        const previousGuestsCount = Number(matchedGuestBefore.rsvpGuestsCount) || (matchedGuestBefore.cardType === 'DOUBLE' || matchedGuestBefore.cardType === 'COUPLE' ? 2 : 1);
-        
-        notifyAdminAndGuestOnRSVPChange({
-          guest: updatedGuestAfter,
-          previousStatus,
-          newStatus: rsvpStatus,
-          previousGuestsCount,
-          newGuestsCount: Number(updatedGuestAfter.rsvpGuestsCount) || (updatedGuestAfter.cardType === 'DOUBLE' || updatedGuestAfter.cardType === 'COUPLE' ? 2 : 1),
-          rsvpComment,
-          tableNumber: updatedGuestAfter.customFields?.tableNumber,
-          db,
-          source: 'web_portal'
-        }).then(async () => {
-          try {
-            await writeDB(db);
-          } catch (e) {}
-        }).catch(err => {
-          console.error("[notifyAdminAndGuestOnRSVPChange error]:", err);
-        });
+      const previousStatus = normalizeRsvpStatusServer(matchedGuestBefore.rsvpStatus);
+      const previousGuestsCount = Number(matchedGuestBefore.rsvpGuestsCount) || defaultPax;
+      
+      notifyAdminAndGuestOnRSVPChange({
+        guest: updatedGuestAfter,
+        previousStatus,
+        newStatus: normalizedStatus,
+        previousGuestsCount,
+        newGuestsCount: finalCount,
+        rsvpComment: updatedGuestAfter.rsvpComment,
+        tableNumber: finalTable,
+        db,
+        source: 'web_portal'
+      }).then(async () => {
+        try {
+          await writeDB(db);
+        } catch (e) {}
+      }).catch(err => {
+        console.error("[notifyAdminAndGuestOnRSVPChange error]:", err);
+      });
+
+      res.json({
+        success: true,
+        message: "RSVP updated successfully",
+        guest: updatedGuestAfter
+      });
+    } catch (e: any) {
+      console.error("[/api/rsvp-update error]:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Inbound SMS Webhook Receiver (Beem Africa, NextSMS, Twilio, AfrikasTalking, Custom Gateways)
+  app.all(["/api/webhook/sms", "/api/sms/webhook", "/api/sms/inbound", "/api/sms/callback"], async (req, res) => {
+    try {
+      const payload = { ...req.query, ...req.body };
+      console.log("[SMS Inbound Webhook] Received payload:", JSON.stringify(payload, null, 2));
+
+      const senderPhone = payload.from || payload.sender || payload.phone || payload.msisdn || payload.source || payload.From || '';
+      const messageBody = payload.text || payload.body || payload.message || payload.content || payload.sms || payload.Body || '';
+
+      if (!senderPhone || !messageBody) {
+        return res.status(200).json({ status: "acknowledged", note: "Missing sender or body" });
       }
 
-      res.json({ success: true, message: "RSVP updated successfully" });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      const db = await readDBLatest();
+      const cleanPhone = String(senderPhone).replace(/\D/g, '');
+      const match = findGuestInDatabaseServer(db, cleanPhone);
+
+      if (match) {
+        const guest = match.guest;
+        const previousStatus = normalizeRsvpStatusServer(guest.rsvpStatus);
+        const previousPax = Number(guest.rsvpGuestsCount) || ((guest.cardType === 'DOUBLE' || guest.cardType === 'COUPLE') ? 2 : 1);
+
+        const rsvpIntent = parseRsvpFromTextServer(messageBody, guest.cardType);
+        if (rsvpIntent.status) {
+          guest.rsvpStatus = rsvpIntent.status;
+          guest.rsvpGuestsCount = rsvpIntent.guestCount !== undefined ? rsvpIntent.guestCount : (rsvpIntent.status === 'Atahudhuria' ? previousPax : 0);
+          guest.rsvpComment = messageBody;
+          guest.rsvpUpdatedAt = new Date().toISOString();
+          guest.rsvpSeen = false;
+
+          db.guests[match.index] = guest;
+          await writeDB(db);
+
+          notifyAdminAndGuestOnRSVPChange({
+            guest,
+            previousStatus,
+            newStatus: rsvpIntent.status,
+            previousGuestsCount: previousPax,
+            newGuestsCount: guest.rsvpGuestsCount,
+            rsvpComment: messageBody,
+            tableNumber: guest.customFields?.tableNumber || guest.tableNumber,
+            db,
+            source: 'whatsapp_chatbot'
+          }).catch(err => console.error("[SMS RSVP Notification Error]:", err));
+        }
+      }
+
+      res.status(200).json({ status: "success", received: true });
+    } catch (err: any) {
+      console.error("[SMS Webhook Error]:", err);
+      res.status(200).json({ status: "error", message: err.message });
     }
   });
 
